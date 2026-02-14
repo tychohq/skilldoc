@@ -161,9 +161,9 @@
       "signature": "def renderToolMarkdown(...)",
       "docstring": "",
       "calls": [
+        "formatFlag",
         "escapePipes",
-        "renderUsageSection",
-        "formatFlag"
+        "renderUsageSection"
       ],
       "called_by": [
         "handleGenerate"
@@ -183,8 +183,8 @@
       "signature": "def renderCommandMarkdown(...)",
       "docstring": "",
       "calls": [
-        "renderUsageSection",
         "escapePipes",
+        "renderUsageSection",
         "formatFlag"
       ],
       "called_by": [
@@ -245,8 +245,8 @@
       "docstring": "",
       "calls": [],
       "called_by": [
-        "renderCommandMarkdown",
-        "renderToolMarkdown"
+        "renderToolMarkdown",
+        "renderCommandMarkdown"
       ],
       "cfg_summary": "complexity:2, blocks:6",
       "dfg_summary": "vars:15, def-use chains:13",
@@ -309,8 +309,8 @@
       ],
       "called_by": [
         "generateCommandDocs",
-        "handleGenerate",
-        "buildUsageDoc"
+        "buildUsageDoc",
+        "handleGenerate"
       ],
       "cfg_summary": "complexity:7, blocks:20",
       "dfg_summary": "vars:15, def-use chains:18",
@@ -327,11 +327,11 @@
       "signature": "def parseUsageLine(...)",
       "docstring": "",
       "calls": [
-        "stripBinary",
+        "normalizeTokens",
+        "splitOptionalSegments",
+        "collapseAlternatives",
         "coalesceFlags",
-        "isFlag",
-        "unique",
-        "normalizeTokens"
+        "stripBinary"
       ],
       "called_by": [
         "extractUsageTokens"
@@ -466,9 +466,9 @@
       "docstring": "",
       "calls": [],
       "called_by": [
-        "extractUsageTokens",
+        "coalesceFlags",
         "parseUsageLine",
-        "coalesceFlags"
+        "extractUsageTokens"
       ],
       "cfg_summary": "complexity:1, blocks:2",
       "dfg_summary": "vars:3, def-use chains:1",
@@ -504,8 +504,8 @@
       "docstring": "",
       "calls": [],
       "called_by": [
-        "extractUsageTokens",
-        "parseUsageLine"
+        "parseUsageLine",
+        "extractUsageTokens"
       ],
       "cfg_summary": "complexity:3, blocks:8",
       "dfg_summary": "vars:9, def-use chains:5",
@@ -522,15 +522,15 @@
       "signature": "def parseHelp(...)",
       "docstring": "",
       "calls": [
-        "trimEmpty",
-        "parseEnv",
+        "parseCommands",
         "findSection",
         "normalizeLineEndings",
+        "collectIndented",
         "compactWhitespace"
       ],
       "called_by": [
-        "handleGenerate",
-        "generateCommandDocs"
+        "generateCommandDocs",
+        "handleGenerate"
       ],
       "cfg_summary": "complexity:12, blocks:27",
       "dfg_summary": "vars:44, def-use chains:70",
@@ -657,9 +657,9 @@
       "signature": "def main(...)",
       "docstring": "",
       "calls": [
-        "handleInit",
         "handleGenerate",
-        "parseFlags"
+        "parseFlags",
+        "handleInit"
       ],
       "called_by": [],
       "cfg_summary": "complexity:5, blocks:13",
@@ -716,11 +716,11 @@
       "signature": "def handleGenerate(...)",
       "docstring": "",
       "calls": [
+        "commandDocPath",
+        "runCommand",
         "buildUsageDoc",
-        "parseHelp",
-        "expandHome",
-        "extractUsageTokens",
-        "commandDocPath"
+        "generateCommandDocs",
+        "renderToolMarkdown"
       ],
       "called_by": [
         "main"
@@ -740,10 +740,10 @@
       "signature": "def generateCommandDocs(...)",
       "docstring": "",
       "calls": [
-        "extractUsageTokens",
+        "parseHelp",
         "writeFileEnsured",
+        "extractUsageTokens",
         "ensureDir",
-        "slugify",
         "runCommand"
       ],
       "called_by": [
@@ -804,8 +804,8 @@
       "docstring": "",
       "calls": [],
       "called_by": [
-        "generateCommandDocs",
-        "handleGenerate"
+        "handleGenerate",
+        "generateCommandDocs"
       ],
       "cfg_summary": "complexity:2, blocks:5",
       "dfg_summary": "vars:24, def-use chains:9",
