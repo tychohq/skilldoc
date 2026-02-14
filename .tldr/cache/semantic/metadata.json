@@ -1,6 +1,42 @@
 {
   "units": [
     {
+      "name": "loadRegistry",
+      "qualified_name": "src.config.ts.loadRegistry",
+      "file": "src/config.ts",
+      "line": 1,
+      "language": "typescript",
+      "unit_type": "function",
+      "signature": "def loadRegistry(...)",
+      "docstring": "",
+      "calls": [
+        "readText"
+      ],
+      "called_by": [
+        "handleGenerate"
+      ],
+      "cfg_summary": "complexity:4, blocks:8",
+      "dfg_summary": "vars:14, def-use chains:8",
+      "dependencies": "yaml, ./types.js, ./utils.js",
+      "code_preview": ""
+    },
+    {
+      "name": "normalizeTool",
+      "qualified_name": "src.config.ts.normalizeTool",
+      "file": "src/config.ts",
+      "line": 1,
+      "language": "typescript",
+      "unit_type": "function",
+      "signature": "def normalizeTool(...)",
+      "docstring": "",
+      "calls": [],
+      "called_by": [],
+      "cfg_summary": "complexity:4, blocks:8",
+      "dfg_summary": "vars:7, def-use chains:8",
+      "dependencies": "yaml, ./types.js, ./utils.js",
+      "code_preview": ""
+    },
+    {
       "name": "expandHome",
       "qualified_name": "src.utils.ts.expandHome",
       "file": "src/utils.ts",
@@ -30,8 +66,8 @@
       "docstring": "",
       "calls": [],
       "called_by": [
-        "writeFileEnsured",
         "generateCommandDocs",
+        "writeFileEnsured",
         "handleGenerate"
       ],
       "cfg_summary": "complexity:1, blocks:1",
@@ -52,9 +88,9 @@
         "ensureDir"
       ],
       "called_by": [
-        "handleInit",
         "handleGenerate",
-        "generateCommandDocs"
+        "generateCommandDocs",
+        "handleInit"
       ],
       "cfg_summary": "complexity:1, blocks:1",
       "dfg_summary": "vars:6, def-use chains:3",
@@ -116,42 +152,6 @@
       "code_preview": ""
     },
     {
-      "name": "loadRegistry",
-      "qualified_name": "src.config.ts.loadRegistry",
-      "file": "src/config.ts",
-      "line": 1,
-      "language": "typescript",
-      "unit_type": "function",
-      "signature": "def loadRegistry(...)",
-      "docstring": "",
-      "calls": [
-        "readText"
-      ],
-      "called_by": [
-        "handleGenerate"
-      ],
-      "cfg_summary": "complexity:4, blocks:8",
-      "dfg_summary": "vars:14, def-use chains:8",
-      "dependencies": "yaml, ./types.js, ./utils.js",
-      "code_preview": ""
-    },
-    {
-      "name": "normalizeTool",
-      "qualified_name": "src.config.ts.normalizeTool",
-      "file": "src/config.ts",
-      "line": 1,
-      "language": "typescript",
-      "unit_type": "function",
-      "signature": "def normalizeTool(...)",
-      "docstring": "",
-      "calls": [],
-      "called_by": [],
-      "cfg_summary": "complexity:4, blocks:8",
-      "dfg_summary": "vars:7, def-use chains:8",
-      "dependencies": "yaml, ./types.js, ./utils.js",
-      "code_preview": ""
-    },
-    {
       "name": "renderToolMarkdown",
       "qualified_name": "src.render.ts.renderToolMarkdown",
       "file": "src/render.ts",
@@ -162,8 +162,8 @@
       "docstring": "",
       "calls": [
         "escapePipes",
-        "formatFlag",
-        "renderUsageSection"
+        "renderUsageSection",
+        "formatFlag"
       ],
       "called_by": [
         "handleGenerate"
@@ -183,8 +183,8 @@
       "signature": "def renderCommandMarkdown(...)",
       "docstring": "",
       "calls": [
-        "formatFlag",
         "renderUsageSection",
+        "formatFlag",
         "escapePipes"
       ],
       "called_by": [
@@ -282,10 +282,10 @@
       "signature": "def parseHelp(...)",
       "docstring": "",
       "calls": [
-        "parseCommands",
-        "findSection",
-        "collectIndented",
         "parseOptions",
+        "findSection",
+        "normalizeLineEndings",
+        "parseEnv",
         "trimEmpty"
       ],
       "called_by": [
@@ -420,8 +420,8 @@
         "extractUsageTokens"
       ],
       "called_by": [
-        "generateCommandDocs",
-        "handleGenerate"
+        "handleGenerate",
+        "generateCommandDocs"
       ],
       "cfg_summary": "complexity:1, blocks:2",
       "dfg_summary": "vars:7, def-use chains:4",
@@ -438,14 +438,14 @@
       "signature": "def extractUsageTokens(...)",
       "docstring": "",
       "calls": [
-        "unique",
         "parseUsageLine",
-        "isFlag"
+        "isFlag",
+        "unique"
       ],
       "called_by": [
         "generateCommandDocs",
-        "handleGenerate",
-        "buildUsageDoc"
+        "buildUsageDoc",
+        "handleGenerate"
       ],
       "cfg_summary": "complexity:7, blocks:20",
       "dfg_summary": "vars:15, def-use chains:18",
@@ -462,11 +462,11 @@
       "signature": "def parseUsageLine(...)",
       "docstring": "",
       "calls": [
-        "normalizeTokens",
-        "isFlag",
-        "collapseAlternatives",
+        "coalesceFlags",
         "stripBinary",
-        "splitOptionalSegments"
+        "normalizeTokens",
+        "collapseAlternatives",
+        "isFlag"
       ],
       "called_by": [
         "extractUsageTokens"
@@ -602,8 +602,8 @@
       "calls": [],
       "called_by": [
         "parseUsageLine",
-        "coalesceFlags",
-        "extractUsageTokens"
+        "extractUsageTokens",
+        "coalesceFlags"
       ],
       "cfg_summary": "complexity:1, blocks:2",
       "dfg_summary": "vars:3, def-use chains:1",
@@ -639,8 +639,8 @@
       "docstring": "",
       "calls": [],
       "called_by": [
-        "extractUsageTokens",
-        "parseUsageLine"
+        "parseUsageLine",
+        "extractUsageTokens"
       ],
       "cfg_summary": "complexity:3, blocks:8",
       "dfg_summary": "vars:9, def-use chains:5",
@@ -658,8 +658,8 @@
       "docstring": "",
       "calls": [
         "handleGenerate",
-        "handleInit",
-        "parseFlags"
+        "parseFlags",
+        "handleInit"
       ],
       "called_by": [],
       "cfg_summary": "complexity:5, blocks:13",
@@ -695,8 +695,8 @@
       "signature": "def handleInit(...)",
       "docstring": "",
       "calls": [
-        "writeFileEnsured",
-        "expandHome"
+        "expandHome",
+        "writeFileEnsured"
       ],
       "called_by": [
         "main"
@@ -716,11 +716,11 @@
       "signature": "def handleGenerate(...)",
       "docstring": "",
       "calls": [
-        "renderToolMarkdown",
-        "generateCommandDocs",
         "writeFileEnsured",
-        "loadRegistry",
-        "extractUsageTokens"
+        "generateCommandDocs",
+        "runCommand",
+        "buildUsageDoc",
+        "expandHome"
       ],
       "called_by": [
         "main"
@@ -740,11 +740,11 @@
       "signature": "def generateCommandDocs(...)",
       "docstring": "",
       "calls": [
-        "renderCommandMarkdown",
-        "extractUsageTokens",
         "parseHelp",
+        "extractUsageTokens",
         "ensureDir",
-        "buildUsageDoc"
+        "slugify",
+        "writeFileEnsured"
       ],
       "called_by": [
         "handleGenerate"
@@ -804,8 +804,8 @@
       "docstring": "",
       "calls": [],
       "called_by": [
-        "generateCommandDocs",
-        "handleGenerate"
+        "handleGenerate",
+        "generateCommandDocs"
       ],
       "cfg_summary": "complexity:2, blocks:5",
       "dfg_summary": "vars:24, def-use chains:9",
