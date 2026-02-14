@@ -11,8 +11,8 @@
       "docstring": "",
       "calls": [],
       "called_by": [
-        "handleGenerate",
-        "handleInit"
+        "handleInit",
+        "handleGenerate"
       ],
       "cfg_summary": "complexity:2, blocks:5",
       "dfg_summary": "vars:6, def-use chains:3",
@@ -30,9 +30,9 @@
       "docstring": "",
       "calls": [],
       "called_by": [
+        "writeFileEnsured",
         "handleGenerate",
-        "generateCommandDocs",
-        "writeFileEnsured"
+        "generateCommandDocs"
       ],
       "cfg_summary": "complexity:1, blocks:1",
       "dfg_summary": "vars:4, def-use chains:1",
@@ -52,9 +52,9 @@
         "ensureDir"
       ],
       "called_by": [
+        "handleInit",
         "handleGenerate",
-        "generateCommandDocs",
-        "handleInit"
+        "generateCommandDocs"
       ],
       "cfg_summary": "complexity:1, blocks:1",
       "dfg_summary": "vars:6, def-use chains:3",
@@ -162,10 +162,10 @@
       "docstring": "",
       "calls": [
         "findSection",
-        "parseOptions",
+        "trimEmpty",
+        "parseEnv",
         "collectIndented",
-        "normalizeLineEndings",
-        "trimEmpty"
+        "compactWhitespace"
       ],
       "called_by": [
         "generateCommandDocs",
@@ -296,9 +296,9 @@
       "signature": "def renderToolMarkdown(...)",
       "docstring": "",
       "calls": [
-        "renderUsageSection",
         "formatFlag",
-        "escapePipes"
+        "escapePipes",
+        "renderUsageSection"
       ],
       "called_by": [
         "handleGenerate"
@@ -318,9 +318,9 @@
       "signature": "def renderCommandMarkdown(...)",
       "docstring": "",
       "calls": [
-        "renderUsageSection",
         "formatFlag",
-        "escapePipes"
+        "escapePipes",
+        "renderUsageSection"
       ],
       "called_by": [
         "generateCommandDocs"
@@ -444,8 +444,8 @@
       ],
       "called_by": [
         "generateCommandDocs",
-        "handleGenerate",
-        "buildUsageDoc"
+        "buildUsageDoc",
+        "handleGenerate"
       ],
       "cfg_summary": "complexity:7, blocks:20",
       "dfg_summary": "vars:15, def-use chains:18",
@@ -462,11 +462,11 @@
       "signature": "def parseUsageLine(...)",
       "docstring": "",
       "calls": [
-        "normalizeTokens",
         "isFlag",
         "splitOptionalSegments",
+        "collapseAlternatives",
         "unique",
-        "collapseAlternatives"
+        "coalesceFlags"
       ],
       "called_by": [
         "extractUsageTokens"
@@ -602,8 +602,8 @@
       "calls": [],
       "called_by": [
         "coalesceFlags",
-        "parseUsageLine",
-        "extractUsageTokens"
+        "extractUsageTokens",
+        "parseUsageLine"
       ],
       "cfg_summary": "complexity:1, blocks:2",
       "dfg_summary": "vars:3, def-use chains:1",
@@ -639,8 +639,8 @@
       "docstring": "",
       "calls": [],
       "called_by": [
-        "parseUsageLine",
-        "extractUsageTokens"
+        "extractUsageTokens",
+        "parseUsageLine"
       ],
       "cfg_summary": "complexity:3, blocks:8",
       "dfg_summary": "vars:9, def-use chains:5",
@@ -658,8 +658,8 @@
       "docstring": "",
       "calls": [
         "handleGenerate",
-        "handleInit",
-        "parseFlags"
+        "parseFlags",
+        "handleInit"
       ],
       "called_by": [],
       "cfg_summary": "complexity:5, blocks:13",
@@ -695,8 +695,8 @@
       "signature": "def handleInit(...)",
       "docstring": "",
       "calls": [
-        "expandHome",
-        "writeFileEnsured"
+        "writeFileEnsured",
+        "expandHome"
       ],
       "called_by": [
         "main"
@@ -716,11 +716,11 @@
       "signature": "def handleGenerate(...)",
       "docstring": "",
       "calls": [
-        "expandHome",
-        "writeFileEnsured",
-        "loadRegistry",
+        "ensureDir",
         "generateCommandDocs",
-        "buildUsageDoc"
+        "writeFileEnsured",
+        "runCommand",
+        "expandHome"
       ],
       "called_by": [
         "main"
@@ -740,11 +740,11 @@
       "signature": "def generateCommandDocs(...)",
       "docstring": "",
       "calls": [
-        "runCommand",
-        "writeFileEnsured",
-        "buildUsageDoc",
         "extractUsageTokens",
-        "renderCommandMarkdown"
+        "buildUsageDoc",
+        "renderCommandMarkdown",
+        "parseHelp",
+        "ensureDir"
       ],
       "called_by": [
         "handleGenerate"
@@ -785,8 +785,8 @@
       "docstring": "",
       "calls": [],
       "called_by": [
-        "commandDocPath",
-        "generateCommandDocs"
+        "generateCommandDocs",
+        "commandDocPath"
       ],
       "cfg_summary": "complexity:1, blocks:2",
       "dfg_summary": "vars:4, def-use chains:1",
@@ -804,8 +804,8 @@
       "docstring": "",
       "calls": [],
       "called_by": [
-        "generateCommandDocs",
-        "handleGenerate"
+        "handleGenerate",
+        "generateCommandDocs"
       ],
       "cfg_summary": "complexity:2, blocks:5",
       "dfg_summary": "vars:24, def-use chains:9",
