@@ -30,9 +30,9 @@
       "docstring": "",
       "calls": [],
       "called_by": [
-        "generateCommandDocs",
+        "writeFileEnsured",
         "handleGenerate",
-        "writeFileEnsured"
+        "generateCommandDocs"
       ],
       "cfg_summary": "complexity:1, blocks:1",
       "dfg_summary": "vars:4, def-use chains:1",
@@ -52,9 +52,9 @@
         "ensureDir"
       ],
       "called_by": [
-        "handleInit",
+        "handleGenerate",
         "generateCommandDocs",
-        "handleGenerate"
+        "handleInit"
       ],
       "cfg_summary": "complexity:1, blocks:1",
       "dfg_summary": "vars:6, def-use chains:3",
@@ -199,8 +199,8 @@
       "signature": "def handleInit(...)",
       "docstring": "",
       "calls": [
-        "writeFileEnsured",
-        "expandHome"
+        "expandHome",
+        "writeFileEnsured"
       ],
       "called_by": [
         "main"
@@ -220,11 +220,11 @@
       "signature": "def handleGenerate(...)",
       "docstring": "",
       "calls": [
-        "parseHelp",
-        "buildUsageDoc",
+        "writeFileEnsured",
         "generateCommandDocs",
-        "loadRegistry",
-        "ensureDir"
+        "renderToolMarkdown",
+        "buildUsageDoc",
+        "runCommand"
       ],
       "called_by": [
         "main"
@@ -244,11 +244,11 @@
       "signature": "def generateCommandDocs(...)",
       "docstring": "",
       "calls": [
-        "renderCommandMarkdown",
-        "ensureDir",
-        "runCommand",
+        "slugify",
+        "buildUsageDoc",
+        "writeFileEnsured",
         "extractUsageTokens",
-        "writeFileEnsured"
+        "runCommand"
       ],
       "called_by": [
         "handleGenerate"
@@ -308,8 +308,8 @@
       "docstring": "",
       "calls": [],
       "called_by": [
-        "generateCommandDocs",
-        "handleGenerate"
+        "handleGenerate",
+        "generateCommandDocs"
       ],
       "cfg_summary": "complexity:2, blocks:5",
       "dfg_summary": "vars:24, def-use chains:9",
@@ -326,11 +326,11 @@
       "signature": "def parseHelp(...)",
       "docstring": "",
       "calls": [
+        "trimEmpty",
         "compactWhitespace",
-        "parseOptions",
-        "findSection",
         "parseCommands",
-        "trimEmpty"
+        "parseEnv",
+        "normalizeLineEndings"
       ],
       "called_by": [
         "handleGenerate",
@@ -483,9 +483,9 @@
       "signature": "def renderCommandMarkdown(...)",
       "docstring": "",
       "calls": [
-        "escapePipes",
         "renderUsageSection",
-        "formatFlag"
+        "formatFlag",
+        "escapePipes"
       ],
       "called_by": [
         "generateCommandDocs"
@@ -564,8 +564,8 @@
       "docstring": "",
       "calls": [],
       "called_by": [
-        "renderCommandMarkdown",
-        "renderToolMarkdown"
+        "renderToolMarkdown",
+        "renderCommandMarkdown"
       ],
       "cfg_summary": "complexity:1, blocks:2",
       "dfg_summary": "vars:3, def-use chains:1",
@@ -604,12 +604,12 @@
       "docstring": "",
       "calls": [
         "unique",
-        "parseUsageLine",
-        "isFlag"
+        "isFlag",
+        "parseUsageLine"
       ],
       "called_by": [
-        "generateCommandDocs",
         "handleGenerate",
+        "generateCommandDocs",
         "buildUsageDoc"
       ],
       "cfg_summary": "complexity:7, blocks:20",
@@ -627,11 +627,11 @@
       "signature": "def parseUsageLine(...)",
       "docstring": "",
       "calls": [
-        "splitOptionalSegments",
-        "stripBinary",
-        "unique",
+        "isFlag",
+        "collapseAlternatives",
         "normalizeTokens",
-        "collapseAlternatives"
+        "splitOptionalSegments",
+        "coalesceFlags"
       ],
       "called_by": [
         "extractUsageTokens"
@@ -766,9 +766,9 @@
       "docstring": "",
       "calls": [],
       "called_by": [
+        "parseUsageLine",
         "extractUsageTokens",
-        "coalesceFlags",
-        "parseUsageLine"
+        "coalesceFlags"
       ],
       "cfg_summary": "complexity:1, blocks:2",
       "dfg_summary": "vars:3, def-use chains:1",

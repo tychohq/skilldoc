@@ -2,9 +2,27 @@
   "edges": [
     {
       "from_file": "src/usage.ts",
-      "from_func": "collapseAlternatives",
+      "from_func": "extractUsageTokens",
       "to_file": "src/usage.ts",
-      "to_func": "selectCanonical"
+      "to_func": "parseUsageLine"
+    },
+    {
+      "from_file": "src/usage.ts",
+      "from_func": "parseUsageLine",
+      "to_file": "src/usage.ts",
+      "to_func": "isFlag"
+    },
+    {
+      "from_file": "src/render.ts",
+      "from_func": "renderCommandMarkdown",
+      "to_file": "src/render.ts",
+      "to_func": "escapePipes"
+    },
+    {
+      "from_file": "src/cli.ts",
+      "from_func": "handleGenerate",
+      "to_file": "src/cli.ts",
+      "to_func": "generateCommandDocs"
     },
     {
       "from_file": "src/usage.ts",
@@ -15,140 +33,80 @@
     {
       "from_file": "src/cli.ts",
       "from_func": "handleGenerate",
-      "to_file": "src/usage.ts",
-      "to_func": "buildUsageDoc"
-    },
-    {
-      "from_file": "src/usage.ts",
-      "from_func": "parseUsageLine",
-      "to_file": "src/usage.ts",
-      "to_func": "coalesceFlags"
-    },
-    {
-      "from_file": "src/parser.ts",
-      "from_func": "parseHelp",
-      "to_file": "src/parser.ts",
-      "to_func": "collectIndented"
+      "to_file": "src/render.ts",
+      "to_func": "renderToolMarkdown"
     },
     {
       "from_file": "src/cli.ts",
-      "from_func": "handleGenerate",
+      "from_func": "generateCommandDocs",
       "to_file": "src/utils.ts",
       "to_func": "ensureDir"
     },
     {
       "from_file": "src/cli.ts",
-      "from_func": "handleGenerate",
-      "to_file": "src/cli.ts",
-      "to_func": "commandDocPath"
+      "from_func": "generateCommandDocs",
+      "to_file": "src/usage.ts",
+      "to_func": "extractUsageTokens"
     },
     {
       "from_file": "src/cli.ts",
       "from_func": "generateCommandDocs",
-      "to_file": "src/usage.ts",
-      "to_func": "buildUsageDoc"
+      "to_file": "src/cli.ts",
+      "to_func": "slugify"
     },
     {
       "from_file": "src/render.ts",
-      "from_func": "renderUsageSection",
+      "from_func": "renderToolMarkdown",
       "to_file": "src/render.ts",
-      "to_func": "formatTokens"
+      "to_func": "escapePipes"
+    },
+    {
+      "from_file": "src/cli.ts",
+      "from_func": "generateCommandDocs",
+      "to_file": "src/parser.ts",
+      "to_func": "parseHelp"
+    },
+    {
+      "from_file": "src/config.ts",
+      "from_func": "loadRegistry",
+      "to_file": "src/utils.ts",
+      "to_func": "readText"
+    },
+    {
+      "from_file": "src/cli.ts",
+      "from_func": "main",
+      "to_file": "src/cli.ts",
+      "to_func": "handleInit"
+    },
+    {
+      "from_file": "src/cli.ts",
+      "from_func": "main",
+      "to_file": "src/cli.ts",
+      "to_func": "parseFlags"
+    },
+    {
+      "from_file": "src/parser.ts",
+      "from_func": "parseHelp",
+      "to_file": "src/utils.ts",
+      "to_func": "normalizeLineEndings"
     },
     {
       "from_file": "src/parser.ts",
       "from_func": "parseHelp",
       "to_file": "src/parser.ts",
-      "to_func": "trimEmpty"
-    },
-    {
-      "from_file": "src/usage.ts",
-      "from_func": "parseUsageLine",
-      "to_file": "src/usage.ts",
-      "to_func": "unique"
+      "to_func": "parseCommands"
     },
     {
       "from_file": "src/cli.ts",
-      "from_func": "generateCommandDocs",
+      "from_func": "handleGenerate",
+      "to_file": "src/usage.ts",
+      "to_func": "buildUsageDoc"
+    },
+    {
+      "from_file": "src/parser.ts",
+      "from_func": "parseHelp",
       "to_file": "src/parser.ts",
-      "to_func": "parseHelp"
-    },
-    {
-      "from_file": "src/usage.ts",
-      "from_func": "parseUsageLine",
-      "to_file": "src/usage.ts",
-      "to_func": "isFlag"
-    },
-    {
-      "from_file": "src/cli.ts",
-      "from_func": "generateCommandDocs",
-      "to_file": "src/render.ts",
-      "to_func": "renderCommandMarkdown"
-    },
-    {
-      "from_file": "src/cli.ts",
-      "from_func": "handleGenerate",
-      "to_file": "src/cli.ts",
-      "to_func": "generateCommandDocs"
-    },
-    {
-      "from_file": "src/usage.ts",
-      "from_func": "parseUsageLine",
-      "to_file": "src/usage.ts",
-      "to_func": "splitOptionalSegments"
-    },
-    {
-      "from_file": "src/usage.ts",
-      "from_func": "extractUsageTokens",
-      "to_file": "src/usage.ts",
-      "to_func": "unique"
-    },
-    {
-      "from_file": "src/cli.ts",
-      "from_func": "handleGenerate",
-      "to_file": "src/parser.ts",
-      "to_func": "parseHelp"
-    },
-    {
-      "from_file": "src/cli.ts",
-      "from_func": "generateCommandDocs",
-      "to_file": "src/cli.ts",
-      "to_func": "runCommand"
-    },
-    {
-      "from_file": "src/usage.ts",
-      "from_func": "parseUsageLine",
-      "to_file": "src/usage.ts",
-      "to_func": "normalizeTokens"
-    },
-    {
-      "from_file": "src/usage.ts",
-      "from_func": "extractUsageTokens",
-      "to_file": "src/usage.ts",
-      "to_func": "isFlag"
-    },
-    {
-      "from_file": "src/cli.ts",
-      "from_func": "handleInit",
-      "to_file": "src/utils.ts",
-      "to_func": "expandHome"
-    },
-    {
-      "from_file": "src/cli.ts",
-      "from_func": "handleGenerate",
-      "to_file": "src/cli.ts",
-      "to_func": "runCommand"
-    },
-    {
-      "from_file": "src/usage.ts",
-      "from_func": "splitOptionalSegments",
-      "to_file": "src/usage.ts",
-      "to_func": "isBoundary"
-    },
-    {
-      "from_file": "src/usage.ts",
-      "from_func": "coalesceFlags",
-      "to_file": "src/usage.ts",
-      "to_func": "isFlag"
+      "to_func": "findSection"
     },
     {
       "from_file": "src/usage.ts",
@@ -160,25 +118,55 @@
       "from_file": "src/cli.ts",
       "from_func": "handleGenerate",
       "to_file": "src/utils.ts",
-      "to_func": "expandHome"
+      "to_func": "writeFileEnsured"
     },
     {
       "from_file": "src/parser.ts",
       "from_func": "parseHelp",
-      "to_file": "src/utils.ts",
-      "to_func": "compactWhitespace"
+      "to_file": "src/parser.ts",
+      "to_func": "parseOptions"
     },
     {
-      "from_file": "src/config.ts",
-      "from_func": "loadRegistry",
-      "to_file": "src/utils.ts",
-      "to_func": "readText"
+      "from_file": "src/parser.ts",
+      "from_func": "parseHelp",
+      "to_file": "src/parser.ts",
+      "to_func": "parseEnv"
+    },
+    {
+      "from_file": "src/cli.ts",
+      "from_func": "generateCommandDocs",
+      "to_file": "src/cli.ts",
+      "to_func": "runCommand"
+    },
+    {
+      "from_file": "src/usage.ts",
+      "from_func": "extractUsageTokens",
+      "to_file": "src/usage.ts",
+      "to_func": "unique"
+    },
+    {
+      "from_file": "src/usage.ts",
+      "from_func": "parseUsageLine",
+      "to_file": "src/usage.ts",
+      "to_func": "collapseAlternatives"
     },
     {
       "from_file": "src/cli.ts",
       "from_func": "handleGenerate",
-      "to_file": "src/config.ts",
-      "to_func": "loadRegistry"
+      "to_file": "src/utils.ts",
+      "to_func": "expandHome"
+    },
+    {
+      "from_file": "src/cli.ts",
+      "from_func": "generateCommandDocs",
+      "to_file": "src/utils.ts",
+      "to_func": "writeFileEnsured"
+    },
+    {
+      "from_file": "src/cli.ts",
+      "from_func": "handleGenerate",
+      "to_file": "src/parser.ts",
+      "to_func": "parseHelp"
     },
     {
       "from_file": "src/render.ts",
@@ -189,50 +177,26 @@
     {
       "from_file": "src/cli.ts",
       "from_func": "handleGenerate",
-      "to_file": "src/render.ts",
-      "to_func": "renderToolMarkdown"
+      "to_file": "src/utils.ts",
+      "to_func": "ensureDir"
     },
     {
-      "from_file": "src/cli.ts",
-      "from_func": "main",
-      "to_file": "src/cli.ts",
-      "to_func": "parseFlags"
-    },
-    {
-      "from_file": "src/cli.ts",
-      "from_func": "commandDocPath",
-      "to_file": "src/cli.ts",
-      "to_func": "slugify"
-    },
-    {
-      "from_file": "src/parser.ts",
-      "from_func": "parseHelp",
-      "to_file": "src/parser.ts",
-      "to_func": "findSection"
-    },
-    {
-      "from_file": "src/cli.ts",
-      "from_func": "generateCommandDocs",
-      "to_file": "src/cli.ts",
-      "to_func": "slugify"
-    },
-    {
-      "from_file": "src/render.ts",
-      "from_func": "renderCommandMarkdown",
-      "to_file": "src/render.ts",
-      "to_func": "escapePipes"
-    },
-    {
-      "from_file": "src/render.ts",
-      "from_func": "renderCommandMarkdown",
-      "to_file": "src/render.ts",
-      "to_func": "formatFlag"
+      "from_file": "src/usage.ts",
+      "from_func": "extractUsageTokens",
+      "to_file": "src/usage.ts",
+      "to_func": "isFlag"
     },
     {
       "from_file": "src/cli.ts",
       "from_func": "handleGenerate",
       "to_file": "src/usage.ts",
       "to_func": "extractUsageTokens"
+    },
+    {
+      "from_file": "src/cli.ts",
+      "from_func": "handleInit",
+      "to_file": "src/utils.ts",
+      "to_func": "writeFileEnsured"
     },
     {
       "from_file": "src/cli.ts",
@@ -244,19 +208,7 @@
       "from_file": "src/parser.ts",
       "from_func": "parseHelp",
       "to_file": "src/parser.ts",
-      "to_func": "parseOptions"
-    },
-    {
-      "from_file": "src/cli.ts",
-      "from_func": "generateCommandDocs",
-      "to_file": "src/usage.ts",
-      "to_func": "extractUsageTokens"
-    },
-    {
-      "from_file": "src/parser.ts",
-      "from_func": "parseHelp",
-      "to_file": "src/utils.ts",
-      "to_func": "normalizeLineEndings"
+      "to_func": "collectIndented"
     },
     {
       "from_file": "src/render.ts",
@@ -265,64 +217,28 @@
       "to_func": "renderUsageSection"
     },
     {
-      "from_file": "src/cli.ts",
-      "from_func": "handleInit",
-      "to_file": "src/utils.ts",
-      "to_func": "writeFileEnsured"
-    },
-    {
-      "from_file": "src/cli.ts",
-      "from_func": "generateCommandDocs",
-      "to_file": "src/utils.ts",
-      "to_func": "ensureDir"
-    },
-    {
-      "from_file": "src/utils.ts",
-      "from_func": "writeFileEnsured",
-      "to_file": "src/utils.ts",
-      "to_func": "ensureDir"
-    },
-    {
-      "from_file": "src/parser.ts",
-      "from_func": "parseHelp",
-      "to_file": "src/parser.ts",
-      "to_func": "parseEnv"
-    },
-    {
-      "from_file": "src/parser.ts",
-      "from_func": "parseHelp",
-      "to_file": "src/parser.ts",
-      "to_func": "parseCommands"
-    },
-    {
-      "from_file": "src/render.ts",
-      "from_func": "renderToolMarkdown",
-      "to_file": "src/render.ts",
-      "to_func": "formatFlag"
-    },
-    {
-      "from_file": "src/cli.ts",
-      "from_func": "generateCommandDocs",
-      "to_file": "src/utils.ts",
-      "to_func": "writeFileEnsured"
-    },
-    {
-      "from_file": "src/render.ts",
-      "from_func": "renderToolMarkdown",
-      "to_file": "src/render.ts",
-      "to_func": "escapePipes"
-    },
-    {
-      "from_file": "src/cli.ts",
-      "from_func": "main",
-      "to_file": "src/cli.ts",
-      "to_func": "handleInit"
+      "from_file": "src/usage.ts",
+      "from_func": "parseUsageLine",
+      "to_file": "src/usage.ts",
+      "to_func": "splitOptionalSegments"
     },
     {
       "from_file": "src/usage.ts",
-      "from_func": "extractUsageTokens",
+      "from_func": "coalesceFlags",
       "to_file": "src/usage.ts",
-      "to_func": "parseUsageLine"
+      "to_func": "isFlag"
+    },
+    {
+      "from_file": "src/usage.ts",
+      "from_func": "collapseAlternatives",
+      "to_file": "src/usage.ts",
+      "to_func": "selectCanonical"
+    },
+    {
+      "from_file": "src/cli.ts",
+      "from_func": "generateCommandDocs",
+      "to_file": "src/render.ts",
+      "to_func": "renderCommandMarkdown"
     },
     {
       "from_file": "src/parser.ts",
@@ -332,19 +248,103 @@
     },
     {
       "from_file": "src/cli.ts",
-      "from_func": "handleGenerate",
+      "from_func": "commandDocPath",
+      "to_file": "src/cli.ts",
+      "to_func": "slugify"
+    },
+    {
+      "from_file": "src/cli.ts",
+      "from_func": "handleInit",
       "to_file": "src/utils.ts",
-      "to_func": "writeFileEnsured"
+      "to_func": "expandHome"
     },
     {
       "from_file": "src/usage.ts",
       "from_func": "parseUsageLine",
       "to_file": "src/usage.ts",
-      "to_func": "collapseAlternatives"
+      "to_func": "normalizeTokens"
+    },
+    {
+      "from_file": "src/cli.ts",
+      "from_func": "handleGenerate",
+      "to_file": "src/cli.ts",
+      "to_func": "runCommand"
+    },
+    {
+      "from_file": "src/parser.ts",
+      "from_func": "parseHelp",
+      "to_file": "src/parser.ts",
+      "to_func": "trimEmpty"
+    },
+    {
+      "from_file": "src/render.ts",
+      "from_func": "renderCommandMarkdown",
+      "to_file": "src/render.ts",
+      "to_func": "formatFlag"
+    },
+    {
+      "from_file": "src/render.ts",
+      "from_func": "renderUsageSection",
+      "to_file": "src/render.ts",
+      "to_func": "formatTokens"
+    },
+    {
+      "from_file": "src/parser.ts",
+      "from_func": "parseHelp",
+      "to_file": "src/utils.ts",
+      "to_func": "compactWhitespace"
+    },
+    {
+      "from_file": "src/usage.ts",
+      "from_func": "parseUsageLine",
+      "to_file": "src/usage.ts",
+      "to_func": "coalesceFlags"
+    },
+    {
+      "from_file": "src/usage.ts",
+      "from_func": "splitOptionalSegments",
+      "to_file": "src/usage.ts",
+      "to_func": "isBoundary"
+    },
+    {
+      "from_file": "src/render.ts",
+      "from_func": "renderToolMarkdown",
+      "to_file": "src/render.ts",
+      "to_func": "formatFlag"
+    },
+    {
+      "from_file": "src/cli.ts",
+      "from_func": "handleGenerate",
+      "to_file": "src/cli.ts",
+      "to_func": "commandDocPath"
+    },
+    {
+      "from_file": "src/usage.ts",
+      "from_func": "parseUsageLine",
+      "to_file": "src/usage.ts",
+      "to_func": "unique"
+    },
+    {
+      "from_file": "src/cli.ts",
+      "from_func": "generateCommandDocs",
+      "to_file": "src/usage.ts",
+      "to_func": "buildUsageDoc"
+    },
+    {
+      "from_file": "src/cli.ts",
+      "from_func": "handleGenerate",
+      "to_file": "src/config.ts",
+      "to_func": "loadRegistry"
+    },
+    {
+      "from_file": "src/utils.ts",
+      "from_func": "writeFileEnsured",
+      "to_file": "src/utils.ts",
+      "to_func": "ensureDir"
     }
   ],
   "languages": [
     "typescript"
   ],
-  "timestamp": 1771068916.7553291
+  "timestamp": 1771069572.443566
 }
