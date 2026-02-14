@@ -30,9 +30,9 @@
       "docstring": "",
       "calls": [],
       "called_by": [
+        "writeFileEnsured",
         "handleGenerate",
-        "generateCommandDocs",
-        "writeFileEnsured"
+        "generateCommandDocs"
       ],
       "cfg_summary": "complexity:1, blocks:1",
       "dfg_summary": "vars:4, def-use chains:1",
@@ -152,262 +152,6 @@
       "code_preview": ""
     },
     {
-      "name": "renderToolMarkdown",
-      "qualified_name": "src.render.ts.renderToolMarkdown",
-      "file": "src/render.ts",
-      "line": 1,
-      "language": "typescript",
-      "unit_type": "function",
-      "signature": "def renderToolMarkdown(...)",
-      "docstring": "",
-      "calls": [
-        "formatFlag",
-        "escapePipes",
-        "renderUsageSection"
-      ],
-      "called_by": [
-        "handleGenerate"
-      ],
-      "cfg_summary": "complexity:12, blocks:29",
-      "dfg_summary": "vars:32, def-use chains:60",
-      "dependencies": "./types.js",
-      "code_preview": ""
-    },
-    {
-      "name": "renderCommandMarkdown",
-      "qualified_name": "src.render.ts.renderCommandMarkdown",
-      "file": "src/render.ts",
-      "line": 1,
-      "language": "typescript",
-      "unit_type": "function",
-      "signature": "def renderCommandMarkdown(...)",
-      "docstring": "",
-      "calls": [
-        "renderUsageSection",
-        "formatFlag",
-        "escapePipes"
-      ],
-      "called_by": [
-        "generateCommandDocs"
-      ],
-      "cfg_summary": "complexity:11, blocks:26",
-      "dfg_summary": "vars:28, def-use chains:59",
-      "dependencies": "./types.js",
-      "code_preview": ""
-    },
-    {
-      "name": "renderUsageSection",
-      "qualified_name": "src.render.ts.renderUsageSection",
-      "file": "src/render.ts",
-      "line": 1,
-      "language": "typescript",
-      "unit_type": "function",
-      "signature": "def renderUsageSection(...)",
-      "docstring": "",
-      "calls": [
-        "formatTokens"
-      ],
-      "called_by": [
-        "renderCommandMarkdown",
-        "renderToolMarkdown"
-      ],
-      "cfg_summary": "complexity:4, blocks:8",
-      "dfg_summary": "vars:7, def-use chains:13",
-      "dependencies": "./types.js",
-      "code_preview": ""
-    },
-    {
-      "name": "formatTokens",
-      "qualified_name": "src.render.ts.formatTokens",
-      "file": "src/render.ts",
-      "line": 1,
-      "language": "typescript",
-      "unit_type": "function",
-      "signature": "def formatTokens(...)",
-      "docstring": "",
-      "calls": [],
-      "called_by": [
-        "renderUsageSection"
-      ],
-      "cfg_summary": "complexity:1, blocks:2",
-      "dfg_summary": "vars:5, def-use chains:1",
-      "dependencies": "./types.js",
-      "code_preview": ""
-    },
-    {
-      "name": "formatFlag",
-      "qualified_name": "src.render.ts.formatFlag",
-      "file": "src/render.ts",
-      "line": 1,
-      "language": "typescript",
-      "unit_type": "function",
-      "signature": "def formatFlag(...)",
-      "docstring": "",
-      "calls": [],
-      "called_by": [
-        "renderToolMarkdown",
-        "renderCommandMarkdown"
-      ],
-      "cfg_summary": "complexity:2, blocks:6",
-      "dfg_summary": "vars:15, def-use chains:13",
-      "dependencies": "./types.js",
-      "code_preview": ""
-    },
-    {
-      "name": "escapePipes",
-      "qualified_name": "src.render.ts.escapePipes",
-      "file": "src/render.ts",
-      "line": 1,
-      "language": "typescript",
-      "unit_type": "function",
-      "signature": "def escapePipes(...)",
-      "docstring": "",
-      "calls": [],
-      "called_by": [
-        "renderToolMarkdown",
-        "renderCommandMarkdown"
-      ],
-      "cfg_summary": "complexity:1, blocks:2",
-      "dfg_summary": "vars:3, def-use chains:1",
-      "dependencies": "./types.js",
-      "code_preview": ""
-    },
-    {
-      "name": "parseHelp",
-      "qualified_name": "src.parser.ts.parseHelp",
-      "file": "src/parser.ts",
-      "line": 1,
-      "language": "typescript",
-      "unit_type": "function",
-      "signature": "def parseHelp(...)",
-      "docstring": "",
-      "calls": [
-        "parseEnv",
-        "compactWhitespace",
-        "parseCommands",
-        "findSection",
-        "normalizeLineEndings"
-      ],
-      "called_by": [
-        "handleGenerate",
-        "generateCommandDocs"
-      ],
-      "cfg_summary": "complexity:12, blocks:27",
-      "dfg_summary": "vars:44, def-use chains:70",
-      "dependencies": "./utils.js, ./types.js",
-      "code_preview": ""
-    },
-    {
-      "name": "collectIndented",
-      "qualified_name": "src.parser.ts.collectIndented",
-      "file": "src/parser.ts",
-      "line": 1,
-      "language": "typescript",
-      "unit_type": "function",
-      "signature": "def collectIndented(...)",
-      "docstring": "",
-      "calls": [],
-      "called_by": [
-        "parseHelp"
-      ],
-      "cfg_summary": "complexity:6, blocks:17",
-      "dfg_summary": "vars:11, def-use chains:11",
-      "dependencies": "./utils.js, ./types.js",
-      "code_preview": ""
-    },
-    {
-      "name": "findSection",
-      "qualified_name": "src.parser.ts.findSection",
-      "file": "src/parser.ts",
-      "line": 1,
-      "language": "typescript",
-      "unit_type": "function",
-      "signature": "def findSection(...)",
-      "docstring": "",
-      "calls": [],
-      "called_by": [
-        "parseHelp"
-      ],
-      "cfg_summary": "complexity:1, blocks:2",
-      "dfg_summary": "vars:11, def-use chains:4",
-      "dependencies": "./utils.js, ./types.js",
-      "code_preview": ""
-    },
-    {
-      "name": "parseCommands",
-      "qualified_name": "src.parser.ts.parseCommands",
-      "file": "src/parser.ts",
-      "line": 1,
-      "language": "typescript",
-      "unit_type": "function",
-      "signature": "def parseCommands(...)",
-      "docstring": "",
-      "calls": [],
-      "called_by": [
-        "parseHelp"
-      ],
-      "cfg_summary": "complexity:6, blocks:17",
-      "dfg_summary": "vars:13, def-use chains:7",
-      "dependencies": "./utils.js, ./types.js",
-      "code_preview": ""
-    },
-    {
-      "name": "parseOptions",
-      "qualified_name": "src.parser.ts.parseOptions",
-      "file": "src/parser.ts",
-      "line": 1,
-      "language": "typescript",
-      "unit_type": "function",
-      "signature": "def parseOptions(...)",
-      "docstring": "",
-      "calls": [
-        "flush"
-      ],
-      "called_by": [
-        "parseHelp"
-      ],
-      "cfg_summary": "complexity:8, blocks:22",
-      "dfg_summary": "vars:18, def-use chains:20",
-      "dependencies": "./utils.js, ./types.js",
-      "code_preview": ""
-    },
-    {
-      "name": "parseEnv",
-      "qualified_name": "src.parser.ts.parseEnv",
-      "file": "src/parser.ts",
-      "line": 1,
-      "language": "typescript",
-      "unit_type": "function",
-      "signature": "def parseEnv(...)",
-      "docstring": "",
-      "calls": [],
-      "called_by": [
-        "parseHelp"
-      ],
-      "cfg_summary": "complexity:4, blocks:11",
-      "dfg_summary": "vars:10, def-use chains:5",
-      "dependencies": "./utils.js, ./types.js",
-      "code_preview": ""
-    },
-    {
-      "name": "trimEmpty",
-      "qualified_name": "src.parser.ts.trimEmpty",
-      "file": "src/parser.ts",
-      "line": 1,
-      "language": "typescript",
-      "unit_type": "function",
-      "signature": "def trimEmpty(...)",
-      "docstring": "",
-      "calls": [],
-      "called_by": [
-        "parseHelp"
-      ],
-      "cfg_summary": "complexity:3, blocks:8",
-      "dfg_summary": "vars:10, def-use chains:9",
-      "dependencies": "./utils.js, ./types.js",
-      "code_preview": ""
-    },
-    {
       "name": "buildUsageDoc",
       "qualified_name": "src.usage.ts.buildUsageDoc",
       "file": "src/usage.ts",
@@ -439,8 +183,8 @@
       "docstring": "",
       "calls": [
         "unique",
-        "isFlag",
-        "parseUsageLine"
+        "parseUsageLine",
+        "isFlag"
       ],
       "called_by": [
         "generateCommandDocs",
@@ -462,11 +206,11 @@
       "signature": "def parseUsageLine(...)",
       "docstring": "",
       "calls": [
-        "isFlag",
-        "stripBinary",
-        "splitOptionalSegments",
         "normalizeTokens",
-        "coalesceFlags"
+        "stripBinary",
+        "isFlag",
+        "splitOptionalSegments",
+        "collapseAlternatives"
       ],
       "called_by": [
         "extractUsageTokens"
@@ -601,8 +345,8 @@
       "docstring": "",
       "calls": [],
       "called_by": [
-        "parseUsageLine",
         "coalesceFlags",
+        "parseUsageLine",
         "extractUsageTokens"
       ],
       "cfg_summary": "complexity:1, blocks:2",
@@ -648,6 +392,141 @@
       "code_preview": ""
     },
     {
+      "name": "parseHelp",
+      "qualified_name": "src.parser.ts.parseHelp",
+      "file": "src/parser.ts",
+      "line": 1,
+      "language": "typescript",
+      "unit_type": "function",
+      "signature": "def parseHelp(...)",
+      "docstring": "",
+      "calls": [
+        "parseEnv",
+        "collectIndented",
+        "trimEmpty",
+        "compactWhitespace",
+        "normalizeLineEndings"
+      ],
+      "called_by": [
+        "generateCommandDocs",
+        "handleGenerate"
+      ],
+      "cfg_summary": "complexity:12, blocks:27",
+      "dfg_summary": "vars:44, def-use chains:70",
+      "dependencies": "./utils.js, ./types.js",
+      "code_preview": ""
+    },
+    {
+      "name": "collectIndented",
+      "qualified_name": "src.parser.ts.collectIndented",
+      "file": "src/parser.ts",
+      "line": 1,
+      "language": "typescript",
+      "unit_type": "function",
+      "signature": "def collectIndented(...)",
+      "docstring": "",
+      "calls": [],
+      "called_by": [
+        "parseHelp"
+      ],
+      "cfg_summary": "complexity:6, blocks:17",
+      "dfg_summary": "vars:11, def-use chains:11",
+      "dependencies": "./utils.js, ./types.js",
+      "code_preview": ""
+    },
+    {
+      "name": "findSection",
+      "qualified_name": "src.parser.ts.findSection",
+      "file": "src/parser.ts",
+      "line": 1,
+      "language": "typescript",
+      "unit_type": "function",
+      "signature": "def findSection(...)",
+      "docstring": "",
+      "calls": [],
+      "called_by": [
+        "parseHelp"
+      ],
+      "cfg_summary": "complexity:1, blocks:2",
+      "dfg_summary": "vars:11, def-use chains:4",
+      "dependencies": "./utils.js, ./types.js",
+      "code_preview": ""
+    },
+    {
+      "name": "parseCommands",
+      "qualified_name": "src.parser.ts.parseCommands",
+      "file": "src/parser.ts",
+      "line": 1,
+      "language": "typescript",
+      "unit_type": "function",
+      "signature": "def parseCommands(...)",
+      "docstring": "",
+      "calls": [],
+      "called_by": [
+        "parseHelp"
+      ],
+      "cfg_summary": "complexity:6, blocks:17",
+      "dfg_summary": "vars:13, def-use chains:7",
+      "dependencies": "./utils.js, ./types.js",
+      "code_preview": ""
+    },
+    {
+      "name": "parseOptions",
+      "qualified_name": "src.parser.ts.parseOptions",
+      "file": "src/parser.ts",
+      "line": 1,
+      "language": "typescript",
+      "unit_type": "function",
+      "signature": "def parseOptions(...)",
+      "docstring": "",
+      "calls": [
+        "flush"
+      ],
+      "called_by": [
+        "parseHelp"
+      ],
+      "cfg_summary": "complexity:8, blocks:22",
+      "dfg_summary": "vars:18, def-use chains:20",
+      "dependencies": "./utils.js, ./types.js",
+      "code_preview": ""
+    },
+    {
+      "name": "parseEnv",
+      "qualified_name": "src.parser.ts.parseEnv",
+      "file": "src/parser.ts",
+      "line": 1,
+      "language": "typescript",
+      "unit_type": "function",
+      "signature": "def parseEnv(...)",
+      "docstring": "",
+      "calls": [],
+      "called_by": [
+        "parseHelp"
+      ],
+      "cfg_summary": "complexity:4, blocks:11",
+      "dfg_summary": "vars:10, def-use chains:5",
+      "dependencies": "./utils.js, ./types.js",
+      "code_preview": ""
+    },
+    {
+      "name": "trimEmpty",
+      "qualified_name": "src.parser.ts.trimEmpty",
+      "file": "src/parser.ts",
+      "line": 1,
+      "language": "typescript",
+      "unit_type": "function",
+      "signature": "def trimEmpty(...)",
+      "docstring": "",
+      "calls": [],
+      "called_by": [
+        "parseHelp"
+      ],
+      "cfg_summary": "complexity:3, blocks:8",
+      "dfg_summary": "vars:10, def-use chains:9",
+      "dependencies": "./utils.js, ./types.js",
+      "code_preview": ""
+    },
+    {
       "name": "main",
       "qualified_name": "src.cli.ts.main",
       "file": "src/cli.ts",
@@ -658,8 +537,8 @@
       "docstring": "",
       "calls": [
         "handleGenerate",
-        "parseFlags",
-        "handleInit"
+        "handleInit",
+        "parseFlags"
       ],
       "called_by": [],
       "cfg_summary": "complexity:5, blocks:13",
@@ -695,8 +574,8 @@
       "signature": "def handleInit(...)",
       "docstring": "",
       "calls": [
-        "expandHome",
-        "writeFileEnsured"
+        "writeFileEnsured",
+        "expandHome"
       ],
       "called_by": [
         "main"
@@ -716,11 +595,11 @@
       "signature": "def handleGenerate(...)",
       "docstring": "",
       "calls": [
-        "parseHelp",
-        "runCommand",
+        "commandDocPath",
+        "writeFileEnsured",
+        "ensureDir",
         "extractUsageTokens",
-        "expandHome",
-        "ensureDir"
+        "loadRegistry"
       ],
       "called_by": [
         "main"
@@ -741,10 +620,10 @@
       "docstring": "",
       "calls": [
         "parseHelp",
+        "writeFileEnsured",
         "extractUsageTokens",
-        "slugify",
-        "runCommand",
-        "buildUsageDoc"
+        "ensureDir",
+        "slugify"
       ],
       "called_by": [
         "handleGenerate"
@@ -785,8 +664,8 @@
       "docstring": "",
       "calls": [],
       "called_by": [
-        "generateCommandDocs",
-        "commandDocPath"
+        "commandDocPath",
+        "generateCommandDocs"
       ],
       "cfg_summary": "complexity:1, blocks:2",
       "dfg_summary": "vars:4, def-use chains:1",
@@ -810,6 +689,127 @@
       "cfg_summary": "complexity:2, blocks:5",
       "dfg_summary": "vars:24, def-use chains:9",
       "dependencies": "node:path, node:child_process, node:fs/promises, yaml, ./config.js",
+      "code_preview": ""
+    },
+    {
+      "name": "renderToolMarkdown",
+      "qualified_name": "src.render.ts.renderToolMarkdown",
+      "file": "src/render.ts",
+      "line": 1,
+      "language": "typescript",
+      "unit_type": "function",
+      "signature": "def renderToolMarkdown(...)",
+      "docstring": "",
+      "calls": [
+        "renderUsageSection",
+        "escapePipes",
+        "formatFlag"
+      ],
+      "called_by": [
+        "handleGenerate"
+      ],
+      "cfg_summary": "complexity:12, blocks:29",
+      "dfg_summary": "vars:32, def-use chains:60",
+      "dependencies": "./types.js",
+      "code_preview": ""
+    },
+    {
+      "name": "renderCommandMarkdown",
+      "qualified_name": "src.render.ts.renderCommandMarkdown",
+      "file": "src/render.ts",
+      "line": 1,
+      "language": "typescript",
+      "unit_type": "function",
+      "signature": "def renderCommandMarkdown(...)",
+      "docstring": "",
+      "calls": [
+        "renderUsageSection",
+        "escapePipes",
+        "formatFlag"
+      ],
+      "called_by": [
+        "generateCommandDocs"
+      ],
+      "cfg_summary": "complexity:11, blocks:26",
+      "dfg_summary": "vars:28, def-use chains:59",
+      "dependencies": "./types.js",
+      "code_preview": ""
+    },
+    {
+      "name": "renderUsageSection",
+      "qualified_name": "src.render.ts.renderUsageSection",
+      "file": "src/render.ts",
+      "line": 1,
+      "language": "typescript",
+      "unit_type": "function",
+      "signature": "def renderUsageSection(...)",
+      "docstring": "",
+      "calls": [
+        "formatTokens"
+      ],
+      "called_by": [
+        "renderToolMarkdown",
+        "renderCommandMarkdown"
+      ],
+      "cfg_summary": "complexity:4, blocks:8",
+      "dfg_summary": "vars:7, def-use chains:13",
+      "dependencies": "./types.js",
+      "code_preview": ""
+    },
+    {
+      "name": "formatTokens",
+      "qualified_name": "src.render.ts.formatTokens",
+      "file": "src/render.ts",
+      "line": 1,
+      "language": "typescript",
+      "unit_type": "function",
+      "signature": "def formatTokens(...)",
+      "docstring": "",
+      "calls": [],
+      "called_by": [
+        "renderUsageSection"
+      ],
+      "cfg_summary": "complexity:1, blocks:2",
+      "dfg_summary": "vars:5, def-use chains:1",
+      "dependencies": "./types.js",
+      "code_preview": ""
+    },
+    {
+      "name": "formatFlag",
+      "qualified_name": "src.render.ts.formatFlag",
+      "file": "src/render.ts",
+      "line": 1,
+      "language": "typescript",
+      "unit_type": "function",
+      "signature": "def formatFlag(...)",
+      "docstring": "",
+      "calls": [],
+      "called_by": [
+        "renderToolMarkdown",
+        "renderCommandMarkdown"
+      ],
+      "cfg_summary": "complexity:2, blocks:6",
+      "dfg_summary": "vars:15, def-use chains:13",
+      "dependencies": "./types.js",
+      "code_preview": ""
+    },
+    {
+      "name": "escapePipes",
+      "qualified_name": "src.render.ts.escapePipes",
+      "file": "src/render.ts",
+      "line": 1,
+      "language": "typescript",
+      "unit_type": "function",
+      "signature": "def escapePipes(...)",
+      "docstring": "",
+      "calls": [],
+      "called_by": [
+        "renderToolMarkdown",
+        "renderCommandMarkdown"
+      ],
+      "cfg_summary": "complexity:1, blocks:2",
+      "dfg_summary": "vars:3, def-use chains:1",
+      "dependencies": "./types.js",
       "code_preview": ""
     }
   ],
