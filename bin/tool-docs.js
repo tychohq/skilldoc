@@ -6973,8 +6973,10 @@ var require_dist = __commonJS((exports) => {
 // src/cli.ts
 var import_yaml2 = __toESM(require_dist(), 1);
 import path3 from "node:path";
+import os2 from "node:os";
 import { spawnSync as spawnSync3 } from "node:child_process";
 import { rm } from "node:fs/promises";
+import { writeFileSync, unlinkSync } from "node:fs";
 import { createHash } from "node:crypto";
 
 // src/config.ts
@@ -8215,7 +8217,7 @@ var HELP_TEXT = `tool-docs
 Usage:
   tool-docs generate [--registry <path>] [--out <path>] [--only <id1,id2>]
   tool-docs distill [--registry <path>] [--docs <path>] [--out <path>] [--only <id1,id2>] [--model <model>]
-  tool-docs refresh [--registry <path>] [--out <path>] [--only <id1,id2>] [--model <model>]
+  tool-docs refresh [--registry <path>] [--out <path>] [--only <id1,id2>] [--model <model>] [--diff]
   tool-docs validate <tool-id> [--skills <path>] [--models <m1,m2>] [--threshold <n>] [--auto-redist]
   tool-docs report [--skills <path>]
   tool-docs init [--registry <path>] [--force]
@@ -8240,6 +8242,7 @@ Options:
   --threshold <n>     Minimum passing score for validate (default: ${DEFAULT_THRESHOLD})
   --auto-redist       Re-run distill with feedback if validation fails
   --force             Overwrite registry on init
+  --diff              Show diff of skill output after refresh
   -h, --help          Show this help
 `;
 var VERSION = "0.2.0";
@@ -8294,7 +8297,7 @@ function parseFlags(args) {
     const arg = args[i];
     if (!arg.startsWith("-"))
       continue;
-    if (arg === "--force" || arg === "--auto-redist") {
+    if (arg === "--force" || arg === "--auto-redist" || arg === "--diff") {
       flags[arg.replace(/^--/, "")] = true;
       continue;
     }
@@ -8588,6 +8591,23 @@ function runCommand(binary, args) {
 function computeHash(text) {
   return createHash("sha256").update(text).digest("hex");
 }
+function computeSkillDiff(oldContent, newContent, label) {
+  const tmpA = path3.join(os2.tmpdir(), `td-diff-a-${Date.now()}`);
+  const tmpB = path3.join(os2.tmpdir(), `td-diff-b-${Date.now()}`);
+  try {
+    writeFileSync(tmpA, oldContent, "utf8");
+    writeFileSync(tmpB, newContent, "utf8");
+    const result = spawnSync3("diff", ["-u", tmpA, tmpB], { encoding: "utf8" });
+    return (result.stdout ?? "").replace(tmpA, `a/${label}`).replace(tmpB, `b/${label}`);
+  } finally {
+    try {
+      unlinkSync(tmpA);
+    } catch {}
+    try {
+      unlinkSync(tmpB);
+    } catch {}
+  }
+}
 async function readStoredHash(toolJsonPath) {
   try {
     const content = await readText(toolJsonPath);
@@ -8611,14 +8631,24 @@ async function getChangedTools(tools, docsDir, runFn) {
   }
   return changed;
 }
+async function readOptionalFile(filePath) {
+  try {
+    return await readText(filePath);
+  } catch {
+    return null;
+  }
+}
 async function handleRefresh(flags, {
   generateFn = handleGenerate,
   distillFn = handleDistill,
-  runFn = runCommand
+  runFn = runCommand,
+  readFileFn = readOptionalFile,
+  diffFn = computeSkillDiff
 } = {}) {
   const registryPath = expandHome(typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY);
   const docsDir = expandHome(typeof flags.out === "string" ? flags.out : DEFAULT_OUT_DIR);
   const only = typeof flags.only === "string" ? new Set(flags.only.split(",").map((v) => v.trim())) : null;
+  const showDiff = flags.diff === true;
   const registry = await loadRegistry(registryPath);
   const tools = registry.tools.filter((tool) => tool.enabled !== false).filter((tool) => only ? only.has(tool.id) : true).sort((a, b) => a.id.localeCompare(b.id));
   const changedIds = await getChangedTools(tools, docsDir, runFn);
@@ -8628,8 +8658,28 @@ async function handleRefresh(flags, {
   }
   console.log(`Detected changes in: ${changedIds.join(", ")}`);
   const onlyFlag = changedIds.join(",");
+  const skillsDir = expandHome(typeof flags.out === "string" ? flags.out : DEFAULT_SKILLS_OUT_DIR);
+  const beforeSkills = {};
+  if (showDiff) {
+    for (const id of changedIds) {
+      beforeSkills[id] = await readFileFn(path3.join(skillsDir, id, "SKILL.md"));
+    }
+  }
   await generateFn({ ...flags, only: onlyFlag });
   await distillFn({ ...flags, only: onlyFlag });
+  if (showDiff) {
+    for (const id of changedIds) {
+      const after = await readFileFn(path3.join(skillsDir, id, "SKILL.md"));
+      const before = beforeSkills[id] ?? "";
+      const afterContent = after ?? "";
+      if (before === afterContent) {
+        console.log(`${id}/SKILL.md: unchanged`);
+        continue;
+      }
+      const diff = diffFn(before, afterContent, `${id}/SKILL.md`);
+      process.stdout.write(diff);
+    }
+  }
 }
 if (__require.main == __require.module) {
   main().catch((error) => {
@@ -8642,5 +8692,6 @@ export {
   handleRefresh,
   handleAutoRedist,
   getChangedTools,
+  computeSkillDiff,
   computeHash
 };

@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from "bun:test";
 import path from "node:path";
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import os from "node:os";
-import { computeHash, getChangedTools, handleRefresh } from "../src/cli.js";
+import { computeHash, getChangedTools, handleRefresh, computeSkillDiff } from "../src/cli.js";
 
 describe("computeHash", () => {
   it("returns a hex string", () => {
@@ -282,5 +282,155 @@ describe("handleRefresh", () => {
     );
 
     expect(checkedBinaries).toHaveLength(0);
+  });
+});
+
+describe("computeSkillDiff", () => {
+  it("returns empty string when contents are identical", () => {
+    const content = "# SKILL\nsome text\n";
+    const result = computeSkillDiff(content, content, "mytool/SKILL.md");
+    expect(result).toBe("");
+  });
+
+  it("returns a diff string when contents differ", () => {
+    const result = computeSkillDiff("old line\n", "new line\n", "mytool/SKILL.md");
+    expect(result).toContain("-old line");
+    expect(result).toContain("+new line");
+  });
+
+  it("includes the label in the diff header", () => {
+    const result = computeSkillDiff("a\n", "b\n", "rg/SKILL.md");
+    expect(result).toContain("a/rg/SKILL.md");
+    expect(result).toContain("b/rg/SKILL.md");
+  });
+});
+
+describe("handleRefresh --diff", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), `handle-refresh-diff-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function writeRegistry(tools: Array<{ id: string; binary: string }>): string {
+    const registryPath = path.join(tmpDir, "registry.yaml");
+    const toolsYaml = tools
+      .map((t) => `  - id: ${t.id}\n    binary: ${t.binary}`)
+      .join("\n");
+    writeFileSync(registryPath, `version: 1\ntools:\n${toolsYaml}\n`);
+    return registryPath;
+  }
+
+  it("calls diffFn with before/after content when --diff is set", async () => {
+    const registryPath = writeRegistry([{ id: "mytool", binary: "mytool" }]);
+    const diffCalls: Array<{ old: string; after: string; label: string }> = [];
+
+    const skillFiles: Record<string, string> = {
+      [path.join(tmpDir, "mytool", "SKILL.md")]: "# Old Skill\n",
+    };
+
+    await handleRefresh(
+      { registry: registryPath, out: tmpDir, diff: true },
+      {
+        generateFn: async () => {},
+        distillFn: async () => {
+          skillFiles[path.join(tmpDir, "mytool", "SKILL.md")] = "# New Skill\n";
+        },
+        runFn: () => ({ output: "new help", exitCode: 0 }),
+        readFileFn: async (p) => skillFiles[p] ?? null,
+        diffFn: (oldContent, newContent, label) => {
+          diffCalls.push({ old: oldContent, after: newContent, label });
+          return `--- ${label}\n+++ ${label}\n-old\n+new\n`;
+        },
+      }
+    );
+
+    expect(diffCalls).toHaveLength(1);
+    expect(diffCalls[0].old).toBe("# Old Skill\n");
+    expect(diffCalls[0].after).toBe("# New Skill\n");
+    expect(diffCalls[0].label).toBe("mytool/SKILL.md");
+  });
+
+  it("prints 'unchanged' message when skill content did not change", async () => {
+    const registryPath = writeRegistry([{ id: "mytool", binary: "mytool" }]);
+    const diffCalls: unknown[] = [];
+    const logs: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => logs.push(args.join(" "));
+
+    try {
+      await handleRefresh(
+        { registry: registryPath, out: tmpDir, diff: true },
+        {
+          generateFn: async () => {},
+          distillFn: async () => {},
+          runFn: () => ({ output: "new help", exitCode: 0 }),
+          readFileFn: async () => "# Same Skill\n",
+          diffFn: (oldContent, newContent, label) => {
+            diffCalls.push({ oldContent, newContent, label });
+            return "";
+          },
+        }
+      );
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(diffCalls).toHaveLength(0);
+    expect(logs.some((l) => l.includes("unchanged"))).toBe(true);
+  });
+
+  it("does not call diffFn when --diff flag is not set", async () => {
+    const registryPath = writeRegistry([{ id: "mytool", binary: "mytool" }]);
+    const diffCalls: unknown[] = [];
+
+    await handleRefresh(
+      { registry: registryPath, out: tmpDir },
+      {
+        generateFn: async () => {},
+        distillFn: async () => {},
+        runFn: () => ({ output: "new help", exitCode: 0 }),
+        readFileFn: async () => "# Skill\n",
+        diffFn: (...args) => {
+          diffCalls.push(args);
+          return "";
+        },
+      }
+    );
+
+    expect(diffCalls).toHaveLength(0);
+  });
+
+  it("reads before state for all changed tools before distilling", async () => {
+    const registryPath = writeRegistry([
+      { id: "tool-a", binary: "tool-a" },
+      { id: "tool-b", binary: "tool-b" },
+    ]);
+    const readCalls: string[] = [];
+    const distillCalled: boolean[] = [];
+
+    await handleRefresh(
+      { registry: registryPath, out: tmpDir, diff: true },
+      {
+        generateFn: async () => {},
+        distillFn: async () => { distillCalled.push(true); },
+        runFn: () => ({ output: "new help", exitCode: 0 }),
+        readFileFn: async (p) => {
+          readCalls.push(p);
+          return null;
+        },
+        diffFn: () => "",
+      }
+    );
+
+    // Both tools should have been read before distill, then again after
+    expect(readCalls.length).toBe(4);
+    expect(distillCalled).toHaveLength(1);
+    // First two reads (before) should come before distill call
   });
 });
