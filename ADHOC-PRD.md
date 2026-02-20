@@ -53,7 +53,7 @@ Pass a tool name, get a skill. No registry, no config, no init.
 
   # Your agent-optimized skill is at ~/.agents/skills/jq/SKILL.md
   ```
-- [ ] Keep the registry explanation further down in the README for batch/custom use cases
+- [x] Keep the registry explanation further down in the README for batch/custom use cases
 - [ ] Update the --help output to show the positional arg usage
 
 ### Phase 4: Update Help Text
