@@ -344,6 +344,58 @@ describe("handleGenerate with binary name", () => {
     const doc = JSON.parse(readFileSync(toolJson, "utf8"));
     expect(doc.displayName).toBe("echo");
   });
+
+  it("produces a complete ToolDoc with all required fields", async () => {
+    await handleGenerate({ out: tmpDir }, "jq");
+    const toolJson = path.join(tmpDir, "jq", "tool.json");
+    const doc = JSON.parse(readFileSync(toolJson, "utf8"));
+    expect(doc.kind).toBe("tool");
+    expect(doc.id).toBe("jq");
+    expect(doc.binary).toBe("jq");
+    expect(doc.displayName).toBe("jq");
+    expect(doc.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(doc.helpArgs).toEqual(["--help"]);
+    expect(typeof doc.helpExitCode).toBe("number");
+    expect(typeof doc.helpHash).toBe("string");
+    expect(doc.helpHash.length).toBe(64); // sha256 hex
+    expect(doc.usage).toBeDefined();
+    expect(Array.isArray(doc.commands)).toBe(true);
+    expect(Array.isArray(doc.options)).toBe(true);
+    expect(Array.isArray(doc.examples)).toBe(true);
+    expect(Array.isArray(doc.env)).toBe(true);
+    expect(Array.isArray(doc.warnings)).toBe(true);
+  });
+
+  it("generates non-empty parsed content for a real binary", async () => {
+    await handleGenerate({ out: tmpDir }, "jq");
+    const toolJson = path.join(tmpDir, "jq", "tool.json");
+    const doc = JSON.parse(readFileSync(toolJson, "utf8"));
+    expect(doc.options.length).toBeGreaterThan(0);
+  });
+
+  it("produces valid YAML matching the JSON output", async () => {
+    const YAML = await import("yaml");
+    await handleGenerate({ out: tmpDir }, "echo");
+    const jsonDoc = JSON.parse(readFileSync(path.join(tmpDir, "echo", "tool.json"), "utf8"));
+    const yamlDoc = YAML.parse(readFileSync(path.join(tmpDir, "echo", "tool.yaml"), "utf8"));
+    expect(yamlDoc.id).toBe(jsonDoc.id);
+    expect(yamlDoc.binary).toBe(jsonDoc.binary);
+    expect(yamlDoc.kind).toBe(jsonDoc.kind);
+  });
+
+  it("produces non-empty markdown for tool.md", async () => {
+    await handleGenerate({ out: tmpDir }, "jq");
+    const content = readFileSync(path.join(tmpDir, "jq", "tool.md"), "utf8");
+    expect(content).toContain("# jq");
+    expect(content.length).toBeGreaterThan(100);
+  });
+
+  it("generates only the specified tool (no extra directories)", async () => {
+    await handleGenerate({ out: tmpDir }, "echo");
+    const { readdirSync } = await import("node:fs");
+    const entries = readdirSync(tmpDir).filter((e) => e !== "index.md");
+    expect(entries).toEqual(["echo"]);
+  });
 });
 
 describe("resolveBinary", () => {
