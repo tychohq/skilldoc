@@ -13,6 +13,13 @@ const DEFAULT_DISTILL_CONFIG_PATH = "~/.agents/tool-docs/distill-config.yaml";
 const GENERATED_MARKER = "generated-from: agent-tool-docs";
 
 /**
+ * Sentinel value returned (in all text fields) by the LLM when raw docs are
+ * empty or lack sufficient content to produce meaningful documentation.
+ * distillTool detects this and skips writing output files.
+ */
+export const INSUFFICIENT_DOCS_SENTINEL = "Insufficient raw docs — re-run generate after fixing parser";
+
+/**
  * Configuration for the distillation prompt template.
  *
  * All fields are optional — defaults match the tuned values from prompt engineering.
@@ -125,6 +132,11 @@ export async function distillTool(options: DistillOptions): Promise<DistillResul
 
   // Call LLM to distill
   const distilled = caller(rawContent, toolId, model, feedback);
+
+  // Detect insufficient-docs sentinel — LLM signals raw docs were too sparse
+  if (distilled.skill.trim() === INSUFFICIENT_DOCS_SENTINEL) {
+    return { toolId, outDir, skipped: true, skipReason: INSUFFICIENT_DOCS_SENTINEL };
+  }
 
   // Write output files
   await ensureDir(outDir);
@@ -243,7 +255,11 @@ Per-file size targets (strict — return less content rather than exceed these):
 - "recipes": ≤ ${sl["recipes.md"]} bytes — task-oriented examples
 - "troubleshooting": ≤ ${sl["troubleshooting.md"]} bytes — known gotchas and common LLM mistakes
 
-**IMPORTANT: Always return valid JSON, even if the raw docs are sparse or show warnings like "No commands detected."** If the raw docs are incomplete, use your general knowledge of the tool to produce useful documentation. Do not explain the issue in prose — just return the JSON.
+**CRITICAL — Anti-hallucination rule:** You MUST ONLY use information explicitly present in the raw docs provided above. Do NOT draw on your training knowledge about this tool. Do NOT invent flags, subcommands, options, or behaviors that are not documented in the raw docs above.
+
+If the raw docs above are empty, contain only parser warnings (e.g. "No commands detected"), or lack sufficient content to produce meaningful documentation, set ALL text fields ("description", "skill", "advanced", "recipes", "troubleshooting") to exactly this string: ${INSUFFICIENT_DOCS_SENTINEL}
+
+Otherwise, always return valid JSON using only the information present in the raw docs.
 
 Return ONLY a JSON object with exactly these keys:
 - "description": one-line description of the tool for the YAML frontmatter (no markdown, plain text only)

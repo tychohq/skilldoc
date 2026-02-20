@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from "bun:test";
 import path from "node:path";
 import { mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from "node:fs";
 import os from "node:os";
-import { parseDistilledOutput, callLLM, distillTool, detectVersion, loadDistillConfig, buildPrompt, DEFAULT_PROMPT_CONFIG, LLMCaller } from "../src/distill.js";
+import { parseDistilledOutput, callLLM, distillTool, detectVersion, loadDistillConfig, buildPrompt, DEFAULT_PROMPT_CONFIG, LLMCaller, INSUFFICIENT_DOCS_SENTINEL } from "../src/distill.js";
 
 // Minimal valid LLM output
 const validJson = JSON.stringify({
@@ -1051,5 +1051,182 @@ describe("DEFAULT_PROMPT_CONFIG", () => {
     const combined = DEFAULT_PROMPT_CONFIG.priorities!.join(" ");
     expect(combined).toContain("gotchas");
     expect(combined).toContain("quoting");
+  });
+});
+
+describe("INSUFFICIENT_DOCS_SENTINEL", () => {
+  it("is a non-empty string", () => {
+    expect(typeof INSUFFICIENT_DOCS_SENTINEL).toBe("string");
+    expect(INSUFFICIENT_DOCS_SENTINEL.length).toBeGreaterThan(0);
+  });
+
+  it("mentions re-running generate after fixing parser", () => {
+    expect(INSUFFICIENT_DOCS_SENTINEL).toContain("re-run generate");
+    expect(INSUFFICIENT_DOCS_SENTINEL).toContain("fixing parser");
+  });
+});
+
+describe("buildPrompt — anti-hallucination", () => {
+  it("contains critical anti-hallucination rule header", () => {
+    const prompt = buildPrompt("raw docs", "tool");
+    expect(prompt).toContain("Anti-hallucination rule");
+  });
+
+  it("prohibits use of training knowledge", () => {
+    const prompt = buildPrompt("raw docs", "tool");
+    expect(prompt).toContain("Do NOT draw on your training knowledge");
+  });
+
+  it("prohibits inventing flags or behaviors not in raw docs", () => {
+    const prompt = buildPrompt("raw docs", "tool");
+    expect(prompt).toContain("Do NOT invent flags");
+  });
+
+  it("instructs LLM to only use information present in raw docs", () => {
+    const prompt = buildPrompt("raw docs", "tool");
+    expect(prompt).toContain("ONLY use information explicitly present in the raw docs");
+  });
+
+  it("instructs LLM to return sentinel when docs are empty or contain parser warnings", () => {
+    const prompt = buildPrompt("raw docs", "tool");
+    expect(prompt).toContain(INSUFFICIENT_DOCS_SENTINEL);
+    expect(prompt).toContain("No commands detected");
+  });
+
+  it("instructs LLM to set ALL text fields to the sentinel when docs are insufficient", () => {
+    const prompt = buildPrompt("raw docs", "tool");
+    // Verify all five fields are mentioned near the sentinel instruction
+    expect(prompt).toContain('"description"');
+    expect(prompt).toContain('"skill"');
+    expect(prompt).toContain('"advanced"');
+    expect(prompt).toContain('"recipes"');
+    expect(prompt).toContain('"troubleshooting"');
+  });
+
+  it("does NOT instruct LLM to use general knowledge when docs are incomplete", () => {
+    const prompt = buildPrompt("raw docs", "tool");
+    expect(prompt).not.toContain("use your general knowledge");
+    expect(prompt).not.toContain("general knowledge of the tool");
+  });
+});
+
+describe("distillTool — insufficient docs sentinel handling", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), `distill-sentinel-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function setupDocs(toolId: string, content = "# tool\n\nSome docs") {
+    const docsDir = path.join(tmpDir, "docs");
+    const toolDir = path.join(docsDir, toolId);
+    mkdirSync(toolDir, { recursive: true });
+    writeFileSync(path.join(toolDir, "tool.md"), content);
+    return docsDir;
+  }
+
+  it("skips and returns sentinel skipReason when LLM returns sentinel in skill field", async () => {
+    const docsDir = setupDocs("mytool");
+    const outDir = path.join(tmpDir, "skills", "mytool");
+
+    const mockLLM: LLMCaller = () => ({
+      description: INSUFFICIENT_DOCS_SENTINEL,
+      skill: INSUFFICIENT_DOCS_SENTINEL,
+      advanced: INSUFFICIENT_DOCS_SENTINEL,
+      recipes: INSUFFICIENT_DOCS_SENTINEL,
+      troubleshooting: INSUFFICIENT_DOCS_SENTINEL,
+    });
+
+    const result = await distillTool({
+      toolId: "mytool",
+      binary: "mytool",
+      docsDir,
+      outDir,
+      model: "test-model",
+      llmCaller: mockLLM,
+    });
+
+    expect(result.skipped).toBe(true);
+    expect(result.skipReason).toBe(INSUFFICIENT_DOCS_SENTINEL);
+  });
+
+  it("does not write output files when LLM returns sentinel", async () => {
+    const docsDir = setupDocs("mytool");
+    const outDir = path.join(tmpDir, "skills", "mytool");
+
+    const mockLLM: LLMCaller = () => ({
+      description: INSUFFICIENT_DOCS_SENTINEL,
+      skill: INSUFFICIENT_DOCS_SENTINEL,
+      advanced: INSUFFICIENT_DOCS_SENTINEL,
+      recipes: INSUFFICIENT_DOCS_SENTINEL,
+      troubleshooting: INSUFFICIENT_DOCS_SENTINEL,
+    });
+
+    await distillTool({
+      toolId: "mytool",
+      binary: "mytool",
+      docsDir,
+      outDir,
+      model: "test-model",
+      llmCaller: mockLLM,
+    });
+
+    expect(existsSync(path.join(outDir, "SKILL.md"))).toBe(false);
+    expect(existsSync(path.join(outDir, "docs", "advanced.md"))).toBe(false);
+  });
+
+  it("proceeds normally when LLM returns real content (not sentinel)", async () => {
+    const docsDir = setupDocs("mytool");
+    const outDir = path.join(tmpDir, "skills", "mytool");
+
+    const mockLLM: LLMCaller = () => ({
+      description: "A real tool",
+      skill: "# mytool\n\nQuick ref",
+      advanced: "## Advanced",
+      recipes: "## Recipes",
+      troubleshooting: "## Troubleshooting",
+    });
+
+    const result = await distillTool({
+      toolId: "mytool",
+      binary: "mytool",
+      docsDir,
+      outDir,
+      model: "test-model",
+      llmCaller: mockLLM,
+    });
+
+    expect(result.skipped).toBeUndefined();
+    expect(existsSync(path.join(outDir, "SKILL.md"))).toBe(true);
+  });
+
+  it("sentinel detection is whitespace-tolerant (trims before comparing)", async () => {
+    const docsDir = setupDocs("mytool");
+    const outDir = path.join(tmpDir, "skills", "mytool");
+
+    const mockLLM: LLMCaller = () => ({
+      description: INSUFFICIENT_DOCS_SENTINEL,
+      skill: `  ${INSUFFICIENT_DOCS_SENTINEL}  `,
+      advanced: INSUFFICIENT_DOCS_SENTINEL,
+      recipes: INSUFFICIENT_DOCS_SENTINEL,
+      troubleshooting: INSUFFICIENT_DOCS_SENTINEL,
+    });
+
+    const result = await distillTool({
+      toolId: "mytool",
+      binary: "mytool",
+      docsDir,
+      outDir,
+      model: "test-model",
+      llmCaller: mockLLM,
+    });
+
+    expect(result.skipped).toBe(true);
+    expect(result.skipReason).toBe(INSUFFICIENT_DOCS_SENTINEL);
   });
 });
