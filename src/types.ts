@@ -39,6 +39,7 @@ export type ToolDoc = {
   generatedAt: string;
   helpArgs: string[];
   helpExitCode: number | null;
+  helpHash?: string;
   usage: UsageDoc;
   commands: CommandSummary[];
   options: OptionDoc[];

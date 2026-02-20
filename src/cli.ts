@@ -1,12 +1,13 @@
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import YAML from "yaml";
 import { loadRegistry } from "./config.js";
 import { parseHelp } from "./parser.js";
 import { renderCommandMarkdown, renderToolMarkdown } from "./render.js";
 import { buildUsageDoc, extractUsageTokens } from "./usage.js";
-import { expandHome, ensureDir, writeFileEnsured } from "./utils.js";
+import { expandHome, ensureDir, writeFileEnsured, readText } from "./utils.js";
 import { CommandDoc, CommandSummary, ToolDoc } from "./types.js";
 import { distillTool, DEFAULT_SKILLS_DIR, DEFAULT_DOCS_DIR, DEFAULT_MODEL, DistillOptions, DistillResult } from "./distill.js";
 import {
@@ -30,6 +31,7 @@ const HELP_TEXT = `tool-docs
 Usage:
   tool-docs generate [--registry <path>] [--out <path>] [--only <id1,id2>]
   tool-docs distill [--registry <path>] [--docs <path>] [--out <path>] [--only <id1,id2>] [--model <model>]
+  tool-docs refresh [--registry <path>] [--out <path>] [--only <id1,id2>] [--model <model>]
   tool-docs validate <tool-id> [--skills <path>] [--models <m1,m2>] [--threshold <n>] [--auto-redist]
   tool-docs report [--skills <path>]
   tool-docs init [--registry <path>] [--force]
@@ -38,6 +40,7 @@ Usage:
 Commands:
   generate   Generate markdown + JSON docs for tools in the registry
   distill    Distill raw docs into agent-optimized skills (SKILL.md + docs/)
+  refresh    Re-run generate + distill for tools whose --help output has changed
   validate   Test skill quality using LLM-based scenario evaluation
   report     Show aggregate quality report across all validated tools
   init       Create a starter registry file
@@ -80,6 +83,11 @@ async function main(): Promise<void> {
 
   if (command === "distill") {
     await handleDistill(flags);
+    return;
+  }
+
+  if (command === "refresh") {
+    await handleRefresh(flags);
     return;
   }
 
@@ -352,6 +360,7 @@ async function handleGenerate(flags: Record<string, string | boolean>): Promise<
       generatedAt: new Date().toISOString(),
       helpArgs,
       helpExitCode: helpResult.exitCode,
+      helpHash: computeHash(helpResult.output),
       usage,
       commands,
       options,
@@ -481,6 +490,78 @@ function runCommand(binary: string, args: string[]): { output: string; exitCode:
     output: `${result.stdout ?? ""}${result.stderr ?? ""}`,
     exitCode: result.status ?? null,
   };
+}
+
+export function computeHash(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
+}
+
+async function readStoredHash(toolJsonPath: string): Promise<string | null> {
+  try {
+    const content = await readText(toolJsonPath);
+    const doc = JSON.parse(content) as { helpHash?: string };
+    return doc.helpHash ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getChangedTools(
+  tools: Array<{ id: string; binary: string; helpArgs?: string[] }>,
+  docsDir: string,
+  runFn: (binary: string, args: string[]) => { output: string; exitCode: number | null; error?: string }
+): Promise<string[]> {
+  const changed: string[] = [];
+  for (const tool of tools) {
+    const helpArgs = tool.helpArgs ?? ["--help"];
+    const result = runFn(tool.binary, helpArgs);
+    const currentHash = computeHash(result.output);
+    const toolJsonPath = path.join(docsDir, tool.id, "tool.json");
+    const storedHash = await readStoredHash(toolJsonPath);
+    if (currentHash !== storedHash) {
+      changed.push(tool.id);
+    }
+  }
+  return changed;
+}
+
+export async function handleRefresh(
+  flags: Record<string, string | boolean>,
+  {
+    generateFn = handleGenerate,
+    distillFn = handleDistill,
+    runFn = runCommand,
+  }: {
+    generateFn?: (flags: Record<string, string | boolean>) => Promise<void>;
+    distillFn?: (flags: Record<string, string | boolean>) => Promise<void>;
+    runFn?: (binary: string, args: string[]) => { output: string; exitCode: number | null; error?: string };
+  } = {}
+): Promise<void> {
+  const registryPath = expandHome(
+    typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY
+  );
+  const docsDir = expandHome(
+    typeof flags.out === "string" ? flags.out : DEFAULT_OUT_DIR
+  );
+  const only = typeof flags.only === "string" ? new Set(flags.only.split(",").map((v) => v.trim())) : null;
+
+  const registry = await loadRegistry(registryPath);
+  const tools = registry.tools
+    .filter((tool) => tool.enabled !== false)
+    .filter((tool) => (only ? only.has(tool.id) : true))
+    .sort((a, b) => a.id.localeCompare(b.id));
+
+  const changedIds = await getChangedTools(tools, docsDir, runFn);
+
+  if (changedIds.length === 0) {
+    console.log("No changes detected.");
+    return;
+  }
+
+  console.log(`Detected changes in: ${changedIds.join(", ")}`);
+  const onlyFlag = changedIds.join(",");
+  await generateFn({ ...flags, only: onlyFlag });
+  await distillFn({ ...flags, only: onlyFlag });
 }
 
 if ((import.meta as { main?: boolean }).main) {

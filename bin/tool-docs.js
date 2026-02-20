@@ -1,4 +1,4 @@
-#\!/usr/bin/env node
+#!/usr/bin/env node
 import { createRequire } from "node:module";
 var __create = Object.create;
 var __getProtoOf = Object.getPrototypeOf;
@@ -6975,6 +6975,7 @@ var import_yaml2 = __toESM(require_dist(), 1);
 import path3 from "node:path";
 import { spawnSync as spawnSync3 } from "node:child_process";
 import { rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
 
 // src/config.ts
 var import_yaml = __toESM(require_dist(), 1);
@@ -7860,7 +7861,7 @@ function addMetadataHeader(skillContent, toolId, binary, description, generatedA
 // src/validate.ts
 import path2 from "node:path";
 import { existsSync as existsSync2 } from "node:fs";
-import { readFile as readFile3 } from "node:fs/promises";
+import { readFile as readFile3, readdir } from "node:fs/promises";
 import { spawnSync as spawnSync2 } from "node:child_process";
 var DEFAULT_THRESHOLD = 9;
 var DEFAULT_VALIDATION_MODELS = ["claude-sonnet-4-6", "claude-opus-4-6"];
@@ -8137,6 +8138,73 @@ Please improve the skill to address these gaps.`);
   return lines.join(`
 `);
 }
+var VALIDATION_REPORT_FILE = "validation-report.json";
+async function saveValidationReport(report, skillsDir) {
+  const reportPath = path2.join(skillsDir, report.toolId, VALIDATION_REPORT_FILE);
+  await writeFileEnsured(reportPath, JSON.stringify(report, null, 2));
+  return reportPath;
+}
+async function loadQualityReports(skillsDir) {
+  let entries = [];
+  let toolDirs = [];
+  try {
+    const dirents = await readdir(skillsDir, { withFileTypes: true });
+    toolDirs = dirents.filter((d) => d.isDirectory()).map((d) => d.name);
+  } catch {
+    return { entries: [], skillsDir, generatedAt: new Date().toISOString() };
+  }
+  for (const toolId of toolDirs) {
+    const reportPath = path2.join(skillsDir, toolId, VALIDATION_REPORT_FILE);
+    if (!existsSync2(reportPath))
+      continue;
+    try {
+      const raw = await readFile3(reportPath, "utf8");
+      const parsed = JSON.parse(raw);
+      entries.push({
+        toolId: parsed.toolId,
+        overallAverageScore: parsed.overallAverageScore,
+        models: parsed.models,
+        passed: parsed.passed,
+        threshold: parsed.threshold,
+        generatedAt: parsed.generatedAt
+      });
+    } catch {}
+  }
+  entries = entries.sort((a, b) => a.toolId.localeCompare(b.toolId));
+  return { entries, skillsDir, generatedAt: new Date().toISOString() };
+}
+function formatQualityReport(report) {
+  const lines = [];
+  if (report.entries.length === 0) {
+    lines.push("No validation reports found.");
+    lines.push(`Run 'tool-docs validate <tool-id>' to generate reports.`);
+    return lines.join(`
+`);
+  }
+  const passing = report.entries.filter((e) => e.passed).length;
+  const failing = report.entries.length - passing;
+  lines.push(`Quality Report — ${report.entries.length} tool(s)`);
+  lines.push("");
+  const colTool = Math.max(4, ...report.entries.map((e) => e.toolId.length));
+  const header = `${"Tool".padEnd(colTool)}  ${"Score".padStart(6)}  ${"Status"}`;
+  lines.push(header);
+  lines.push("-".repeat(header.length));
+  for (const entry of report.entries) {
+    const score = `${entry.overallAverageScore.toFixed(1)}/10`.padStart(6);
+    const status = entry.passed ? "PASS" : "FAIL";
+    lines.push(`${entry.toolId.padEnd(colTool)}  ${score}  ${status}`);
+  }
+  lines.push("-".repeat(header.length));
+  const overallAvg = report.entries.reduce((sum, e) => sum + e.overallAverageScore, 0) / report.entries.length;
+  const summaryScore = `${overallAvg.toFixed(1)}/10`.padStart(6);
+  lines.push(`${"Total".padEnd(colTool)}  ${summaryScore}  ${passing}/${report.entries.length} PASS`);
+  if (failing > 0) {
+    lines.push("");
+    lines.push(`${failing} tool(s) below threshold — run 'tool-docs validate <tool-id> --auto-redist' to improve.`);
+  }
+  return lines.join(`
+`);
+}
 
 // src/cli.ts
 var DEFAULT_REGISTRY = "~/.agents/tool-docs/registry.yaml";
@@ -8147,14 +8215,18 @@ var HELP_TEXT = `tool-docs
 Usage:
   tool-docs generate [--registry <path>] [--out <path>] [--only <id1,id2>]
   tool-docs distill [--registry <path>] [--docs <path>] [--out <path>] [--only <id1,id2>] [--model <model>]
+  tool-docs refresh [--registry <path>] [--out <path>] [--only <id1,id2>] [--model <model>]
   tool-docs validate <tool-id> [--skills <path>] [--models <m1,m2>] [--threshold <n>] [--auto-redist]
+  tool-docs report [--skills <path>]
   tool-docs init [--registry <path>] [--force]
   tool-docs --help
 
 Commands:
   generate   Generate markdown + JSON docs for tools in the registry
   distill    Distill raw docs into agent-optimized skills (SKILL.md + docs/)
+  refresh    Re-run generate + distill for tools whose --help output has changed
   validate   Test skill quality using LLM-based scenario evaluation
+  report     Show aggregate quality report across all validated tools
   init       Create a starter registry file
 
 Options:
@@ -8191,6 +8263,10 @@ async function main() {
     await handleDistill(flags);
     return;
   }
+  if (command === "refresh") {
+    await handleRefresh(flags);
+    return;
+  }
   if (command === "validate") {
     const subArgs = args.slice(1);
     const toolId = subArgs.find((a) => !a.startsWith("-"));
@@ -8199,6 +8275,10 @@ async function main() {
       process.exit(1);
     }
     await handleValidate(toolId, flags);
+    return;
+  }
+  if (command === "report") {
+    await handleReport(flags);
     return;
   }
   if (command === "--version" || command === "-v") {
@@ -8315,6 +8395,7 @@ async function handleValidate(toolId, flags) {
   try {
     const report = await validateSkillMultiModel({ toolId, skillsDir, models, threshold });
     console.log(formatMultiModelReport(report));
+    await saveValidationReport(report, skillsDir);
     if (!report.passed && autoRedist) {
       await handleAutoRedist(toolId, buildValidationFeedback(report), flags);
     }
@@ -8326,7 +8407,17 @@ async function handleValidate(toolId, flags) {
     process.exit(1);
   }
 }
-async function handleAutoRedist(toolId, feedback, flags) {
+async function handleReport(flags) {
+  const skillsDir = expandHome(typeof flags.skills === "string" ? flags.skills : DEFAULT_SKILLS_OUT_DIR);
+  try {
+    const report = await loadQualityReports(skillsDir);
+    console.log(formatQualityReport(report));
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+}
+async function handleAutoRedist(toolId, feedback, flags, distillFn = distillTool) {
   const registryPath = expandHome(typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY);
   const docsDir = expandHome(typeof flags.docs === "string" ? flags.docs : DEFAULT_DOCS_DIR);
   const model = typeof flags.model === "string" ? flags.model : DEFAULT_MODEL;
@@ -8342,7 +8433,7 @@ auto-redist: re-distilling ${toolId} with validation feedback...
       return;
     }
     const outDir = path3.join(skillsDir, toolId);
-    const result = await distillTool({ toolId, binary: tool.binary, docsDir, outDir, model, feedback });
+    const result = await distillFn({ toolId, binary: tool.binary, docsDir, outDir, model, feedback });
     if (result.skipped) {
       console.log(`auto-redist skipped: ${result.skipReason}`);
     } else {
@@ -8393,6 +8484,7 @@ async function handleGenerate(flags) {
       generatedAt: new Date().toISOString(),
       helpArgs,
       helpExitCode: helpResult.exitCode,
+      helpHash: computeHash(helpResult.output),
       usage,
       commands,
       options,
@@ -8493,6 +8585,52 @@ function runCommand(binary, args) {
     exitCode: result.status ?? null
   };
 }
+function computeHash(text) {
+  return createHash("sha256").update(text).digest("hex");
+}
+async function readStoredHash(toolJsonPath) {
+  try {
+    const content = await readText(toolJsonPath);
+    const doc = JSON.parse(content);
+    return doc.helpHash ?? null;
+  } catch {
+    return null;
+  }
+}
+async function getChangedTools(tools, docsDir, runFn) {
+  const changed = [];
+  for (const tool of tools) {
+    const helpArgs = tool.helpArgs ?? ["--help"];
+    const result = runFn(tool.binary, helpArgs);
+    const currentHash = computeHash(result.output);
+    const toolJsonPath = path3.join(docsDir, tool.id, "tool.json");
+    const storedHash = await readStoredHash(toolJsonPath);
+    if (currentHash !== storedHash) {
+      changed.push(tool.id);
+    }
+  }
+  return changed;
+}
+async function handleRefresh(flags, {
+  generateFn = handleGenerate,
+  distillFn = handleDistill,
+  runFn = runCommand
+} = {}) {
+  const registryPath = expandHome(typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY);
+  const docsDir = expandHome(typeof flags.out === "string" ? flags.out : DEFAULT_OUT_DIR);
+  const only = typeof flags.only === "string" ? new Set(flags.only.split(",").map((v) => v.trim())) : null;
+  const registry = await loadRegistry(registryPath);
+  const tools = registry.tools.filter((tool) => tool.enabled !== false).filter((tool) => only ? only.has(tool.id) : true).sort((a, b) => a.id.localeCompare(b.id));
+  const changedIds = await getChangedTools(tools, docsDir, runFn);
+  if (changedIds.length === 0) {
+    console.log("No changes detected.");
+    return;
+  }
+  console.log(`Detected changes in: ${changedIds.join(", ")}`);
+  const onlyFlag = changedIds.join(",");
+  await generateFn({ ...flags, only: onlyFlag });
+  await distillFn({ ...flags, only: onlyFlag });
+}
 if (__require.main == __require.module) {
   main().catch((error) => {
     console.error(error instanceof Error ? error.message : String(error));
@@ -8500,5 +8638,9 @@ if (__require.main == __require.module) {
   });
 }
 export {
-  parseFlags
+  parseFlags,
+  handleRefresh,
+  handleAutoRedist,
+  getChangedTools,
+  computeHash
 };
