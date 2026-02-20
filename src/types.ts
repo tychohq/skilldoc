@@ -3,6 +3,8 @@ export type Registry = {
   tools: RegistryTool[];
 };
 
+export type ToolCategory = "cli" | "sdk" | "api";
+
 export type RegistryTool = {
   id: string;
   binary: string;
@@ -12,6 +14,9 @@ export type RegistryTool = {
   commandHelpArgs?: string[];
   env?: string[];
   enabled?: boolean;
+  category?: ToolCategory;
+  homepage?: string;
+  useCases?: string[];
 };
 
 export type UsageDoc = {

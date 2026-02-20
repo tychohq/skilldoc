@@ -107,7 +107,7 @@ async function handleInit(flags: Record<string, string | boolean>): Promise<void
   );
   const force = flags.force === true;
 
-  const sample = `version: 1\ntools:\n  - id: git\n    binary: git\n    displayName: Git\n    helpArgs: ["-h"]\n    commandHelpArgs: ["help", "{command}"]\n  - id: rg\n    binary: rg\n    displayName: ripgrep\n    helpArgs: ["--help"]\n`;
+  const sample = `version: 1\ntools:\n  - id: git\n    binary: git\n    displayName: Git\n    category: cli\n    homepage: https://git-scm.com\n    helpArgs: ["-h"]\n    commandHelpArgs: ["help", "{command}"]\n    useCases:\n      - version control and branching\n      - code review and collaboration\n  - id: rg\n    binary: rg\n    displayName: ripgrep\n    category: cli\n    homepage: https://github.com/BurntSushi/ripgrep\n    helpArgs: ["--help"]\n    useCases:\n      - fast file content search\n      - recursive grep with gitignore support\n`;
 
   if (!force) {
     try {
