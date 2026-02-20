@@ -63,7 +63,7 @@ The SKILL.md is the entry point. The `docs/` folder has deeper sections that age
 - [x] Validation sends the generated SKILL.md to multiple models (Sonnet, Opus, Codex, Gemini if available) with test prompts like "Using only this documentation, write a command to [common task]"
 - [x] Each model scores the skill on: (1) Could it complete the task? (2) Was the command correct? (3) Did it hallucinate any flags/options? (4) Was there anything missing it needed?
 - [x] Aggregate scores into a quality report per tool (target: 9/10 average across models)
-- [ ] If score < 9/10, automatically re-run distill with feedback from the validation failures
+- [x] If score < 9/10, automatically re-run distill with feedback from the validation failures
 
 ### Phase 5: Iteration & Polish
 - [ ] Add `tool-docs refresh [--only <ids>]` that re-runs generate + distill for tools whose `--help` output has changed
