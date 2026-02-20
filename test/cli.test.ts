@@ -1157,6 +1157,25 @@ describe("handleRun", () => {
 
     expect(logs.some((l) => l.includes("--auto-redist"))).toBe(false);
   });
+
+  it("prints score and suggests --auto-redist on validation failure", async () => {
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: unknown[]) => { logs.push(args.join(" ")); };
+
+    const deps = makeDeps({
+      validateFn: async ({ toolId }) => makeFailingReport(toolId),
+    });
+
+    try {
+      await handleRun("mytool", { skills: path.join(tmpDir, "skills") }, deps);
+    } finally {
+      console.log = origLog;
+    }
+
+    expect(logs.some((l) => l.includes("Validation failed") && l.includes("6.0"))).toBe(true);
+    expect(logs.some((l) => l.includes("--auto-redist"))).toBe(true);
+  });
 });
 
 describe("bin/tool-docs.js run (integration)", () => {

@@ -299,6 +299,10 @@ async function handleValidate(toolId: string, flags: Record<string, string | boo
     }
 
     if (!report.passed) {
+      console.log(`\nValidation failed (score: ${report.overallAverageScore.toFixed(1)}, threshold: ${threshold})`);
+      if (!autoRedist) {
+        console.log(`Tip: re-run with --auto-redist to improve: tool-docs validate ${toolId} --auto-redist`);
+      }
       process.exit(1);
     }
   } catch (err) {

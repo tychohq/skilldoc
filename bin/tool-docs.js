@@ -8660,6 +8660,11 @@ async function handleValidate(toolId, flags) {
       await handleAutoRedist(toolId, buildValidationFeedback(report), flags);
     }
     if (!report.passed) {
+      console.log(`
+Validation failed (score: ${report.overallAverageScore.toFixed(1)}, threshold: ${threshold})`);
+      if (!autoRedist) {
+        console.log(`Tip: re-run with --auto-redist to improve: tool-docs validate ${toolId} --auto-redist`);
+      }
       process.exit(1);
     }
   } catch (err) {
