@@ -7036,6 +7036,19 @@ function normalizeTool(tool) {
   if (!tool.binary || typeof tool.binary !== "string") {
     throw new Error(`Registry tool ${tool.id} missing binary.`);
   }
+  if (tool.category !== undefined) {
+    if (tool.category !== "cli" && tool.category !== "sdk" && tool.category !== "api") {
+      throw new Error(`Registry tool ${tool.id} has invalid category "${tool.category}". Must be cli, sdk, or api.`);
+    }
+  }
+  if (tool.homepage !== undefined && typeof tool.homepage !== "string") {
+    throw new Error(`Registry tool ${tool.id} homepage must be a string.`);
+  }
+  if (tool.useCases !== undefined) {
+    if (!Array.isArray(tool.useCases) || tool.useCases.some((u) => typeof u !== "string")) {
+      throw new Error(`Registry tool ${tool.id} useCases must be an array of strings.`);
+    }
+  }
   return {
     enabled: true,
     helpArgs: ["--help"],
@@ -7920,12 +7933,22 @@ tools:
   - id: git
     binary: git
     displayName: Git
+    category: cli
+    homepage: https://git-scm.com
     helpArgs: ["-h"]
     commandHelpArgs: ["help", "{command}"]
+    useCases:
+      - version control and branching
+      - code review and collaboration
   - id: rg
     binary: rg
     displayName: ripgrep
+    category: cli
+    homepage: https://github.com/BurntSushi/ripgrep
     helpArgs: ["--help"]
+    useCases:
+      - fast file content search
+      - recursive grep with gitignore support
 `;
   if (!force) {
     try {
