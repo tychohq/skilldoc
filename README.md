@@ -39,28 +39,22 @@ SKILL.md    →  drop into AGENTS.md, CLAUDE.md, OpenClaw skills
 git clone https://github.com/BrennerSpear/agent-tool-docs && cd agent-tool-docs
 bun install && bun run build
 
-# Create a starter registry with common tools
-tool-docs init
-
-# Pick a tool — let's generate docs for jq
-tool-docs generate --only jq
-# → Extracts --help output into ~/.agents/docs/tool-docs/jq/
-
-# Distill raw docs into a ~2KB agent-optimized skill
-tool-docs distill --only jq
-# → Writes ~/.agents/skills/jq/SKILL.md
-
-# Validate: can LLMs actually use the generated docs?
+# Generate a skill for jq (or any CLI tool)
+tool-docs generate jq
+tool-docs distill jq
 tool-docs validate jq
-# → Runs real tasks against multiple models, scores 9/10+
+
+# Your agent-optimized skill is at ~/.agents/skills/jq/SKILL.md
 ```
 
-Now drop `~/.agents/skills/jq/SKILL.md` into your `AGENTS.md`, `CLAUDE.md`, or OpenClaw skills directory. Your agent has verified jq docs instead of guessing from training data.
+Drop `~/.agents/skills/jq/SKILL.md` into your `AGENTS.md`, `CLAUDE.md`, or OpenClaw skills directory. Your agent has verified docs instead of guessing from training data.
 
-**Want to generate skills for everything in the registry at once?**
+**Want to generate skills for many tools at once?** Use the [registry](#configuration):
 
 ```bash
-tool-docs generate && tool-docs distill
+tool-docs init        # create a starter registry with common tools
+tool-docs generate    # extract docs for all registry tools
+tool-docs distill     # distill all into agent-optimized skills
 ```
 
 ---
@@ -264,12 +258,15 @@ Run `tool-docs generate --only jq` to process a single tool.
 
 ## Contributing
 
-### Add a tool to the registry
+### Add a tool
 
-1. Add an entry to `~/.agents/tool-docs/registry.yaml`
-2. Run `tool-docs generate --only <id>`
-3. Run `tool-docs distill --only <id>`
-4. Run `tool-docs validate <id>` — score must be ≥ 9/10
+```bash
+tool-docs generate <binary>
+tool-docs distill <binary>
+tool-docs validate <binary>   # score must be ≥ 9/10
+```
+
+Or add an entry to `~/.agents/tool-docs/registry.yaml` for batch operations with custom `helpArgs`.
 
 ### Run tests
 
