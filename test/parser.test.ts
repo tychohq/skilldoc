@@ -6,6 +6,7 @@ const gitHelp = readFileSync(new URL("./fixtures/git-help.txt", import.meta.url)
 const rgHelp = readFileSync(new URL("./fixtures/rg-help.txt", import.meta.url), "utf8");
 const ghHelp = readFileSync(new URL("./fixtures/gh-help.txt", import.meta.url), "utf8");
 const vercelHelp = readFileSync(new URL("./fixtures/vercel-help.txt", import.meta.url), "utf8");
+const ffmpegHelp = readFileSync(new URL("./fixtures/ffmpeg-help.txt", import.meta.url), "utf8");
 
 describe("parseHelp", () => {
   it("extracts usage from git help", () => {
@@ -251,6 +252,31 @@ GLOBAL OPTIONS
 `.trim();
     const parsed = parseHelp(input);
     expect(parsed.warnings).not.toContain("No options detected.");
+  });
+});
+
+describe("parseHelp — ffmpeg-style lowercase usage line", () => {
+  it("extracts usage from inline lowercase 'usage:' line", () => {
+    const input = `Universal media converter
+usage: ffmpeg [options] [[infile options] -i infile]... {[outfile options] outfile}...`;
+    const parsed = parseHelp(input);
+    expect(parsed.usageLines.length).toBeGreaterThan(0);
+    expect(parsed.usageLines[0]).toBe(
+      "ffmpeg [options] [[infile options] -i infile]... {[outfile options] outfile}..."
+    );
+  });
+
+  it("extracts usage from ffmpeg fixture", () => {
+    const parsed = parseHelp(ffmpegHelp);
+    expect(parsed.usageLines.length).toBeGreaterThan(0);
+    expect(parsed.usageLines[0]).toContain("ffmpeg");
+  });
+
+  it("does not confuse preamble text before usage: line as usage", () => {
+    const input = `Universal media converter
+usage: ffmpeg [options]...`;
+    const parsed = parseHelp(input);
+    expect(parsed.usageLines).not.toContain("Universal media converter");
   });
 });
 
