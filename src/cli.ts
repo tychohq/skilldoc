@@ -185,10 +185,11 @@ export function parseFlags(args: string[]): Record<string, string | boolean> {
   return flags;
 }
 
-async function handleInit(flags: Record<string, string | boolean>): Promise<void> {
+export async function handleInit(flags: Record<string, string | boolean>): Promise<void> {
   const registryPath = expandHome(
     typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY
   );
+  const displayPath = typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY;
   const force = flags.force === true;
 
   const sample = `version: 1\ntools:\n  - id: git\n    binary: git\n    displayName: Git\n    category: cli\n    homepage: https://git-scm.com\n    helpArgs: ["-h"]\n    commandHelpArgs: ["help", "{command}"]\n    useCases:\n      - version control and branching\n      - code review and collaboration\n  - id: rg\n    binary: rg\n    displayName: ripgrep\n    category: cli\n    homepage: https://github.com/BurntSushi/ripgrep\n    helpArgs: ["--help"]\n    useCases:\n      - fast file content search\n      - recursive grep with gitignore support\n`;
@@ -205,7 +206,17 @@ async function handleInit(flags: Record<string, string | boolean>): Promise<void
   }
 
   await writeFileEnsured(registryPath, sample);
-  console.log(`Wrote registry: ${registryPath}`);
+
+  const lines = [
+    `Created: ${displayPath}`,
+    `  Tools: git, rg (2 example entries)`,
+    ``,
+    `Next steps:`,
+    `  1. Edit the registry to add your tools`,
+    `  2. Run the pipeline:`,
+    `     tool-docs run --registry ${displayPath}`,
+  ];
+  console.log(lines.join("\n"));
 }
 
 export async function handleDistill(

@@ -74,15 +74,15 @@ Pass a tool name, get a skill. No registry, no config, no init.
 - [x] Add `tool-docs run <tool>` command that runs the full pipeline: generate → distill → validate
 - [x] On success, print the path to the generated SKILL.md and the validation score
 - [x] On validation failure, print the score and suggest `--auto-redist` to retry
-- [ ] Also support batch mode: `tool-docs run` (no arg) runs the full pipeline for all registry tools
-- [ ] Update help text and README to show `run` as the recommended first command:
+- [x] Also support batch mode: `tool-docs run` (no arg) runs the full pipeline for all registry tools
+- [x] Update help text and README to show `run` as the recommended first command:
   ```
   tool-docs run jq    # generate + distill + validate in one shot
   ```
 
 ### Phase 6: Clarify `init`
 
-- [ ] Update `tool-docs init` help text to explain what it creates: "Creates a starter registry file at ~/.agents/tool-docs/registry.yaml with example tool entries (git, ripgrep). Use this to configure batch generation for multiple tools."
+- [x] Update `tool-docs init` help text to explain what it creates: "Creates a starter registry file at ~/.agents/tool-docs/registry.yaml with example tool entries (git, ripgrep). Use this to configure batch generation for multiple tools."
 - [ ] When `init` runs, print a clear message showing what was created AND what to do next:
   ```
   Created registry: ~/.agents/tool-docs/registry.yaml
