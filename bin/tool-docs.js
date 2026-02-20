@@ -8671,6 +8671,10 @@ async function handleGenerate(flags, binaryName) {
   const outDir = expandHome(typeof flags.out === "string" ? flags.out : DEFAULT_OUT_DIR);
   let tools;
   if (binaryName) {
+    if (!resolveBinary(binaryName)) {
+      console.error(`Error: binary "${binaryName}" not found on PATH`);
+      process.exit(1);
+    }
     tools = [{
       id: binaryName,
       binary: binaryName,
@@ -8789,6 +8793,12 @@ function commandDocPath(command) {
 }
 function slugify(input) {
   return input.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").replace(/-+/g, "-");
+}
+function resolveBinary(name) {
+  const result = spawnSync3("which", [name], { encoding: "utf8" });
+  if (result.status !== 0)
+    return null;
+  return result.stdout.trim();
 }
 function runCommand(binary, args) {
   const env = {
@@ -8919,6 +8929,7 @@ if (__require.main == __require.module) {
   });
 }
 export {
+  resolveBinary,
   parseFlags,
   handleRefresh,
   handleGenerate,

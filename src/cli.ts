@@ -333,6 +333,10 @@ export async function handleGenerate(flags: Record<string, string | boolean>, bi
   let tools: RegistryTool[];
 
   if (binaryName) {
+    if (!resolveBinary(binaryName)) {
+      console.error(`Error: binary "${binaryName}" not found on PATH`);
+      process.exit(1);
+    }
     tools = [{
       id: binaryName,
       binary: binaryName,
@@ -494,6 +498,12 @@ function slugify(input: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .replace(/-+/g, "-");
+}
+
+export function resolveBinary(name: string): string | null {
+  const result = spawnSync("which", [name], { encoding: "utf8" });
+  if (result.status !== 0) return null;
+  return result.stdout.trim();
 }
 
 function runCommand(binary: string, args: string[]): { output: string; exitCode: number | null; error?: string } {

@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
-import { parseFlags, extractPositionalArgs, handleAutoRedist, handleGenerate } from "../src/cli.js";
+import { parseFlags, extractPositionalArgs, handleAutoRedist, handleGenerate, resolveBinary } from "../src/cli.js";
 import { DEFAULT_MODEL, DEFAULT_SKILLS_DIR, DistillOptions, DistillResult } from "../src/distill.js";
 import { DEFAULT_VALIDATION_MODELS } from "../src/validate.js";
 
@@ -338,11 +338,18 @@ describe("handleGenerate with binary name", () => {
     expect(doc.helpArgs).toEqual(["--help"]);
   });
 
-  it("adds warning for binary not found on PATH", async () => {
-    await handleGenerate({ out: tmpDir }, "nonexistent-binary-xyz");
-    const toolJson = path.join(tmpDir, "nonexistent-binary-xyz", "tool.json");
-    const doc = JSON.parse(readFileSync(toolJson, "utf8"));
-    expect(doc.warnings.length).toBeGreaterThan(0);
+});
+
+describe("resolveBinary", () => {
+  it("returns the full path for a binary on PATH", () => {
+    const resolved = resolveBinary("echo");
+    expect(resolved).not.toBeNull();
+    expect(resolved!.length).toBeGreaterThan(0);
+    expect(resolved!.startsWith("/")).toBe(true);
+  });
+
+  it("returns null for a binary not on PATH", () => {
+    expect(resolveBinary("nonexistent-binary-xyz-12345")).toBeNull();
   });
 });
 
@@ -372,6 +379,12 @@ describe("bin/tool-docs.js generate <binary> (integration)", () => {
     const result = spawnSync("node", [binPath, "generate", "--out", tmpDir, "jq"], { encoding: "utf8" });
     expect(result.status).toBe(0);
     expect(existsSync(path.join(tmpDir, "jq", "tool.json"))).toBe(true);
+  });
+
+  it("exits with code 1 and prints error for nonexistent binary", () => {
+    const result = spawnSync("node", [binPath, "generate", "nonexistent-binary-xyz", "--out", tmpDir], { encoding: "utf8" });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('Error: binary "nonexistent-binary-xyz" not found on PATH');
   });
 });
 
