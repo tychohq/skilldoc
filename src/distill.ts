@@ -17,15 +17,18 @@ export type DistillResult = {
   skipReason?: string;
 };
 
+export type LLMCaller = (rawDocs: string, toolId: string, model: string) => DistilledContent;
+
 export type DistillOptions = {
   toolId: string;
   docsDir: string;
   outDir: string;
   model: string;
+  llmCaller?: LLMCaller;
 };
 
 export async function distillTool(options: DistillOptions): Promise<DistillResult> {
-  const { toolId, docsDir, outDir, model } = options;
+  const { toolId, docsDir, outDir, model, llmCaller = callLLM } = options;
 
   // Check if skill exists and was hand-written (no marker)
   const skillPath = path.join(outDir, "SKILL.md");
@@ -43,7 +46,7 @@ export async function distillTool(options: DistillOptions): Promise<DistillResul
   }
 
   // Call LLM to distill
-  const distilled = callLLM(rawContent, toolId, model);
+  const distilled = llmCaller(rawContent, toolId, model);
 
   // Write output files
   await ensureDir(outDir);
@@ -135,16 +138,43 @@ Keep each file focused and under 2KB. No padding, no exhaustive lists. Be ruthle
 Return ONLY valid JSON, no markdown fences around the JSON itself.`;
 }
 
-export function callLLM(rawDocs: string, toolId: string, model: string): DistilledContent {
+type ExecResult = {
+  error?: Error;
+  stdout: string | null;
+  stderr: string | null;
+  status: number | null;
+};
+
+type ExecFn = (
+  command: string,
+  args: ReadonlyArray<string>,
+  options: { input: string; encoding: "utf8"; maxBuffer: number }
+) => ExecResult;
+
+const defaultExec: ExecFn = (command, args, options) =>
+  spawnSync(command, [...args], options) as ExecResult;
+
+export function callLLM(
+  rawDocs: string,
+  toolId: string,
+  model: string,
+  exec: ExecFn = defaultExec
+): DistilledContent {
   const prompt = buildPrompt(rawDocs, toolId);
 
-  const result = spawnSync("claude", ["-p", "--output-format", "text", "--model", model, "--tools", "", prompt], {
+  const result = exec("claude", ["-p", "--output-format", "text", "--model", model, "--no-session-persistence"], {
+    input: prompt,
     encoding: "utf8",
     maxBuffer: 10 * 1024 * 1024,
   });
 
   if (result.error) {
     throw new Error(`Failed to run claude: ${result.error.message}`);
+  }
+
+  if (result.status !== 0) {
+    const stderr = result.stderr ?? "";
+    throw new Error(`claude exited with code ${result.status}${stderr ? `: ${stderr.slice(0, 200)}` : ""}`);
   }
 
   const output = result.stdout ?? "";

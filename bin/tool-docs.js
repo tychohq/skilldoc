@@ -7595,7 +7595,7 @@ var DEFAULT_DOCS_DIR = "~/.agents/docs/tool-docs";
 var DEFAULT_MODEL = "claude-haiku-4-5-20251001";
 var GENERATED_MARKER = "generated-from: agent-tool-docs";
 async function distillTool(options) {
-  const { toolId, docsDir, outDir, model } = options;
+  const { toolId, docsDir, outDir, model, llmCaller = callLLM } = options;
   const skillPath = path.join(outDir, "SKILL.md");
   if (existsSync(skillPath)) {
     const existing = await readFile2(skillPath, "utf8");
@@ -7607,7 +7607,7 @@ async function distillTool(options) {
   if (!rawContent) {
     return { toolId, outDir, skipped: true, skipReason: `no raw docs found in ${docsDir}/${toolId}` };
   }
-  const distilled = callLLM(rawContent, toolId, model);
+  const distilled = llmCaller(rawContent, toolId, model);
   await ensureDir(outDir);
   await ensureDir(path.join(outDir, "docs"));
   const now = new Date().toISOString();
@@ -7685,14 +7685,20 @@ Keep each file focused and under 2KB. No padding, no exhaustive lists. Be ruthle
 
 Return ONLY valid JSON, no markdown fences around the JSON itself.`;
 }
-function callLLM(rawDocs, toolId, model) {
+var defaultExec = (command, args, options) => spawnSync(command, [...args], options);
+function callLLM(rawDocs, toolId, model, exec = defaultExec) {
   const prompt = buildPrompt(rawDocs, toolId);
-  const result = spawnSync("claude", ["-p", "--output-format", "text", "--model", model, "--tools", "", prompt], {
+  const result = exec("claude", ["-p", "--output-format", "text", "--model", model, "--no-session-persistence"], {
+    input: prompt,
     encoding: "utf8",
     maxBuffer: 10 * 1024 * 1024
   });
   if (result.error) {
     throw new Error(`Failed to run claude: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    const stderr = result.stderr ?? "";
+    throw new Error(`claude exited with code ${result.status}${stderr ? `: ${stderr.slice(0, 200)}` : ""}`);
   }
   const output = result.stdout ?? "";
   if (!output.trim()) {
