@@ -47,7 +47,7 @@ The current README is bare-bones. We need it to sell the tool on first glance �
 ### Phase 2: Example Skills
 
 - [x] Create an `examples/` directory in the repo
-- [ ] Copy 3-5 of the best generated skills into `examples/` (pick from existing generated output at `~/.agents/skills/`):
+- [x] Copy 3-5 of the best generated skills into `examples/` (pick from existing generated output at `~/.agents/skills/`):
   - `jq` — universally known, shows compression value
   - `curl` — everyone uses it, complex `--help`
   - `gh` — popular with the target audience

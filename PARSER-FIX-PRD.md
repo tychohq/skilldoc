@@ -37,7 +37,7 @@ This breaks on:
 - [x] Handle `curl` registry entry: update helpArgs to `["--help", "all"]` in registry.yaml so we capture the full help
 - [x] Update existing parser tests to not break
 - [x] Add parser test cases for gh, vercel, ffmpeg, and curl help output formats
-- [ ] Re-run `tool-docs generate` on all tools and verify the 9 previously-failing tools now produce non-empty raw docs
+- [x] Re-run `tool-docs generate` on all tools and verify the 9 previously-failing tools now produce non-empty raw docs
 - [ ] Re-run `tool-docs distill` on tools that had broken raw docs and verify the output improves
 
 - [ ] Fix the distill prompt to PROHIBIT hallucination: add explicit instruction that the LLM must ONLY use information present in the raw docs. If raw docs are empty/insufficient, the skill should say "Insufficient raw docs — re-run generate after fixing parser" instead of inventing content from training data.
