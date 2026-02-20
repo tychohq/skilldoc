@@ -966,6 +966,13 @@ describe("bin/tool-docs.js distill <tool-id> (integration)", () => {
     expect(result.stdout).toContain("tool-docs run [--registry");
     expect(result.stdout).toContain("run        Run full pipeline");
   });
+
+  it("help text shows run as the recommended starting point", () => {
+    const result = spawnSync("node", [binPath, "--help"], { encoding: "utf8" });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("generate + distill + validate in one shot");
+    expect(result.stdout).toContain("recommended start here");
+  });
 });
 
 describe("handleRun", () => {

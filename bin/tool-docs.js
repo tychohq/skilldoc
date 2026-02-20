@@ -8417,7 +8417,7 @@ var DEFAULT_SKILLS_OUT_DIR = DEFAULT_SKILLS_DIR;
 var HELP_TEXT = `tool-docs
 
 Usage:
-  tool-docs run <tool>                         # recommended: full pipeline for a single tool
+  tool-docs run <tool>                         # generate + distill + validate in one shot
   tool-docs run [--registry <path>] ...        # full pipeline for all registry tools
   tool-docs generate <tool>                    # generate docs for a single tool
   tool-docs generate [--registry <path>] ...   # generate from registry
@@ -8430,7 +8430,7 @@ Usage:
   tool-docs --help
 
 Commands:
-  run        Run full pipeline: generate → distill → validate (single tool or batch)
+  run        Run full pipeline: generate → distill → validate (recommended start here)
   generate   Generate docs for a single tool (ad-hoc) or all tools in the registry
   distill    Distill raw docs into agent-optimized skills (SKILL.md + docs/)
   refresh    Re-run generate + distill for tools whose --help output has changed
