@@ -2,10 +2,11 @@ import { describe, expect, it, beforeEach, afterEach } from "bun:test";
 import path from "node:path";
 import { mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from "node:fs";
 import os from "node:os";
-import { parseDistilledOutput, callLLM, distillTool, LLMCaller } from "../src/distill.js";
+import { parseDistilledOutput, callLLM, distillTool, detectVersion, LLMCaller } from "../src/distill.js";
 
 // Minimal valid LLM output
 const validJson = JSON.stringify({
+  description: "Fast file search tool",
   skill: "# rg\n\nSearch files",
   advanced: "## Advanced\n\nPCRE2 flags",
   recipes: "## Recipes\n\nSearch Python files",
@@ -17,6 +18,7 @@ const mockOk = () => ({ stdout: validJson, stderr: "", status: 0 });
 describe("parseDistilledOutput", () => {
   it("parses valid JSON output", () => {
     const result = parseDistilledOutput(validJson);
+    expect(result.description).toBe("Fast file search tool");
     expect(result.skill).toContain("# rg");
     expect(result.advanced).toContain("Advanced");
     expect(result.recipes).toContain("Recipes");
@@ -289,6 +291,7 @@ describe("distillTool - skip logic", () => {
     writeFileSync(path.join(outDir, "SKILL.md"), "<!--\n  generated-from: agent-tool-docs\n-->\n# mytool");
 
     const mockLLM: LLMCaller = () => ({
+      description: "Test tool description",
       skill: "# mytool",
       advanced: "adv",
       recipes: "rec",

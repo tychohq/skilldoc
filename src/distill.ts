@@ -61,7 +61,8 @@ export async function distillTool(options: DistillOptions): Promise<DistillResul
   await ensureDir(path.join(outDir, "docs"));
 
   const now = new Date().toISOString();
-  const skillMd = addMetadataHeader(distilled.skill, toolId, now);
+  const version = detectVersion(toolId);
+  const skillMd = addMetadataHeader(distilled.skill, toolId, distilled.description, now, version);
 
   await writeFileEnsured(path.join(outDir, "SKILL.md"), skillMd);
   await writeFileEnsured(path.join(outDir, "docs", "advanced.md"), distilled.advanced);
@@ -101,6 +102,7 @@ async function gatherRawDocs(toolId: string, docsDir: string): Promise<string | 
 }
 
 type DistilledContent = {
+  description: string;
   skill: string;
   advanced: string;
   recipes: string;
@@ -146,6 +148,7 @@ Per-file size targets (strict — return less content rather than exceed these):
 - "troubleshooting": ≤ 1000 bytes — known gotchas and common LLM mistakes
 
 Return ONLY a JSON object with exactly these keys:
+- "description": one-line description of the tool for the YAML frontmatter (no markdown, plain text only)
 - "skill": SKILL.md content — quick reference, the most important commands/flags, common patterns
 - "advanced": docs/advanced.md content — power-user flags, edge cases
 - "recipes": docs/recipes.md content — task-oriented recipes showing real commands
@@ -273,7 +276,7 @@ export function parseDistilledOutput(output: string): DistilledContent {
   }
 
   const obj = parsed as Record<string, unknown>;
-  const required = ["skill", "advanced", "recipes", "troubleshooting"];
+  const required = ["description", "skill", "advanced", "recipes", "troubleshooting"];
   for (const key of required) {
     if (typeof obj[key] !== "string") {
       throw new Error(`LLM output missing required key: ${key}`);
@@ -281,6 +284,7 @@ export function parseDistilledOutput(output: string): DistilledContent {
   }
 
   return {
+    description: obj.description as string,
     skill: obj.skill as string,
     advanced: obj.advanced as string,
     recipes: obj.recipes as string,
@@ -288,16 +292,34 @@ export function parseDistilledOutput(output: string): DistilledContent {
   };
 }
 
-function addMetadataHeader(skillContent: string, toolId: string, generatedAt: string): string {
-  const meta = [
-    "<!--",
-    `  ${GENERATED_MARKER}`,
-    `  tool-id: ${toolId}`,
-    `  generated-at: ${generatedAt}`,
-    "-->",
-    "",
-  ].join("\n");
-  return meta + skillContent;
+export function detectVersion(toolId: string, exec: ExecFn = defaultExec): string | undefined {
+  for (const flag of ["--version", "-V"]) {
+    const result = exec(toolId, [flag], { input: "", encoding: "utf8", maxBuffer: 1024 * 1024 });
+    if (result.status === 0 && result.stdout) {
+      const firstLine = result.stdout.trim().split("\n")[0];
+      if (firstLine) return firstLine;
+    }
+  }
+  return undefined;
+}
+
+function addMetadataHeader(
+  skillContent: string,
+  toolId: string,
+  description: string,
+  generatedAt: string,
+  version?: string
+): string {
+  const lines = [
+    "---",
+    `name: ${toolId}`,
+    `description: ${description}`,
+    `${GENERATED_MARKER}`,
+    `tool-id: ${toolId}`,
+  ];
+  if (version) lines.push(`tool-version: ${version}`);
+  lines.push(`generated-at: ${generatedAt}`, "---", "");
+  return lines.join("\n") + skillContent;
 }
 
 export { DEFAULT_SKILLS_DIR, DEFAULT_DOCS_DIR, DEFAULT_MODEL };
