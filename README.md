@@ -36,22 +36,32 @@ SKILL.md    →  drop into AGENTS.md, CLAUDE.md, OpenClaw skills
 
 ```bash
 # Install
+git clone https://github.com/BrennerSpear/agent-tool-docs && cd agent-tool-docs
 bun install && bun run build
 
-# Initialize a registry (or bring your own)
+# Create a starter registry with common tools
 tool-docs init
 
-# Generate raw docs from --help output
-tool-docs generate
+# Pick a tool — let's generate docs for jq
+tool-docs generate --only jq
+# → Extracts --help output into ~/.agents/docs/tool-docs/jq/
 
-# Distill to compressed SKILL.md files
-tool-docs distill
+# Distill raw docs into a ~2KB agent-optimized skill
+tool-docs distill --only jq
+# → Writes ~/.agents/skills/jq/SKILL.md
 
-# Validate quality with LLM scoring
+# Validate: can LLMs actually use the generated docs?
 tool-docs validate jq
+# → Runs real tasks against multiple models, scores 9/10+
 ```
 
-Output lands in `~/.agents/skills/<tool-id>/SKILL.md`.
+Now drop `~/.agents/skills/jq/SKILL.md` into your `AGENTS.md`, `CLAUDE.md`, or OpenClaw skills directory. Your agent has verified jq docs instead of guessing from training data.
+
+**Want to generate skills for everything in the registry at once?**
+
+```bash
+tool-docs generate && tool-docs distill
+```
 
 ---
 
