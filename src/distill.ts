@@ -148,6 +148,8 @@ Per-file size targets (strict — return less content rather than exceed these):
 - "recipes": ≤ 2000 bytes — task-oriented examples
 - "troubleshooting": ≤ 1000 bytes — known gotchas and common LLM mistakes
 
+**IMPORTANT: Always return valid JSON, even if the raw docs are sparse or show warnings like "No commands detected."** If the raw docs are incomplete, use your general knowledge of the tool to produce useful documentation. Do not explain the issue in prose — just return the JSON.
+
 Return ONLY a JSON object with exactly these keys:
 - "description": one-line description of the tool for the YAML frontmatter (no markdown, plain text only)
 - "skill": SKILL.md content — quick reference, the most important commands/flags, common patterns
