@@ -1,8 +1,16 @@
 import { compactWhitespace, normalizeLineEndings } from "./utils.js";
 import { CommandSummary, EnvDoc, OptionDoc, SectionDoc } from "./types.js";
 
-const HEADER_RE = /^([A-Z][A-Za-z0-9 /_-]*):\s*$/;
+// Matches mixed-case headers with trailing colon: "Commands:", "Available Commands:"
+const HEADER_WITH_COLON_RE = /^([A-Z][A-Za-z0-9 /_-]*):\s*$/;
+// Matches all-caps headers without trailing colon: "CORE COMMANDS", "FLAGS", "USAGE"
+const HEADER_ALL_CAPS_RE = /^([A-Z][A-Z0-9 /_-]*)\s*$/;
 const INLINE_USAGE_RE = /^\s*Usage:\s*(.*)$/i;
+
+function matchHeader(line: string): string | null {
+  const m = line.match(HEADER_WITH_COLON_RE) ?? line.match(HEADER_ALL_CAPS_RE);
+  return m ? m[1] : null;
+}
 const SECTION_NAMES = {
   commands: ["Commands", "Command", "Available Commands", "Subcommands", "Sub-commands"],
   examples: ["Examples", "Example"],
@@ -41,12 +49,12 @@ export function parseHelp(rawHelp: string): ParsedHelp {
       continue;
     }
 
-    const headerMatch = line.match(HEADER_RE);
-    if (headerMatch) {
+    const headerName = matchHeader(line);
+    if (headerName) {
       if (current) {
         sections.push(current);
       }
-      current = { name: headerMatch[1], lines: [] };
+      current = { name: headerName, lines: [] };
       continue;
     }
 
@@ -114,7 +122,7 @@ function collectIndented(lines: string[], startIndex: number): string[] {
     if (!/^\s+/.test(line)) {
       break;
     }
-    if (HEADER_RE.test(line)) {
+    if (matchHeader(line.trim()) !== null) {
       break;
     }
     collected.push(line.trim());
