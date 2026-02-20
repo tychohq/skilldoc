@@ -142,6 +142,50 @@ describe("callLLM", () => {
     expect(capturedInput).toContain("## Common LLM Mistakes");
   });
 
+  it("prompt identifies SKILL.md as the most important file", () => {
+    let capturedInput = "";
+    const exec = (_cmd: string, _args: ReadonlyArray<string>, opts: { input: string }) => {
+      capturedInput = opts.input;
+      return { stdout: validJson, stderr: "", status: 0 };
+    };
+    callLLM("docs", "tool", "model", exec);
+    expect(capturedInput).toContain("SKILL.md is the most important");
+  });
+
+  it("prompt includes per-file byte limits including 1000-byte limit for troubleshooting", () => {
+    let capturedInput = "";
+    const exec = (_cmd: string, _args: ReadonlyArray<string>, opts: { input: string }) => {
+      capturedInput = opts.input;
+      return { stdout: validJson, stderr: "", status: 0 };
+    };
+    callLLM("docs", "tool", "model", exec);
+    expect(capturedInput).toContain("≤ 2000 bytes");
+    expect(capturedInput).toContain("≤ 1000 bytes");
+  });
+
+  it("prompt instructs to prioritize most-used flags first with 80/20 rule", () => {
+    let capturedInput = "";
+    const exec = (_cmd: string, _args: ReadonlyArray<string>, opts: { input: string }) => {
+      capturedInput = opts.input;
+      return { stdout: validJson, stderr: "", status: 0 };
+    };
+    callLLM("docs", "tool", "model", exec);
+    expect(capturedInput).toContain("Most-used flags/commands first");
+    expect(capturedInput).toContain("20%");
+    expect(capturedInput).toContain("80%");
+  });
+
+  it("prompt instructs to include agent-specific gotchas", () => {
+    let capturedInput = "";
+    const exec = (_cmd: string, _args: ReadonlyArray<string>, opts: { input: string }) => {
+      capturedInput = opts.input;
+      return { stdout: validJson, stderr: "", status: 0 };
+    };
+    callLLM("docs", "tool", "model", exec);
+    expect(capturedInput).toContain("Agent-specific gotchas");
+    expect(capturedInput).toContain("quoting");
+  });
+
   it("uses -p and --output-format text flags", () => {
     let capturedArgs: ReadonlyArray<string> = [];
     const exec = (_cmd: string, args: ReadonlyArray<string>) => {
@@ -393,5 +437,77 @@ describe("distillTool - full flow", () => {
     expect(result.toolId).toBe("mytool");
     expect(result.outDir).toBe(outDir);
     expect(result.skipped).toBeUndefined();
+  });
+
+  it("returns no sizeWarnings when all files are within limits", async () => {
+    const docsDir = setupDocs("mytool");
+    const outDir = path.join(tmpDir, "skills", "mytool");
+
+    const mockLLM: LLMCaller = () => ({
+      skill: "# mytool\n\nShort skill",
+      advanced: "## Advanced\n\nShort",
+      recipes: "## Recipes\n\nShort",
+      troubleshooting: "## Troubleshooting\n\nShort",
+    });
+
+    const result = await distillTool({ toolId: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
+
+    expect(result.sizeWarnings).toBeUndefined();
+  });
+
+  it("returns sizeWarnings when SKILL.md exceeds 2000 bytes", async () => {
+    const docsDir = setupDocs("mytool");
+    const outDir = path.join(tmpDir, "skills", "mytool");
+
+    const oversizedSkill = "x".repeat(2001);
+    const mockLLM: LLMCaller = () => ({
+      skill: oversizedSkill,
+      advanced: "adv",
+      recipes: "rec",
+      troubleshooting: "trbl",
+    });
+
+    const result = await distillTool({ toolId: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
+
+    expect(result.sizeWarnings).toBeDefined();
+    expect(result.sizeWarnings?.some((w) => w.includes("SKILL.md"))).toBe(true);
+    expect(result.sizeWarnings?.some((w) => w.includes("2000"))).toBe(true);
+  });
+
+  it("returns sizeWarnings when troubleshooting.md exceeds 1000 bytes", async () => {
+    const docsDir = setupDocs("mytool");
+    const outDir = path.join(tmpDir, "skills", "mytool");
+
+    const oversizedTroubleshooting = "x".repeat(1001);
+    const mockLLM: LLMCaller = () => ({
+      skill: "# mytool",
+      advanced: "adv",
+      recipes: "rec",
+      troubleshooting: oversizedTroubleshooting,
+    });
+
+    const result = await distillTool({ toolId: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
+
+    expect(result.sizeWarnings).toBeDefined();
+    expect(result.sizeWarnings?.some((w) => w.includes("troubleshooting.md"))).toBe(true);
+    expect(result.sizeWarnings?.some((w) => w.includes("1000"))).toBe(true);
+  });
+
+  it("reports multiple size warnings when several files exceed their limits", async () => {
+    const docsDir = setupDocs("mytool");
+    const outDir = path.join(tmpDir, "skills", "mytool");
+
+    const mockLLM: LLMCaller = () => ({
+      skill: "x".repeat(2001),
+      advanced: "x".repeat(2001),
+      recipes: "rec",
+      troubleshooting: "trbl",
+    });
+
+    const result = await distillTool({ toolId: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
+
+    expect(result.sizeWarnings?.length).toBeGreaterThanOrEqual(2);
+    expect(result.sizeWarnings?.some((w) => w.includes("SKILL.md"))).toBe(true);
+    expect(result.sizeWarnings?.some((w) => w.includes("advanced.md"))).toBe(true);
   });
 });

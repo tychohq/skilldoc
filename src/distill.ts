@@ -15,6 +15,14 @@ export type DistillResult = {
   outDir: string;
   skipped?: boolean;
   skipReason?: string;
+  sizeWarnings?: string[];
+};
+
+const SIZE_LIMITS: Record<string, number> = {
+  "SKILL.md": 2000,
+  "advanced.md": 2000,
+  "recipes.md": 2000,
+  "troubleshooting.md": 1000,
 };
 
 export type LLMCaller = (rawDocs: string, toolId: string, model: string) => DistilledContent;
@@ -60,7 +68,14 @@ export async function distillTool(options: DistillOptions): Promise<DistillResul
   await writeFileEnsured(path.join(outDir, "docs", "recipes.md"), distilled.recipes);
   await writeFileEnsured(path.join(outDir, "docs", "troubleshooting.md"), distilled.troubleshooting);
 
-  return { toolId, outDir };
+  const sizeWarnings = checkSizeLimits({
+    "SKILL.md": skillMd,
+    "advanced.md": distilled.advanced,
+    "recipes.md": distilled.recipes,
+    "troubleshooting.md": distilled.troubleshooting,
+  });
+
+  return { toolId, outDir, ...(sizeWarnings.length > 0 ? { sizeWarnings } : {}) };
 }
 
 async function gatherRawDocs(toolId: string, docsDir: string): Promise<string | null> {
@@ -92,6 +107,19 @@ type DistilledContent = {
   troubleshooting: string;
 };
 
+function checkSizeLimits(files: Record<string, string>): string[] {
+  const warnings: string[] = [];
+  for (const [name, content] of Object.entries(files)) {
+    const limit = SIZE_LIMITS[name];
+    if (limit === undefined) continue;
+    const size = new TextEncoder().encode(content).length;
+    if (size > limit) {
+      warnings.push(`${name} is ${size} bytes (limit: ${limit} bytes)`);
+    }
+  }
+  return warnings;
+}
+
 function buildPrompt(rawDocs: string, toolId: string): string {
   return `You are an agent documentation specialist. Your task is to distill raw CLI documentation into lean, agent-optimized skill files.
 
@@ -103,11 +131,19 @@ ${rawDocs}
 
 ## Your Task
 
-Produce 4 documentation files in JSON format. Each file must be under 2000 bytes. Prioritize:
-1. Most-used flags/commands first (80/20 rule)
-2. Real-world task patterns over exhaustive flag lists
-3. Agent-specific gotchas (quoting, escaping, common errors)
-4. Concrete examples over abstract descriptions
+Produce 4 documentation files in JSON format. **SKILL.md is the most important file** — agents read it first on 90% of requests. When in doubt, put essential information in SKILL.md.
+
+Prioritize across all files:
+1. **Most-used flags/commands first** — the 20% of flags that cover 80% of real-world use
+2. **Real-world usage patterns** over exhaustive flag lists — show how to accomplish tasks, not just what flags exist
+3. **Agent-specific gotchas** — quoting pitfalls, escaping issues, flags LLMs commonly misuse, output format surprises
+4. **Concrete runnable examples** over abstract descriptions
+
+Per-file size targets (strict — return less content rather than exceed these):
+- "skill": ≤ 2000 bytes — the essential quick reference every agent needs
+- "advanced": ≤ 2000 bytes — power-user flags and edge cases
+- "recipes": ≤ 2000 bytes — task-oriented examples
+- "troubleshooting": ≤ 1000 bytes — known gotchas and common LLM mistakes
 
 Return ONLY a JSON object with exactly these keys:
 - "skill": SKILL.md content — quick reference, the most important commands/flags, common patterns
@@ -168,7 +204,7 @@ docs/troubleshooting.md format:
 <things AI agents typically get wrong — wrong flags, quoting issues, incorrect assumptions>
 \`\`\`
 
-Keep each file focused and under 2KB. No padding, no exhaustive lists. Be ruthlessly concise.
+Keep each file ruthlessly concise. No padding, no exhaustive lists. Respect the per-file byte limits. SKILL.md is the most important — agents rely on it first.
 
 Return ONLY valid JSON, no markdown fences around the JSON itself.`;
 }

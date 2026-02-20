@@ -154,7 +154,8 @@ async function handleDistill(flags: Record<string, string | boolean>): Promise<v
       console.log(`skipped (${result.skipReason})`);
       skipped += 1;
     } else {
-      console.log("done");
+      const warnings = result.sizeWarnings ?? [];
+      console.log(warnings.length > 0 ? `done (size warnings: ${warnings.join(", ")})` : "done");
       generated += 1;
     }
   }

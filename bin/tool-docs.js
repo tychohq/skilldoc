@@ -7594,6 +7594,12 @@ var DEFAULT_SKILLS_DIR = "~/.agents/skills";
 var DEFAULT_DOCS_DIR = "~/.agents/docs/tool-docs";
 var DEFAULT_MODEL = "claude-haiku-4-5-20251001";
 var GENERATED_MARKER = "generated-from: agent-tool-docs";
+var SIZE_LIMITS = {
+  "SKILL.md": 2000,
+  "advanced.md": 2000,
+  "recipes.md": 2000,
+  "troubleshooting.md": 1000
+};
 async function distillTool(options) {
   const { toolId, docsDir, outDir, model, llmCaller = callLLM } = options;
   const skillPath = path.join(outDir, "SKILL.md");
@@ -7616,7 +7622,13 @@ async function distillTool(options) {
   await writeFileEnsured(path.join(outDir, "docs", "advanced.md"), distilled.advanced);
   await writeFileEnsured(path.join(outDir, "docs", "recipes.md"), distilled.recipes);
   await writeFileEnsured(path.join(outDir, "docs", "troubleshooting.md"), distilled.troubleshooting);
-  return { toolId, outDir };
+  const sizeWarnings = checkSizeLimits({
+    "SKILL.md": skillMd,
+    "advanced.md": distilled.advanced,
+    "recipes.md": distilled.recipes,
+    "troubleshooting.md": distilled.troubleshooting
+  });
+  return { toolId, outDir, ...sizeWarnings.length > 0 ? { sizeWarnings } : {} };
 }
 async function gatherRawDocs(toolId, docsDir) {
   const toolMdPath = path.join(docsDir, toolId, "tool.md");
@@ -7640,6 +7652,19 @@ async function gatherRawDocs(toolId, docsDir) {
 
 `);
 }
+function checkSizeLimits(files) {
+  const warnings = [];
+  for (const [name, content] of Object.entries(files)) {
+    const limit = SIZE_LIMITS[name];
+    if (limit === undefined)
+      continue;
+    const size = new TextEncoder().encode(content).length;
+    if (size > limit) {
+      warnings.push(`${name} is ${size} bytes (limit: ${limit} bytes)`);
+    }
+  }
+  return warnings;
+}
 function buildPrompt(rawDocs, toolId) {
   return `You are an agent documentation specialist. Your task is to distill raw CLI documentation into lean, agent-optimized skill files.
 
@@ -7651,11 +7676,19 @@ ${rawDocs}
 
 ## Your Task
 
-Produce 4 documentation files in JSON format. Each file must be under 2000 bytes. Prioritize:
-1. Most-used flags/commands first (80/20 rule)
-2. Real-world task patterns over exhaustive flag lists
-3. Agent-specific gotchas (quoting, escaping, common errors)
-4. Concrete examples over abstract descriptions
+Produce 4 documentation files in JSON format. **SKILL.md is the most important file** — agents read it first on 90% of requests. When in doubt, put essential information in SKILL.md.
+
+Prioritize across all files:
+1. **Most-used flags/commands first** — the 20% of flags that cover 80% of real-world use
+2. **Real-world usage patterns** over exhaustive flag lists — show how to accomplish tasks, not just what flags exist
+3. **Agent-specific gotchas** — quoting pitfalls, escaping issues, flags LLMs commonly misuse, output format surprises
+4. **Concrete runnable examples** over abstract descriptions
+
+Per-file size targets (strict — return less content rather than exceed these):
+- "skill": ≤ 2000 bytes — the essential quick reference every agent needs
+- "advanced": ≤ 2000 bytes — power-user flags and edge cases
+- "recipes": ≤ 2000 bytes — task-oriented examples
+- "troubleshooting": ≤ 1000 bytes — known gotchas and common LLM mistakes
 
 Return ONLY a JSON object with exactly these keys:
 - "skill": SKILL.md content — quick reference, the most important commands/flags, common patterns
@@ -7681,7 +7714,42 @@ SKILL.md format:
 <3-5 concrete examples covering the most common use cases>
 \`\`\`
 
-Keep each file focused and under 2KB. No padding, no exhaustive lists. Be ruthlessly concise.
+docs/advanced.md format:
+\`\`\`
+# <tool> — Advanced Usage
+
+## Power-User Flags
+<flags and options that experienced users rely on, with concrete usage>
+
+## Edge Cases
+<known edge cases, non-obvious behaviors, environment-specific quirks>
+\`\`\`
+
+docs/recipes.md format:
+\`\`\`
+# <tool> — Recipes
+
+## <Task Name>
+\`\`\`
+<complete, runnable command>
+\`\`\`
+
+(3-6 task-oriented recipes covering the most common real-world use cases)
+\`\`\`
+
+docs/troubleshooting.md format:
+\`\`\`
+# <tool> — Troubleshooting
+
+## <Issue or Error Name>
+**Symptom:** <what the user or agent sees>
+**Fix:** <what to do>
+
+## Common LLM Mistakes
+<things AI agents typically get wrong — wrong flags, quoting issues, incorrect assumptions>
+\`\`\`
+
+Keep each file ruthlessly concise. No padding, no exhaustive lists. Respect the per-file byte limits. SKILL.md is the most important — agents rely on it first.
 
 Return ONLY valid JSON, no markdown fences around the JSON itself.`;
 }
@@ -7870,7 +7938,8 @@ async function handleDistill(flags) {
       console.log(`skipped (${result.skipReason})`);
       skipped += 1;
     } else {
-      console.log("done");
+      const warnings = result.sizeWarnings ?? [];
+      console.log(warnings.length > 0 ? `done (size warnings: ${warnings.join(", ")})` : "done");
       generated += 1;
     }
   }
