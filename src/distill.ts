@@ -255,9 +255,9 @@ Per-file size targets (strict — return less content rather than exceed these):
 - "recipes": ≤ ${sl["recipes.md"]} bytes — task-oriented examples
 - "troubleshooting": ≤ ${sl["troubleshooting.md"]} bytes — known gotchas and common LLM mistakes
 
-**CRITICAL — Anti-hallucination rule:** You MUST ONLY use information explicitly present in the raw docs provided above. Do NOT draw on your training knowledge about this tool. Do NOT invent flags, subcommands, options, or behaviors that are not documented in the raw docs above.
+**CRITICAL — Anti-hallucination rule:** You MUST ONLY use information explicitly present in the raw docs provided above. Do NOT draw on your training knowledge about this tool. Do NOT add commands, flags, examples, or behavior from your training knowledge. Do NOT invent flags, subcommands, options, or behaviors that are not documented in the raw docs above. Only distill what appears in the provided documentation.
 
-If the raw docs above are empty, contain only parser warnings (e.g. "No commands detected"), or lack sufficient content to produce meaningful documentation, set ALL text fields ("description", "skill", "advanced", "recipes", "troubleshooting") to exactly this string: ${INSUFFICIENT_DOCS_SENTINEL}
+If the input docs contain no useful content (e.g., empty, contain only parser warnings like "No commands detected", or lack sufficient content to produce meaningful documentation), output a stub skill that says 'raw docs incomplete'. To signal this, set ALL text fields ("description", "skill", "advanced", "recipes", "troubleshooting") to exactly this string: ${INSUFFICIENT_DOCS_SENTINEL}
 
 Otherwise, always return valid JSON using only the information present in the raw docs.
 

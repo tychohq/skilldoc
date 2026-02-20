@@ -1108,6 +1108,21 @@ describe("buildPrompt — anti-hallucination", () => {
     expect(prompt).not.toContain("use your general knowledge");
     expect(prompt).not.toContain("general knowledge of the tool");
   });
+
+  it("explicitly prohibits adding commands, flags, examples, or behavior from training knowledge", () => {
+    const prompt = buildPrompt("raw docs", "tool");
+    expect(prompt).toContain("Do NOT add commands, flags, examples, or behavior from your training knowledge");
+  });
+
+  it("instructs to only distill what appears in provided documentation", () => {
+    const prompt = buildPrompt("raw docs", "tool");
+    expect(prompt).toContain("Only distill what appears in the provided documentation");
+  });
+
+  it("instructs LLM to output stub skill saying 'raw docs incomplete' when docs lack useful content", () => {
+    const prompt = buildPrompt("raw docs", "tool");
+    expect(prompt).toContain("raw docs incomplete");
+  });
 });
 
 describe("distillTool — insufficient docs sentinel handling", () => {
