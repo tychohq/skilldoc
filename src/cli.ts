@@ -337,7 +337,11 @@ export async function handleGenerate(flags: Record<string, string | boolean>, bi
       console.error(`Error: binary "${binaryName}" not found on PATH`);
       process.exit(1);
     }
-    tools = [createToolEntry(binaryName)];
+    const registryPath = expandHome(
+      typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY
+    );
+    const registryTool = await lookupRegistryTool(registryPath, binaryName);
+    tools = [registryTool ?? createToolEntry(binaryName)];
   } else {
     const registryPath = expandHome(
       typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY
@@ -493,6 +497,15 @@ function slugify(input: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .replace(/-+/g, "-");
+}
+
+export async function lookupRegistryTool(registryPath: string, binaryName: string): Promise<RegistryTool | null> {
+  try {
+    const registry = await loadRegistry(registryPath);
+    return registry.tools.find((t) => t.id === binaryName || t.binary === binaryName) ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export function resolveBinary(name: string): string | null {

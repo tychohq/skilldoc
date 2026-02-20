@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
-import { parseFlags, extractPositionalArgs, handleAutoRedist, handleGenerate, resolveBinary } from "../src/cli.js";
+import { parseFlags, extractPositionalArgs, handleAutoRedist, handleGenerate, resolveBinary, lookupRegistryTool } from "../src/cli.js";
 import { DEFAULT_MODEL, DEFAULT_SKILLS_DIR, DistillOptions, DistillResult } from "../src/distill.js";
 import { DEFAULT_VALIDATION_MODELS } from "../src/validate.js";
 
@@ -332,21 +332,24 @@ describe("handleGenerate with binary name", () => {
   });
 
   it("uses --help as default helpArgs for ad-hoc binary", async () => {
-    await handleGenerate({ out: tmpDir }, "jq");
+    const noRegistry = path.join(tmpDir, "no-registry.yaml");
+    await handleGenerate({ out: tmpDir, registry: noRegistry }, "jq");
     const toolJson = path.join(tmpDir, "jq", "tool.json");
     const doc = JSON.parse(readFileSync(toolJson, "utf8"));
     expect(doc.helpArgs).toEqual(["--help"]);
   });
 
   it("sets displayName to binary name for ad-hoc binary", async () => {
-    await handleGenerate({ out: tmpDir }, "echo");
+    const noRegistry = path.join(tmpDir, "no-registry.yaml");
+    await handleGenerate({ out: tmpDir, registry: noRegistry }, "echo");
     const toolJson = path.join(tmpDir, "echo", "tool.json");
     const doc = JSON.parse(readFileSync(toolJson, "utf8"));
     expect(doc.displayName).toBe("echo");
   });
 
   it("produces a complete ToolDoc with all required fields", async () => {
-    await handleGenerate({ out: tmpDir }, "jq");
+    const noRegistry = path.join(tmpDir, "no-registry.yaml");
+    await handleGenerate({ out: tmpDir, registry: noRegistry }, "jq");
     const toolJson = path.join(tmpDir, "jq", "tool.json");
     const doc = JSON.parse(readFileSync(toolJson, "utf8"));
     expect(doc.kind).toBe("tool");
@@ -408,6 +411,105 @@ describe("resolveBinary", () => {
 
   it("returns null for a binary not on PATH", () => {
     expect(resolveBinary("nonexistent-binary-xyz-12345")).toBeNull();
+  });
+});
+
+describe("lookupRegistryTool", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), `lookup-registry-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function writeRegistryFile(yaml: string): string {
+    const registryPath = path.join(tmpDir, "registry.yaml");
+    writeFileSync(registryPath, yaml);
+    return registryPath;
+  }
+
+  it("returns the registry entry when tool id matches", async () => {
+    const registryPath = writeRegistryFile(`version: 1\ntools:\n  - id: curl\n    binary: curl\n    helpArgs: ["--help", "all"]\n    displayName: cURL\n`);
+    const tool = await lookupRegistryTool(registryPath, "curl");
+    expect(tool).not.toBeNull();
+    expect(tool!.helpArgs).toEqual(["--help", "all"]);
+    expect(tool!.displayName).toBe("cURL");
+  });
+
+  it("returns the registry entry when binary matches but id differs", async () => {
+    const registryPath = writeRegistryFile(`version: 1\ntools:\n  - id: ripgrep\n    binary: rg\n    helpArgs: ["--help"]\n`);
+    const tool = await lookupRegistryTool(registryPath, "rg");
+    expect(tool).not.toBeNull();
+    expect(tool!.id).toBe("ripgrep");
+  });
+
+  it("returns null when no tool matches", async () => {
+    const registryPath = writeRegistryFile(`version: 1\ntools:\n  - id: jq\n    binary: jq\n`);
+    const tool = await lookupRegistryTool(registryPath, "curl");
+    expect(tool).toBeNull();
+  });
+
+  it("returns null when registry file does not exist", async () => {
+    const tool = await lookupRegistryTool(path.join(tmpDir, "nonexistent.yaml"), "curl");
+    expect(tool).toBeNull();
+  });
+});
+
+describe("handleGenerate registry precedence", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), `generate-registry-prec-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("uses registry helpArgs when positional arg matches a registry tool", async () => {
+    const registryPath = path.join(tmpDir, "registry.yaml");
+    writeFileSync(registryPath, `version: 1\ntools:\n  - id: git\n    binary: git\n    helpArgs: ["-h"]\n    displayName: Git\n    commandHelpArgs: ["help", "{command}"]\n`);
+    const outDir = path.join(tmpDir, "out");
+    mkdirSync(outDir, { recursive: true });
+    await handleGenerate({ out: outDir, registry: registryPath }, "git");
+    const doc = JSON.parse(readFileSync(path.join(outDir, "git", "tool.json"), "utf8"));
+    expect(doc.helpArgs).toEqual(["-h"]);
+    expect(doc.displayName).toBe("Git");
+  });
+
+  it("falls back to createToolEntry defaults when binary is not in registry", async () => {
+    const registryPath = path.join(tmpDir, "registry.yaml");
+    writeFileSync(registryPath, `version: 1\ntools:\n  - id: git\n    binary: git\n    helpArgs: ["-h"]\n`);
+    const outDir = path.join(tmpDir, "out");
+    mkdirSync(outDir, { recursive: true });
+    await handleGenerate({ out: outDir, registry: registryPath }, "echo");
+    const doc = JSON.parse(readFileSync(path.join(outDir, "echo", "tool.json"), "utf8"));
+    expect(doc.helpArgs).toEqual(["--help"]);
+    expect(doc.displayName).toBe("echo");
+  });
+
+  it("falls back to defaults when registry does not exist", async () => {
+    const outDir = path.join(tmpDir, "out");
+    mkdirSync(outDir, { recursive: true });
+    await handleGenerate({ out: outDir, registry: path.join(tmpDir, "nonexistent.yaml") }, "echo");
+    const doc = JSON.parse(readFileSync(path.join(outDir, "echo", "tool.json"), "utf8"));
+    expect(doc.helpArgs).toEqual(["--help"]);
+  });
+
+  it("generates command docs when registry entry has commandHelpArgs", async () => {
+    const registryPath = path.join(tmpDir, "registry.yaml");
+    writeFileSync(registryPath, `version: 1\ntools:\n  - id: git\n    binary: git\n    helpArgs: ["-h"]\n    commandHelpArgs: ["help", "{command}"]\n`);
+    const outDir = path.join(tmpDir, "out");
+    mkdirSync(outDir, { recursive: true });
+    await handleGenerate({ out: outDir, registry: registryPath }, "git");
+    const doc = JSON.parse(readFileSync(path.join(outDir, "git", "tool.json"), "utf8"));
+    // git -h lists commands, and commandHelpArgs should trigger command doc generation
+    expect(existsSync(path.join(outDir, "git", "commands"))).toBe(true);
   });
 });
 

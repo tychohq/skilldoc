@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#\!/usr/bin/env node
 import { createRequire } from "node:module";
 var __create = Object.create;
 var __getProtoOf = Object.getPrototypeOf;
@@ -8684,7 +8684,9 @@ async function handleGenerate(flags, binaryName) {
       console.error(`Error: binary "${binaryName}" not found on PATH`);
       process.exit(1);
     }
-    tools = [createToolEntry(binaryName)];
+    const registryPath = expandHome(typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY);
+    const registryTool = await lookupRegistryTool(registryPath, binaryName);
+    tools = [registryTool ?? createToolEntry(binaryName)];
   } else {
     const registryPath = expandHome(typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY);
     const only = typeof flags.only === "string" ? new Set(flags.only.split(",").map((v) => v.trim())) : null;
@@ -8797,6 +8799,14 @@ function commandDocPath(command) {
 }
 function slugify(input) {
   return input.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").replace(/-+/g, "-");
+}
+async function lookupRegistryTool(registryPath, binaryName) {
+  try {
+    const registry = await loadRegistry(registryPath);
+    return registry.tools.find((t) => t.id === binaryName || t.binary === binaryName) ?? null;
+  } catch {
+    return null;
+  }
 }
 function resolveBinary(name) {
   const result = spawnSync3("which", [name], { encoding: "utf8" });
@@ -8935,6 +8945,7 @@ if (__require.main == __require.module) {
 export {
   resolveBinary,
   parseFlags,
+  lookupRegistryTool,
   handleRefresh,
   handleGenerate,
   handleAutoRedist,
