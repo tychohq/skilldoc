@@ -6,8 +6,8 @@ const README_MAX_LINES = 400;
 const readmePath = path.resolve(import.meta.dir, "../README.md");
 const content = readFileSync(readmePath, "utf8");
 
-function getQuickStart(text: string): string {
-  const start = text.indexOf("## Quick Start");
+function getSection(text: string, heading: string): string {
+  const start = text.indexOf(heading);
   const end = text.indexOf("\n---", start);
   return text.slice(start, end);
 }
@@ -20,7 +20,7 @@ describe("README", () => {
 });
 
 describe("Quick Start uses ad-hoc flow", () => {
-  const quickStart = getQuickStart(content);
+  const quickStart = getSection(content, "## Quick Start");
 
   it("shows ad-hoc positional arg commands", () => {
     expect(quickStart).toContain("tool-docs generate jq");
@@ -28,15 +28,26 @@ describe("Quick Start uses ad-hoc flow", () => {
     expect(quickStart).toContain("tool-docs validate jq");
   });
 
-  it("does not lead with init or --only flags", () => {
-    // init and --only belong in the batch/registry section, not the primary Quick Start
-    const primaryBlock = quickStart.split("```")[1] ?? "";
-    expect(primaryBlock).not.toContain("tool-docs init");
-    expect(primaryBlock).not.toContain("--only");
+  it("does not contain init or --only flags", () => {
+    expect(quickStart).not.toContain("tool-docs init");
+    expect(quickStart).not.toContain("--only");
   });
 
-  it("mentions registry batch flow separately", () => {
-    expect(quickStart).toContain("registry");
-    expect(quickStart).toContain("tool-docs init");
+  it("does not mention registry", () => {
+    expect(quickStart).not.toContain("registry");
+  });
+});
+
+describe("Configuration section has batch/registry flow", () => {
+  const config = getSection(content, "## Configuration");
+
+  it("shows batch commands", () => {
+    expect(config).toContain("tool-docs init");
+    expect(config).toContain("tool-docs generate");
+    expect(config).toContain("tool-docs distill");
+  });
+
+  it("explains registry purpose", () => {
+    expect(config).toContain("registry");
   });
 });

@@ -49,14 +49,6 @@ tool-docs validate jq
 
 Drop `~/.agents/skills/jq/SKILL.md` into your `AGENTS.md`, `CLAUDE.md`, or OpenClaw skills directory. Your agent has verified docs instead of guessing from training data.
 
-**Want to generate skills for many tools at once?** Use the [registry](#configuration):
-
-```bash
-tool-docs init        # create a starter registry with common tools
-tool-docs generate    # extract docs for all registry tools
-tool-docs distill     # distill all into agent-optimized skills
-```
-
 ---
 
 ## Example Output
@@ -218,7 +210,15 @@ If validation fails, `--auto-redist` re-runs distillation with feedback and you 
 
 ## Configuration
 
-Registry lives at `~/.agents/tool-docs/registry.yaml`. Run `tool-docs init` to create a starter file.
+For batch operations across many tools, use a registry file at `~/.agents/tool-docs/registry.yaml`:
+
+```bash
+tool-docs init        # create a starter registry with common tools
+tool-docs generate    # extract docs for all registry tools
+tool-docs distill     # distill all into agent-optimized skills
+```
+
+Registry format:
 
 ```yaml
 version: 1
