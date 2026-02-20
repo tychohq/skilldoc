@@ -513,6 +513,114 @@ describe("handleGenerate registry precedence", () => {
   });
 });
 
+describe("handleGenerate --only (batch registry)", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), `generate-only-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function writeRegistryFile(tools: Array<{ id: string; binary: string }>): string {
+    const registryPath = path.join(tmpDir, "registry.yaml");
+    const toolsYaml = tools
+      .map((t) => `  - id: "${t.id}"\n    binary: "${t.binary}"`)
+      .join("\n");
+    writeFileSync(registryPath, `version: 1\ntools:\n${toolsYaml}\n`);
+    return registryPath;
+  }
+
+  it("generates only the tool specified by --only", async () => {
+    const registryPath = writeRegistryFile([
+      { id: "echo", binary: "echo" },
+      { id: "ls", binary: "ls" },
+    ]);
+    const outDir = path.join(tmpDir, "out");
+    mkdirSync(outDir, { recursive: true });
+
+    await handleGenerate({ out: outDir, registry: registryPath, only: "echo" });
+
+    expect(existsSync(path.join(outDir, "echo", "tool.json"))).toBe(true);
+    expect(existsSync(path.join(outDir, "ls", "tool.json"))).toBe(false);
+  });
+
+  it("generates multiple comma-separated tools from --only", async () => {
+    const registryPath = writeRegistryFile([
+      { id: "echo", binary: "echo" },
+      { id: "ls", binary: "ls" },
+      { id: "pwd", binary: "pwd" },
+    ]);
+    const outDir = path.join(tmpDir, "out");
+    mkdirSync(outDir, { recursive: true });
+
+    await handleGenerate({ out: outDir, registry: registryPath, only: "echo,ls" });
+
+    expect(existsSync(path.join(outDir, "echo", "tool.json"))).toBe(true);
+    expect(existsSync(path.join(outDir, "ls", "tool.json"))).toBe(true);
+    expect(existsSync(path.join(outDir, "pwd", "tool.json"))).toBe(false);
+  });
+
+  it("handles --only with spaces around commas", async () => {
+    const registryPath = writeRegistryFile([
+      { id: "echo", binary: "echo" },
+      { id: "ls", binary: "ls" },
+    ]);
+    const outDir = path.join(tmpDir, "out");
+    mkdirSync(outDir, { recursive: true });
+
+    await handleGenerate({ out: outDir, registry: registryPath, only: "echo , ls" });
+
+    expect(existsSync(path.join(outDir, "echo", "tool.json"))).toBe(true);
+    expect(existsSync(path.join(outDir, "ls", "tool.json"))).toBe(true);
+  });
+
+  it("generates all tools when --only is not provided", async () => {
+    const registryPath = writeRegistryFile([
+      { id: "echo", binary: "echo" },
+      { id: "ls", binary: "ls" },
+    ]);
+    const outDir = path.join(tmpDir, "out");
+    mkdirSync(outDir, { recursive: true });
+
+    await handleGenerate({ out: outDir, registry: registryPath });
+
+    expect(existsSync(path.join(outDir, "echo", "tool.json"))).toBe(true);
+    expect(existsSync(path.join(outDir, "ls", "tool.json"))).toBe(true);
+  });
+
+  it("generates nothing when --only specifies no matching tools", async () => {
+    const registryPath = writeRegistryFile([
+      { id: "echo", binary: "echo" },
+    ]);
+    const outDir = path.join(tmpDir, "out");
+    mkdirSync(outDir, { recursive: true });
+
+    await handleGenerate({ out: outDir, registry: registryPath, only: "nonexistent" });
+
+    expect(existsSync(path.join(outDir, "echo", "tool.json"))).toBe(false);
+    expect(existsSync(path.join(outDir, "nonexistent", "tool.json"))).toBe(false);
+  });
+
+  it("index.md only lists the filtered tools", async () => {
+    const registryPath = writeRegistryFile([
+      { id: "echo", binary: "echo" },
+      { id: "ls", binary: "ls" },
+    ]);
+    const outDir = path.join(tmpDir, "out");
+    mkdirSync(outDir, { recursive: true });
+
+    await handleGenerate({ out: outDir, registry: registryPath, only: "echo" });
+
+    const indexContent = readFileSync(path.join(outDir, "index.md"), "utf8");
+    expect(indexContent).toContain("echo");
+    expect(indexContent).not.toContain("| ls |");
+  });
+});
+
 describe("bin/tool-docs.js generate <binary> (integration)", () => {
   const binPath = path.resolve(import.meta.dir, "../bin/tool-docs.js");
   let tmpDir: string;
@@ -545,6 +653,18 @@ describe("bin/tool-docs.js generate <binary> (integration)", () => {
     const result = spawnSync("node", [binPath, "generate", "nonexistent-binary-xyz", "--out", tmpDir], { encoding: "utf8" });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('Error: binary "nonexistent-binary-xyz" not found on PATH');
+  });
+
+  it("--only filters registry tools in batch mode via CLI", () => {
+    const registryPath = path.join(tmpDir, "registry.yaml");
+    writeFileSync(registryPath, `version: 1\ntools:\n  - id: echo\n    binary: echo\n  - id: ls\n    binary: ls\n`);
+    const outDir = path.join(tmpDir, "out");
+    mkdirSync(outDir, { recursive: true });
+
+    const result = spawnSync("node", [binPath, "generate", "--registry", registryPath, "--out", outDir, "--only", "echo"], { encoding: "utf8" });
+    expect(result.status).toBe(0);
+    expect(existsSync(path.join(outDir, "echo", "tool.json"))).toBe(true);
+    expect(existsSync(path.join(outDir, "ls", "tool.json"))).toBe(false);
   });
 });
 
