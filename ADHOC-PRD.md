@@ -35,7 +35,7 @@ Pass a tool name, get a skill. No registry, no config, no init.
 ### Phase 2: Ad-Hoc Mode for `distill`
 
 - [ ] Accept a positional argument: `tool-docs distill <tool-id>`
-- [ ] When given, distill just that one tool (looks for raw docs in the standard location)
+- [x] When given, distill just that one tool (looks for raw docs in the standard location)
 - [ ] If raw docs don't exist yet, print: `Error: no raw docs found for "jq". Run "tool-docs generate jq" first.`
 
 ### Phase 3: Update Quick Start
