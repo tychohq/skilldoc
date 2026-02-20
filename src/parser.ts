@@ -152,7 +152,7 @@ function parseCommands(lines: string[], requireIndent: boolean): CommandSummary[
     const trimmed = line.trim();
     if (!trimmed) continue;
     if (trimmed.startsWith("-")) continue;
-    const match = trimmed.match(/^(\S+(?:\s+\S+)*)\s{2,}(.+)$/);
+    const match = trimmed.match(/^(\S+(?:\s+\S+)*)(?:\t|\s{2,})(.+)$/);
     if (!match) continue;
     commands.push({
       name: match[1].trim().replace(/:$/, ""),

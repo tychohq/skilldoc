@@ -12,7 +12,7 @@
 
 ## The Problem
 
-Your AI agent hallucinates CLI flags because it's guessing from training data. Hand-writing tool docs is tedious and goes stale. A typical `--help` page is 48KB — that's ~12K tokens burned every time your agent needs to look something up.
+AI agents guess at CLI flags from training data instead of reading accurate docs. Hand-written tool docs go stale as CLIs change. A typical `--help` page is 48KB — that's ~12K tokens per context load.
 
 ## The Solution
 
@@ -167,7 +167,7 @@ tool-docs refresh --diff
 | ✅ agent-browser | `agent-browser` | Browser automation |
 | ✅ Ralphy | `ralphy` | AI coding loop runner |
 
-Works with any CLI that has `--help` output. Add custom tools in minutes (see [Configuration](#configuration)).
+Works with any CLI that has `--help` output. Add custom tools via registry entry (see [Configuration](#configuration)).
 
 ---
 

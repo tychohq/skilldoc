@@ -6971,7 +6971,7 @@ var require_dist = __commonJS((exports) => {
 });
 
 // src/cli.ts
-var import_yaml2 = __toESM(require_dist(), 1);
+var import_yaml3 = __toESM(require_dist(), 1);
 import path3 from "node:path";
 import os2 from "node:os";
 import { spawnSync as spawnSync3 } from "node:child_process";
@@ -7060,10 +7060,14 @@ function normalizeTool(tool) {
 }
 
 // src/parser.ts
-var HEADER_RE = /^([A-Z][A-Za-z0-9 /_-]*):\s*$/;
+var HEADER_WITH_COLON_RE = /^([A-Z][A-Za-z0-9 /_-]*):\s*$/;
+var HEADER_ALL_CAPS_RE = /^([A-Z][A-Z0-9 /_-]*)\s*$/;
 var INLINE_USAGE_RE = /^\s*Usage:\s*(.*)$/i;
+function matchHeader(line) {
+  const m = line.match(HEADER_WITH_COLON_RE) ?? line.match(HEADER_ALL_CAPS_RE);
+  return m ? m[1] : null;
+}
 var SECTION_NAMES = {
-  commands: ["Commands", "Command", "Available Commands", "Subcommands", "Sub-commands"],
   examples: ["Examples", "Example"],
   env: ["Environment", "Environment Variables", "Env", "ENV"]
 };
@@ -7075,6 +7079,7 @@ function parseHelp(rawHelp) {
   const sections = [];
   let current = null;
   const usageLines = [];
+  const preambleLines = [];
   for (let i = 0;i < lines.length; i += 1) {
     const line = compactWhitespace(lines[i]);
     const inlineUsage = line.match(INLINE_USAGE_RE);
@@ -7087,16 +7092,18 @@ function parseHelp(rawHelp) {
       i += subsequent.length;
       continue;
     }
-    const headerMatch = line.match(HEADER_RE);
-    if (headerMatch) {
+    const headerName = matchHeader(line.trim());
+    if (headerName) {
       if (current) {
         sections.push(current);
       }
-      current = { name: headerMatch[1], lines: [] };
+      current = { name: headerName, lines: [] };
       continue;
     }
     if (current) {
       current.lines.push(line);
+    } else {
+      preambleLines.push(line);
     }
   }
   if (current) {
@@ -7108,17 +7115,17 @@ function parseHelp(rawHelp) {
       usageLines.push(...trimEmpty(usageSection.lines));
     }
   }
-  const commandsSection = findSection(sections, SECTION_NAMES.commands);
+  const commandsSections = sections.filter((s) => /command/i.test(s.name));
   const examplesSection = findSection(sections, SECTION_NAMES.examples);
   const envSection = findSection(sections, SECTION_NAMES.env);
-  const commandLines = commandsSection ? commandsSection.lines : sections.flatMap((section) => section.lines);
+  const commandLines = commandsSections.length > 0 ? commandsSections.flatMap((s) => s.lines) : sections.flatMap((section) => section.lines);
   const commands = parseCommands(commandLines, true);
-  const optionsSections = sections.filter((section) => /options|flags|arguments/i.test(section.name));
-  const optionLines = optionsSections.flatMap((section) => section.lines);
+  const optionsSections = sections.filter((section) => /option|flag/i.test(section.name));
+  const optionLines = optionsSections.length > 0 ? optionsSections.flatMap((section) => section.lines) : sections.length === 0 ? preambleLines : [];
   const options = parseOptions(optionLines);
   const examples = examplesSection ? trimEmpty(examplesSection.lines) : [];
   const env = envSection ? parseEnv(envSection.lines) : [];
-  if (!commandsSection && commands.length === 0) {
+  if (commandsSections.length === 0 && commands.length === 0) {
     warnings.push("No commands detected.");
   }
   if (options.length === 0) {
@@ -7146,7 +7153,7 @@ function collectIndented(lines, startIndex) {
     if (!/^\s+/.test(line)) {
       break;
     }
-    if (HEADER_RE.test(line)) {
+    if (matchHeader(line.trim()) !== null) {
       break;
     }
     collected.push(line.trim());
@@ -7167,11 +7174,11 @@ function parseCommands(lines, requireIndent) {
       continue;
     if (trimmed.startsWith("-"))
       continue;
-    const match = trimmed.match(/^(\S+(?:\s+\S+)*)\s{2,}(.+)$/);
+    const match = trimmed.match(/^(\S+(?:\s+\S+)*)(?:\t|\s{2,})(.+)$/);
     if (!match)
       continue;
     commands.push({
-      name: match[1].trim(),
+      name: match[1].trim().replace(/:$/, ""),
       summary: match[2].trim()
     });
   }
@@ -7602,6 +7609,7 @@ function unique(tokens) {
 }
 
 // src/distill.ts
+var import_yaml2 = __toESM(require_dist(), 1);
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { readFile as readFile2 } from "node:fs/promises";
@@ -7609,16 +7617,26 @@ import { existsSync, readdirSync } from "node:fs";
 var DEFAULT_SKILLS_DIR = "~/.agents/skills";
 var DEFAULT_DOCS_DIR = "~/.agents/docs/tool-docs";
 var DEFAULT_MODEL = "claude-haiku-4-5-20251001";
+var DEFAULT_DISTILL_CONFIG_PATH = "~/.agents/tool-docs/distill-config.yaml";
 var GENERATED_MARKER = "generated-from: agent-tool-docs";
-var SIZE_LIMITS = {
-  "SKILL.md": 2000,
-  "advanced.md": 2000,
-  "recipes.md": 2000,
-  "troubleshooting.md": 1000
+var DEFAULT_PROMPT_CONFIG = {
+  sizeLimits: {
+    skill: 2000,
+    advanced: 2000,
+    recipes: 2000,
+    troubleshooting: 1000
+  },
+  priorities: [
+    "**Most-used flags/commands first** — the 20% of flags that cover 80% of real-world use",
+    "**Real-world usage patterns** over exhaustive flag lists — show how to accomplish tasks, not just what flags exist",
+    "**Agent-specific gotchas** — quoting pitfalls, escaping issues, common errors, flags LLMs commonly misuse, output format surprises",
+    "**Concrete runnable examples** over abstract descriptions"
+  ],
+  extraInstructions: ""
 };
-var defaultLLMCaller = (rawDocs, toolId, model, feedback) => callLLM(rawDocs, toolId, model, defaultExec, feedback);
 async function distillTool(options) {
-  const { toolId, binary, docsDir, outDir, model, llmCaller = defaultLLMCaller, feedback } = options;
+  const { toolId, binary, docsDir, outDir, model, llmCaller, feedback, promptConfig = {} } = options;
+  const caller = llmCaller ?? ((rawDocs, tid, m, fb) => callLLM(rawDocs, tid, m, defaultExec, fb, promptConfig));
   const skillPath = path.join(outDir, "SKILL.md");
   if (existsSync(skillPath)) {
     const existing = await readFile2(skillPath, "utf8");
@@ -7630,7 +7648,7 @@ async function distillTool(options) {
   if (!rawContent) {
     return { toolId, outDir, skipped: true, skipReason: `no raw docs found in ${docsDir}/${toolId}` };
   }
-  const distilled = llmCaller(rawContent, toolId, model, feedback);
+  const distilled = caller(rawContent, toolId, model, feedback);
   await ensureDir(outDir);
   await ensureDir(path.join(outDir, "docs"));
   const now = new Date().toISOString();
@@ -7640,12 +7658,13 @@ async function distillTool(options) {
   await writeFileEnsured(path.join(outDir, "docs", "advanced.md"), distilled.advanced);
   await writeFileEnsured(path.join(outDir, "docs", "recipes.md"), distilled.recipes);
   await writeFileEnsured(path.join(outDir, "docs", "troubleshooting.md"), distilled.troubleshooting);
+  const sizeLimits = resolveSizeLimits(promptConfig);
   const sizeWarnings = checkSizeLimits({
     "SKILL.md": skillMd,
     "advanced.md": distilled.advanced,
     "recipes.md": distilled.recipes,
     "troubleshooting.md": distilled.troubleshooting
-  });
+  }, sizeLimits);
   return { toolId, outDir, ...sizeWarnings.length > 0 ? { sizeWarnings } : {} };
 }
 async function gatherRawDocs(toolId, docsDir) {
@@ -7670,10 +7689,20 @@ async function gatherRawDocs(toolId, docsDir) {
 
 `);
 }
-function checkSizeLimits(files) {
+function resolveSizeLimits(config) {
+  const defaults = DEFAULT_PROMPT_CONFIG.sizeLimits;
+  const overrides = config.sizeLimits ?? {};
+  return {
+    "SKILL.md": overrides.skill ?? defaults.skill,
+    "advanced.md": overrides.advanced ?? defaults.advanced,
+    "recipes.md": overrides.recipes ?? defaults.recipes,
+    "troubleshooting.md": overrides.troubleshooting ?? defaults.troubleshooting
+  };
+}
+function checkSizeLimits(files, limits) {
   const warnings = [];
   for (const [name, content] of Object.entries(files)) {
-    const limit = SIZE_LIMITS[name];
+    const limit = limits[name];
     if (limit === undefined)
       continue;
     const size = new TextEncoder().encode(content).length;
@@ -7683,7 +7712,12 @@ function checkSizeLimits(files) {
   }
   return warnings;
 }
-function buildPrompt(rawDocs, toolId, feedback) {
+function buildPrompt(rawDocs, toolId, feedback, config = {}) {
+  const sl = resolveSizeLimits(config);
+  const priorities = config.priorities ?? DEFAULT_PROMPT_CONFIG.priorities;
+  const extraInstructions = config.extraInstructions ?? "";
+  const priorityList = priorities.map((p, i) => `${i + 1}. ${p}`).join(`
+`);
   return `You are an agent documentation specialist. Your task is to distill raw CLI documentation into lean, agent-optimized skill files.
 
 ## Raw Documentation for: ${toolId}
@@ -7697,16 +7731,13 @@ ${rawDocs}
 Produce 4 documentation files in JSON format. **SKILL.md is the most important file** — agents read it first on 90% of requests. When in doubt, put essential information in SKILL.md.
 
 Prioritize across all files:
-1. **Most-used flags/commands first** — the 20% of flags that cover 80% of real-world use
-2. **Real-world usage patterns** over exhaustive flag lists — show how to accomplish tasks, not just what flags exist
-3. **Agent-specific gotchas** — quoting pitfalls, escaping issues, common errors, flags LLMs commonly misuse, output format surprises
-4. **Concrete runnable examples** over abstract descriptions
+${priorityList}
 
 Per-file size targets (strict — return less content rather than exceed these):
-- "skill": ≤ 2000 bytes — the essential quick reference every agent needs
-- "advanced": ≤ 2000 bytes — power-user flags and edge cases
-- "recipes": ≤ 2000 bytes — task-oriented examples
-- "troubleshooting": ≤ 1000 bytes — known gotchas and common LLM mistakes
+- "skill": ≤ ${sl["SKILL.md"]} bytes — the essential quick reference every agent needs
+- "advanced": ≤ ${sl["advanced.md"]} bytes — power-user flags and edge cases
+- "recipes": ≤ ${sl["recipes.md"]} bytes — task-oriented examples
+- "troubleshooting": ≤ ${sl["troubleshooting.md"]} bytes — known gotchas and common LLM mistakes
 
 **IMPORTANT: Always return valid JSON, even if the raw docs are sparse or show warnings like "No commands detected."** If the raw docs are incomplete, use your general knowledge of the tool to produce useful documentation. Do not explain the issue in prose — just return the JSON.
 
@@ -7772,7 +7803,9 @@ docs/troubleshooting.md format:
 
 Keep each file ruthlessly concise. No padding, no exhaustive lists. Respect the per-file byte limits. SKILL.md is the most important — agents rely on it first.
 
-Return ONLY valid JSON, no markdown fences around the JSON itself.${feedback ? `
+Return ONLY valid JSON, no markdown fences around the JSON itself.${extraInstructions ? `
+
+${extraInstructions}` : ""}${feedback ? `
 
 ---
 
@@ -7785,8 +7818,8 @@ ${feedback}
 Fix the above gaps in your new distillation.` : ""}`;
 }
 var defaultExec = (command, args, options) => spawnSync(command, [...args], options);
-function callLLM(rawDocs, toolId, model, exec = defaultExec, feedback) {
-  const prompt = buildPrompt(rawDocs, toolId, feedback);
+function callLLM(rawDocs, toolId, model, exec = defaultExec, feedback, promptConfig) {
+  const prompt = buildPrompt(rawDocs, toolId, feedback, promptConfig);
   const result = exec("claude", ["-p", "--output-format", "text", "--model", model, "--no-session-persistence"], {
     input: prompt,
     encoding: "utf8",
@@ -7858,6 +7891,43 @@ function addMetadataHeader(skillContent, toolId, binary, description, generatedA
   lines.push(`generated-at: ${generatedAt}`, "---", "");
   return lines.join(`
 `) + skillContent;
+}
+async function loadDistillConfig(configPath) {
+  const resolved = expandHome(configPath ?? DEFAULT_DISTILL_CONFIG_PATH);
+  let raw;
+  try {
+    raw = await readFile2(resolved, "utf8");
+  } catch {
+    return {};
+  }
+  let parsed;
+  try {
+    parsed = import_yaml2.default.parse(raw);
+  } catch {
+    return {};
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    return {};
+  return extractDistillConfig(parsed);
+}
+function extractDistillConfig(raw) {
+  const config = {};
+  if (raw.sizeLimits && typeof raw.sizeLimits === "object" && !Array.isArray(raw.sizeLimits)) {
+    const sl = raw.sizeLimits;
+    const sizeLimits = {};
+    for (const key of ["skill", "advanced", "recipes", "troubleshooting"]) {
+      if (typeof sl[key] === "number")
+        sizeLimits[key] = sl[key];
+    }
+    config.sizeLimits = sizeLimits;
+  }
+  if (Array.isArray(raw.priorities) && raw.priorities.every((p) => typeof p === "string")) {
+    config.priorities = raw.priorities;
+  }
+  if (typeof raw.extraInstructions === "string") {
+    config.extraInstructions = raw.extraInstructions;
+  }
+  return config;
 }
 
 // src/validate.ts
@@ -8216,7 +8286,7 @@ var HELP_TEXT = `tool-docs
 
 Usage:
   tool-docs generate [--registry <path>] [--out <path>] [--only <id1,id2>]
-  tool-docs distill [--registry <path>] [--docs <path>] [--out <path>] [--only <id1,id2>] [--model <model>]
+  tool-docs distill [--registry <path>] [--docs <path>] [--out <path>] [--only <id1,id2>] [--model <model>] [--distill-config <path>]
   tool-docs refresh [--registry <path>] [--out <path>] [--only <id1,id2>] [--model <model>] [--diff]
   tool-docs validate <tool-id> [--skills <path>] [--models <m1,m2>] [--threshold <n>] [--auto-redist]
   tool-docs report [--skills <path>]
@@ -8232,18 +8302,19 @@ Commands:
   init       Create a starter registry file
 
 Options:
-  --registry <path>   Path to registry YAML (default: ${DEFAULT_REGISTRY})
-  --out <path>        Output directory (default: generate=${DEFAULT_OUT_DIR}, distill=${DEFAULT_SKILLS_OUT_DIR})
-  --docs <path>       Path to raw docs dir for distill (default: ${DEFAULT_DOCS_DIR})
-  --skills <path>     Path to skills dir for validate (default: ${DEFAULT_SKILLS_OUT_DIR})
-  --only <ids>        Comma-separated list of tool ids to process
-  --model <model>     LLM model for distill/auto-redist (default: ${DEFAULT_MODEL})
-  --models <m1,m2>    Comma-separated models for validate (default: ${DEFAULT_VALIDATION_MODELS.join(",")})
-  --threshold <n>     Minimum passing score for validate (default: ${DEFAULT_THRESHOLD})
-  --auto-redist       Re-run distill with feedback if validation fails
-  --force             Overwrite registry on init
-  --diff              Show diff of skill output after refresh
-  -h, --help          Show this help
+  --registry <path>       Path to registry YAML (default: ${DEFAULT_REGISTRY})
+  --out <path>            Output directory (default: generate=${DEFAULT_OUT_DIR}, distill=${DEFAULT_SKILLS_OUT_DIR})
+  --docs <path>           Path to raw docs dir for distill (default: ${DEFAULT_DOCS_DIR})
+  --skills <path>         Path to skills dir for validate (default: ${DEFAULT_SKILLS_OUT_DIR})
+  --only <ids>            Comma-separated list of tool ids to process
+  --model <model>         LLM model for distill/auto-redist (default: ${DEFAULT_MODEL})
+  --models <m1,m2>        Comma-separated models for validate (default: ${DEFAULT_VALIDATION_MODELS.join(",")})
+  --threshold <n>         Minimum passing score for validate (default: ${DEFAULT_THRESHOLD})
+  --distill-config <path> Path to distill prompt config YAML (default: ${DEFAULT_DISTILL_CONFIG_PATH})
+  --auto-redist           Re-run distill with feedback if validation fails
+  --force                 Overwrite registry on init
+  --diff                  Show diff of skill output after refresh
+  -h, --help              Show this help
 `;
 var VERSION = "0.2.0";
 async function main() {
@@ -8301,7 +8372,7 @@ function parseFlags(args) {
       flags[arg.replace(/^--/, "")] = true;
       continue;
     }
-    if (arg === "--registry" || arg === "--out" || arg === "--only" || arg === "--docs" || arg === "--model" || arg === "--models" || arg === "--skills" || arg === "--threshold") {
+    if (arg === "--registry" || arg === "--out" || arg === "--only" || arg === "--docs" || arg === "--model" || arg === "--models" || arg === "--skills" || arg === "--threshold" || arg === "--distill-config") {
       const value = args[i + 1];
       if (!value || value.startsWith("-")) {
         throw new Error(`Missing value for ${arg}`);
@@ -8360,6 +8431,8 @@ async function handleDistill(flags) {
   const outBase = expandHome(typeof flags.out === "string" ? flags.out : DEFAULT_SKILLS_OUT_DIR);
   const model = typeof flags.model === "string" ? flags.model : DEFAULT_MODEL;
   const only = typeof flags.only === "string" ? new Set(flags.only.split(",").map((v) => v.trim())) : null;
+  const distillConfigPath = typeof flags["distill-config"] === "string" ? flags["distill-config"] : undefined;
+  const promptConfig = await loadDistillConfig(distillConfigPath);
   const registry = await loadRegistry(registryPath);
   const tools = registry.tools.filter((tool) => tool.enabled !== false).filter((tool) => only ? only.has(tool.id) : true).sort((a, b) => a.id.localeCompare(b.id));
   let generated = 0;
@@ -8367,7 +8440,7 @@ async function handleDistill(flags) {
   for (const tool of tools) {
     const outDir = path3.join(outBase, tool.id);
     process.stdout.write(`distill ${tool.id}... `);
-    const result = await distillTool({ toolId: tool.id, binary: tool.binary, docsDir, outDir, model });
+    const result = await distillTool({ toolId: tool.id, binary: tool.binary, docsDir, outDir, model, promptConfig });
     if (result.skipped) {
       console.log(`skipped (${result.skipReason})`);
       skipped += 1;
@@ -8498,7 +8571,7 @@ async function handleGenerate(flags) {
     const toolDir = path3.join(outDir, tool.id);
     await ensureDir(toolDir);
     await writeFileEnsured(path3.join(toolDir, "tool.json"), JSON.stringify(doc, null, 2));
-    await writeFileEnsured(path3.join(toolDir, "tool.yaml"), import_yaml2.default.stringify(doc));
+    await writeFileEnsured(path3.join(toolDir, "tool.yaml"), import_yaml3.default.stringify(doc));
     await writeFileEnsured(path3.join(toolDir, "tool.md"), renderToolMarkdown(doc));
     await rm(path3.join(toolDir, "raw.txt"), { force: true });
     if (tool.commandHelpArgs) {
@@ -8549,7 +8622,7 @@ async function generateCommandDocs(toolId, binary, commandHelpArgs, commands, to
     const commandDir = path3.join(commandsDir, slugify(command.name));
     await ensureDir(commandDir);
     await writeFileEnsured(path3.join(commandDir, "command.json"), JSON.stringify(doc, null, 2));
-    await writeFileEnsured(path3.join(commandDir, "command.yaml"), import_yaml2.default.stringify(doc));
+    await writeFileEnsured(path3.join(commandDir, "command.yaml"), import_yaml3.default.stringify(doc));
     await writeFileEnsured(path3.join(commandDir, "command.md"), renderCommandMarkdown(doc));
   }
 }

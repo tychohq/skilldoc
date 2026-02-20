@@ -344,3 +344,41 @@ describe("parseHelp — curl flat option list (no section headers)", () => {
     expect(parsed.warnings).not.toContain("No options detected.");
   });
 });
+
+describe("parseHelp — tab-separated command entries (remindctl style)", () => {
+  const input = `remindctl 0.1.1
+Manage Apple Reminders from the terminal
+
+Usage:
+  remindctl [command] [options]
+
+Commands:
+  show\tShow reminders
+  list\tList reminder lists or show list contents
+  add\tAdd a reminder
+  complete\tMark reminders complete
+  delete\tDelete reminders
+
+Run 'remindctl <command> --help' for details.`;
+
+  it("extracts commands separated by a single tab", () => {
+    const parsed = parseHelp(input);
+    const names = parsed.commands.map((c) => c.name);
+    expect(names).toContain("show");
+    expect(names).toContain("list");
+    expect(names).toContain("add");
+    expect(names).toContain("complete");
+    expect(names).toContain("delete");
+  });
+
+  it("captures summaries for tab-separated commands", () => {
+    const parsed = parseHelp(input);
+    const show = parsed.commands.find((c) => c.name === "show");
+    expect(show?.summary).toBe("Show reminders");
+  });
+
+  it("does not produce no-commands warning", () => {
+    const parsed = parseHelp(input);
+    expect(parsed.warnings).not.toContain("No commands detected.");
+  });
+});
