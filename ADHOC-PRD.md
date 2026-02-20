@@ -58,7 +58,7 @@ Pass a tool name, get a skill. No registry, no config, no init.
 
 ### Phase 4: Update Help Text
 
-- [ ] Update the CLI usage text to show both modes:
+- [x] Update the CLI usage text to show both modes:
   ```
   Usage:
     tool-docs generate <tool>                    # generate docs for a single tool
@@ -71,7 +71,7 @@ Pass a tool name, get a skill. No registry, no config, no init.
 
 ### Phase 5: All-in-One Command
 
-- [ ] Add `tool-docs run <tool>` command that runs the full pipeline: generate → distill → validate
+- [x] Add `tool-docs run <tool>` command that runs the full pipeline: generate → distill → validate
 - [ ] On success, print the path to the generated SKILL.md and the validation score
 - [ ] On validation failure, print the score and suggest `--auto-redist` to retry
 - [ ] Also support batch mode: `tool-docs run` (no arg) runs the full pipeline for all registry tools
