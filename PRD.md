@@ -48,12 +48,12 @@ The SKILL.md is the entry point. The `docs/` folder has deeper sections that age
 
 ### Phase 2: Skill Output Format
 - [x] Output distilled skills to `~/.agents/skills/<tool-id>/` by default (with `--out` override)
-- [ ] Generate proper SKILL.md with description header that matches OpenClaw/ClawHub skill format
-- [ ] Include metadata block in SKILL.md: tool binary, version detected, generation date, source (auto-generated)
-- [ ] Add a `generated-from: agent-tool-docs` marker so hand-edited skills aren't overwritten
+- [x] Generate proper SKILL.md with description header that matches OpenClaw/ClawHub skill format
+- [x] Include metadata block in SKILL.md: tool binary, version detected, generation date, source (auto-generated)
+- [x] Add a `generated-from: agent-tool-docs` marker so hand-edited skills aren't overwritten
 
 ### Phase 3: Registry Expansion
-- [ ] Expand the registry.yaml to support richer tool metadata: category (cli/sdk/api), homepage URL, typical use cases
+- [x] Expand the registry.yaml to support richer tool metadata: category (cli/sdk/api), homepage URL, typical use cases
 - [ ] Add these tools to the registry (our most-used agent-focused CLIs): `gh` (GitHub CLI), `bird` (Twitter/X CLI), `gog` (Google Workspace), `agentmail` (AgentMail CLI), `claude` (Claude Code CLI), `openclaw` (OpenClaw CLI), `ralphy` (Ralph loop runner), `agent-browser` (browser automation), `memo` (Apple Notes), `remindctl` (Apple Reminders), `gifgrep` (GIF search), `vercel` (Vercel CLI), `supabase` (Supabase CLI), `ffmpeg`, `jq`, `curl`, `uv`/`uvx`
 - [ ] Run `tool-docs generate` for all new registry entries to produce raw docs
 - [ ] Run `tool-docs distill` for all new registry entries to produce skills
