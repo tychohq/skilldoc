@@ -782,6 +782,135 @@ describe("handleDistill with tool-id", () => {
     expect(captured[0].toolId).toBe("jq");
     expect(captured[0].binary).toBe("jq");
   });
+
+  it("passes correct docsDir and outDir to distillFn", async () => {
+    const docsDir = setupRawDocs("mytool");
+    const skillsDir = path.join(tmpDir, "skills");
+    const captured: DistillOptions[] = [];
+
+    const mockDistill = async (opts: DistillOptions): Promise<DistillResult> => {
+      captured.push(opts);
+      return { toolId: opts.toolId, outDir: opts.outDir };
+    };
+
+    await handleDistill({ docs: docsDir, out: skillsDir }, "mytool", mockDistill);
+
+    expect(captured[0].docsDir).toBe(docsDir);
+    expect(captured[0].outDir).toBe(path.join(skillsDir, "mytool"));
+  });
+
+  it("forwards model flag to distillFn", async () => {
+    const docsDir = setupRawDocs("mytool");
+    const skillsDir = path.join(tmpDir, "skills");
+    const captured: DistillOptions[] = [];
+
+    const mockDistill = async (opts: DistillOptions): Promise<DistillResult> => {
+      captured.push(opts);
+      return { toolId: opts.toolId, outDir: opts.outDir };
+    };
+
+    await handleDistill({ docs: docsDir, out: skillsDir, model: "claude-opus-4-6" }, "mytool", mockDistill);
+
+    expect(captured[0].model).toBe("claude-opus-4-6");
+  });
+
+  it("uses DEFAULT_MODEL when model flag is not provided", async () => {
+    const docsDir = setupRawDocs("mytool");
+    const skillsDir = path.join(tmpDir, "skills");
+    const captured: DistillOptions[] = [];
+
+    const mockDistill = async (opts: DistillOptions): Promise<DistillResult> => {
+      captured.push(opts);
+      return { toolId: opts.toolId, outDir: opts.outDir };
+    };
+
+    await handleDistill({ docs: docsDir, out: skillsDir }, "mytool", mockDistill);
+
+    expect(captured[0].model).toBe(DEFAULT_MODEL);
+  });
+
+  it("reports skipped when distillFn returns skipped result", async () => {
+    const docsDir = setupRawDocs("mytool");
+    const skillsDir = path.join(tmpDir, "skills");
+
+    const mockDistill = async (opts: DistillOptions): Promise<DistillResult> => ({
+      toolId: opts.toolId,
+      outDir: opts.outDir,
+      skipped: true,
+      skipReason: "hand-written skill (no generated-from marker)",
+    });
+
+    // Capture console output
+    let consoleOutput = "";
+    const origLog = console.log;
+    const origWrite = process.stdout.write;
+    process.stdout.write = ((msg: string) => { consoleOutput += msg; return true; }) as typeof process.stdout.write;
+    console.log = (msg: string) => { consoleOutput += msg + "\n"; };
+
+    try {
+      await handleDistill({ docs: docsDir, out: skillsDir }, "mytool", mockDistill);
+    } finally {
+      console.log = origLog;
+      process.stdout.write = origWrite;
+    }
+
+    expect(consoleOutput).toContain("skipped");
+    expect(consoleOutput).toContain("Distilled 0 tool(s), skipped 1");
+  });
+
+  it("reports size warnings from distillFn", async () => {
+    const docsDir = setupRawDocs("mytool");
+    const skillsDir = path.join(tmpDir, "skills");
+
+    const mockDistill = async (opts: DistillOptions): Promise<DistillResult> => ({
+      toolId: opts.toolId,
+      outDir: opts.outDir,
+      sizeWarnings: ["SKILL.md is 2500 bytes (limit: 2000 bytes)"],
+    });
+
+    let consoleOutput = "";
+    const origLog = console.log;
+    const origWrite = process.stdout.write;
+    process.stdout.write = ((msg: string) => { consoleOutput += msg; return true; }) as typeof process.stdout.write;
+    console.log = (msg: string) => { consoleOutput += msg + "\n"; };
+
+    try {
+      await handleDistill({ docs: docsDir, out: skillsDir }, "mytool", mockDistill);
+    } finally {
+      console.log = origLog;
+      process.stdout.write = origWrite;
+    }
+
+    expect(consoleOutput).toContain("size warnings");
+    expect(consoleOutput).toContain("Distilled 1 tool(s), skipped 0");
+  });
+
+  it("prints done for successful distill with no warnings", async () => {
+    const docsDir = setupRawDocs("mytool");
+    const skillsDir = path.join(tmpDir, "skills");
+
+    const mockDistill = async (opts: DistillOptions): Promise<DistillResult> => ({
+      toolId: opts.toolId,
+      outDir: opts.outDir,
+    });
+
+    let consoleOutput = "";
+    const origLog = console.log;
+    const origWrite = process.stdout.write;
+    process.stdout.write = ((msg: string) => { consoleOutput += msg; return true; }) as typeof process.stdout.write;
+    console.log = (msg: string) => { consoleOutput += msg + "\n"; };
+
+    try {
+      await handleDistill({ docs: docsDir, out: skillsDir }, "mytool", mockDistill);
+    } finally {
+      console.log = origLog;
+      process.stdout.write = origWrite;
+    }
+
+    expect(consoleOutput).toContain("distill mytool... ");
+    expect(consoleOutput).toContain("done");
+    expect(consoleOutput).toContain("Distilled 1 tool(s), skipped 0");
+  });
 });
 
 describe("bin/tool-docs.js distill <tool-id> (integration)", () => {
