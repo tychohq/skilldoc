@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from "bun:test";
 import path from "node:path";
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import os from "node:os";
+import { spawnSync } from "node:child_process";
 import { parseFlags, handleAutoRedist } from "../src/cli.js";
 import { DEFAULT_MODEL, DEFAULT_SKILLS_DIR, DistillOptions, DistillResult } from "../src/distill.js";
 import { DEFAULT_VALIDATION_MODELS } from "../src/validate.js";
@@ -250,5 +251,36 @@ describe("parseFlags --distill-config", () => {
     expect(flags["distill-config"]).toBe("/tmp/cfg.yaml");
     expect(flags.model).toBe("claude-haiku-4-5-20251001");
     expect(flags.only).toBe("rg");
+  });
+});
+
+describe("bin/tool-docs.js --help (integration)", () => {
+  const binPath = path.resolve(import.meta.dir, "../bin/tool-docs.js");
+
+  it("exits with code 0 and prints help text for --help", () => {
+    const result = spawnSync("node", [binPath, "--help"], { encoding: "utf8" });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("tool-docs");
+    expect(result.stdout).toContain("generate");
+    expect(result.stdout).toContain("distill");
+    expect(result.stdout).toContain("--registry");
+  });
+
+  it("exits with code 0 and prints help text for -h", () => {
+    const result = spawnSync("node", [binPath, "-h"], { encoding: "utf8" });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("tool-docs");
+  });
+
+  it("exits with code 0 and prints help text when called with no args", () => {
+    const result = spawnSync("node", [binPath], { encoding: "utf8" });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("tool-docs");
+  });
+
+  it("exits with code 1 for unknown command", () => {
+    const result = spawnSync("node", [binPath, "not-a-command"], { encoding: "utf8" });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("Unknown command");
   });
 });
