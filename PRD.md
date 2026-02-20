@@ -59,7 +59,7 @@ The SKILL.md is the entry point. The `docs/` folder has deeper sections that age
 - [x] Run `tool-docs distill` for all new registry entries to produce skills
 
 ### Phase 4: Multi-Model Validation
-- [ ] Add `tool-docs validate <tool-id>` command that tests skill quality
+- [x] Add `tool-docs validate <tool-id>` command that tests skill quality
 - [ ] Validation sends the generated SKILL.md to multiple models (Sonnet, Opus, Codex, Gemini if available) with test prompts like "Using only this documentation, write a command to [common task]"
 - [ ] Each model scores the skill on: (1) Could it complete the task? (2) Was the command correct? (3) Did it hallucinate any flags/options? (4) Was there anything missing it needed?
 - [ ] Aggregate scores into a quality report per tool (target: 9/10 average across models)
