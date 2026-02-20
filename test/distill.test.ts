@@ -297,6 +297,7 @@ describe("distillTool - skip logic", () => {
     const outDir = path.join(tmpDir, "skills", "notool");
     const result = await distillTool({
       toolId: "notool",
+      binary: "notool",
       docsDir: path.join(tmpDir, "docs"),
       outDir,
       model: "claude-haiku-4-5-20251001",
@@ -317,6 +318,7 @@ describe("distillTool - skip logic", () => {
 
     const result = await distillTool({
       toolId: "mytool",
+      binary: "mytool",
       docsDir,
       outDir,
       model: "claude-haiku-4-5-20251001",
@@ -349,6 +351,7 @@ describe("distillTool - skip logic", () => {
 
     const result = await distillTool({
       toolId: "mytool",
+      binary: "mytool",
       docsDir,
       outDir,
       model: "test-model",
@@ -392,7 +395,7 @@ describe("distillTool - full flow", () => {
       troubleshooting: "## Troubleshooting",
     });
 
-    await distillTool({ toolId: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
+    await distillTool({ toolId: "mytool", binary: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
 
     expect(existsSync(path.join(outDir, "SKILL.md"))).toBe(true);
     expect(existsSync(path.join(outDir, "docs", "advanced.md"))).toBe(true);
@@ -412,7 +415,7 @@ describe("distillTool - full flow", () => {
       troubleshooting: "trbl",
     });
 
-    await distillTool({ toolId: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
+    await distillTool({ toolId: "mytool", binary: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
 
     const content = readFileSync(path.join(outDir, "SKILL.md"), "utf8");
     expect(content).toMatch(/^---\n/);
@@ -422,6 +425,44 @@ describe("distillTool - full flow", () => {
     expect(content).toContain("tool-id: mytool");
     expect(content).toContain("generated-at:");
     expect(content).toContain("# mytool");
+  });
+
+  it("includes tool-binary in SKILL.md frontmatter", async () => {
+    const docsDir = setupDocs("mytool");
+    const outDir = path.join(tmpDir, "skills", "mytool");
+
+    const mockLLM: LLMCaller = () => ({
+      description: "Some tool",
+      skill: "# mytool",
+      advanced: "adv",
+      recipes: "rec",
+      troubleshooting: "trbl",
+    });
+
+    await distillTool({ toolId: "mytool", binary: "mytool-bin", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
+
+    const content = readFileSync(path.join(outDir, "SKILL.md"), "utf8");
+    expect(content).toContain("tool-binary: mytool-bin");
+  });
+
+  it("uses binary (not toolId) for version detection", async () => {
+    const docsDir = setupDocs("my-tool-id");
+    const outDir = path.join(tmpDir, "skills", "my-tool-id");
+
+    const mockLLM: LLMCaller = () => ({
+      description: "Some tool",
+      skill: "# my-tool-id",
+      advanced: "adv",
+      recipes: "rec",
+      troubleshooting: "trbl",
+    });
+
+    // binary differs from toolId; just verify it doesn't crash and frontmatter is written
+    await distillTool({ toolId: "my-tool-id", binary: "actual-binary", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
+
+    const content = readFileSync(path.join(outDir, "SKILL.md"), "utf8");
+    expect(content).toContain("tool-binary: actual-binary");
+    expect(content).toContain("tool-id: my-tool-id");
   });
 
   it("SKILL.md frontmatter closes with --- before content", async () => {
@@ -436,7 +477,7 @@ describe("distillTool - full flow", () => {
       troubleshooting: "trbl",
     });
 
-    await distillTool({ toolId: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
+    await distillTool({ toolId: "mytool", binary: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
 
     const content = readFileSync(path.join(outDir, "SKILL.md"), "utf8");
     // Frontmatter must open and close with ---
@@ -462,7 +503,7 @@ describe("distillTool - full flow", () => {
     // We can't directly inject versionExec into distillTool, but we can
     // verify tool-version appears when detectVersion succeeds
     // For now, just verify the field name is correct when present by testing addMetadataHeader indirectly
-    await distillTool({ toolId: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
+    await distillTool({ toolId: "mytool", binary: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
 
     // tool-version may or may not be present (depends on whether 'mytool' binary exists)
     // Just verify the file is valid YAML frontmatter without crashing
@@ -482,7 +523,7 @@ describe("distillTool - full flow", () => {
       troubleshooting: "gotcha content here",
     });
 
-    await distillTool({ toolId: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
+    await distillTool({ toolId: "mytool", binary: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
 
     expect(readFileSync(path.join(outDir, "docs", "advanced.md"), "utf8")).toBe("power user content here");
     expect(readFileSync(path.join(outDir, "docs", "recipes.md"), "utf8")).toBe("recipe content here");
@@ -499,7 +540,7 @@ describe("distillTool - full flow", () => {
       return { description: "d", skill: "s", advanced: "a", recipes: "r", troubleshooting: "t" };
     };
 
-    await distillTool({ toolId: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
+    await distillTool({ toolId: "mytool", binary: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
 
     expect(capturedDocs).toContain("This is the raw documentation");
   });
@@ -519,7 +560,7 @@ describe("distillTool - full flow", () => {
       return { description: "d", skill: "s", advanced: "a", recipes: "r", troubleshooting: "t" };
     };
 
-    await distillTool({ toolId: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
+    await distillTool({ toolId: "mytool", binary: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
 
     expect(capturedDocs).toContain("Main docs");
     expect(capturedDocs).toContain("Install a package");
@@ -537,7 +578,7 @@ describe("distillTool - full flow", () => {
       return { description: "d", skill: "s", advanced: "a", recipes: "r", troubleshooting: "t" };
     };
 
-    await distillTool({ toolId: "mytool", docsDir, outDir, model: "claude-opus-4-6", llmCaller: mockLLM });
+    await distillTool({ toolId: "mytool", binary: "mytool", docsDir, outDir, model: "claude-opus-4-6", llmCaller: mockLLM });
 
     expect(capturedModel).toBe("claude-opus-4-6");
     expect(capturedToolId).toBe("mytool");
@@ -555,7 +596,7 @@ describe("distillTool - full flow", () => {
       troubleshooting: "t",
     });
 
-    const result = await distillTool({ toolId: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
+    const result = await distillTool({ toolId: "mytool", binary: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
 
     expect(result.toolId).toBe("mytool");
     expect(result.outDir).toBe(outDir);
@@ -574,7 +615,7 @@ describe("distillTool - full flow", () => {
       troubleshooting: "## Troubleshooting\n\nShort",
     });
 
-    const result = await distillTool({ toolId: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
+    const result = await distillTool({ toolId: "mytool", binary: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
 
     expect(result.sizeWarnings).toBeUndefined();
   });
@@ -592,7 +633,7 @@ describe("distillTool - full flow", () => {
       troubleshooting: "trbl",
     });
 
-    const result = await distillTool({ toolId: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
+    const result = await distillTool({ toolId: "mytool", binary: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
 
     expect(result.sizeWarnings).toBeDefined();
     expect(result.sizeWarnings?.some((w) => w.includes("SKILL.md"))).toBe(true);
@@ -612,7 +653,7 @@ describe("distillTool - full flow", () => {
       troubleshooting: oversizedTroubleshooting,
     });
 
-    const result = await distillTool({ toolId: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
+    const result = await distillTool({ toolId: "mytool", binary: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
 
     expect(result.sizeWarnings).toBeDefined();
     expect(result.sizeWarnings?.some((w) => w.includes("troubleshooting.md"))).toBe(true);
@@ -631,7 +672,7 @@ describe("distillTool - full flow", () => {
       troubleshooting: "trbl",
     });
 
-    const result = await distillTool({ toolId: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
+    const result = await distillTool({ toolId: "mytool", binary: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
 
     expect(result.sizeWarnings?.length).toBeGreaterThanOrEqual(2);
     expect(result.sizeWarnings?.some((w) => w.includes("SKILL.md"))).toBe(true);

@@ -29,6 +29,7 @@ export type LLMCaller = (rawDocs: string, toolId: string, model: string) => Dist
 
 export type DistillOptions = {
   toolId: string;
+  binary: string;
   docsDir: string;
   outDir: string;
   model: string;
@@ -36,7 +37,7 @@ export type DistillOptions = {
 };
 
 export async function distillTool(options: DistillOptions): Promise<DistillResult> {
-  const { toolId, docsDir, outDir, model, llmCaller = callLLM } = options;
+  const { toolId, binary, docsDir, outDir, model, llmCaller = callLLM } = options;
 
   // Check if skill exists and was hand-written (no marker)
   const skillPath = path.join(outDir, "SKILL.md");
@@ -61,8 +62,8 @@ export async function distillTool(options: DistillOptions): Promise<DistillResul
   await ensureDir(path.join(outDir, "docs"));
 
   const now = new Date().toISOString();
-  const version = detectVersion(toolId);
-  const skillMd = addMetadataHeader(distilled.skill, toolId, distilled.description, now, version);
+  const version = detectVersion(binary);
+  const skillMd = addMetadataHeader(distilled.skill, toolId, binary, distilled.description, now, version);
 
   await writeFileEnsured(path.join(outDir, "SKILL.md"), skillMd);
   await writeFileEnsured(path.join(outDir, "docs", "advanced.md"), distilled.advanced);
@@ -306,6 +307,7 @@ export function detectVersion(toolId: string, exec: ExecFn = defaultExec): strin
 function addMetadataHeader(
   skillContent: string,
   toolId: string,
+  binary: string,
   description: string,
   generatedAt: string,
   version?: string
@@ -316,6 +318,7 @@ function addMetadataHeader(
     `description: ${description}`,
     `${GENERATED_MARKER}`,
     `tool-id: ${toolId}`,
+    `tool-binary: ${binary}`,
   ];
   if (version) lines.push(`tool-version: ${version}`);
   lines.push(`generated-at: ${generatedAt}`, "---", "");

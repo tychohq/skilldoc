@@ -149,7 +149,7 @@ async function handleDistill(flags: Record<string, string | boolean>): Promise<v
   for (const tool of tools) {
     const outDir = path.join(outBase, tool.id);
     process.stdout.write(`distill ${tool.id}... `);
-    const result = await distillTool({ toolId: tool.id, docsDir, outDir, model });
+    const result = await distillTool({ toolId: tool.id, binary: tool.binary, docsDir, outDir, model });
     if (result.skipped) {
       console.log(`skipped (${result.skipReason})`);
       skipped += 1;

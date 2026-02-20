@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#\!/usr/bin/env node
 import { createRequire } from "node:module";
 var __create = Object.create;
 var __getProtoOf = Object.getPrototypeOf;
@@ -7601,7 +7601,7 @@ var SIZE_LIMITS = {
   "troubleshooting.md": 1000
 };
 async function distillTool(options) {
-  const { toolId, docsDir, outDir, model, llmCaller = callLLM } = options;
+  const { toolId, binary, docsDir, outDir, model, llmCaller = callLLM } = options;
   const skillPath = path.join(outDir, "SKILL.md");
   if (existsSync(skillPath)) {
     const existing = await readFile2(skillPath, "utf8");
@@ -7617,7 +7617,8 @@ async function distillTool(options) {
   await ensureDir(outDir);
   await ensureDir(path.join(outDir, "docs"));
   const now = new Date().toISOString();
-  const skillMd = addMetadataHeader(distilled.skill, toolId, now);
+  const version = detectVersion(binary);
+  const skillMd = addMetadataHeader(distilled.skill, toolId, binary, distilled.description, now, version);
   await writeFileEnsured(path.join(outDir, "SKILL.md"), skillMd);
   await writeFileEnsured(path.join(outDir, "docs", "advanced.md"), distilled.advanced);
   await writeFileEnsured(path.join(outDir, "docs", "recipes.md"), distilled.recipes);
@@ -7691,6 +7692,7 @@ Per-file size targets (strict — return less content rather than exceed these):
 - "troubleshooting": ≤ 1000 bytes — known gotchas and common LLM mistakes
 
 Return ONLY a JSON object with exactly these keys:
+- "description": one-line description of the tool for the YAML frontmatter (no markdown, plain text only)
 - "skill": SKILL.md content — quick reference, the most important commands/flags, common patterns
 - "advanced": docs/advanced.md content — power-user flags, edge cases
 - "recipes": docs/recipes.md content — task-oriented recipes showing real commands
@@ -7787,30 +7789,46 @@ function parseDistilledOutput(output) {
     throw new Error("LLM output is not a JSON object");
   }
   const obj = parsed;
-  const required = ["skill", "advanced", "recipes", "troubleshooting"];
+  const required = ["description", "skill", "advanced", "recipes", "troubleshooting"];
   for (const key of required) {
     if (typeof obj[key] !== "string") {
       throw new Error(`LLM output missing required key: ${key}`);
     }
   }
   return {
+    description: obj.description,
     skill: obj.skill,
     advanced: obj.advanced,
     recipes: obj.recipes,
     troubleshooting: obj.troubleshooting
   };
 }
-function addMetadataHeader(skillContent, toolId, generatedAt) {
-  const meta = [
-    "<!--",
-    `  ${GENERATED_MARKER}`,
-    `  tool-id: ${toolId}`,
-    `  generated-at: ${generatedAt}`,
-    "-->",
-    ""
-  ].join(`
-`);
-  return meta + skillContent;
+function detectVersion(toolId, exec = defaultExec) {
+  for (const flag of ["--version", "-V"]) {
+    const result = exec(toolId, [flag], { input: "", encoding: "utf8", maxBuffer: 1024 * 1024 });
+    if (result.status === 0 && result.stdout) {
+      const firstLine = result.stdout.trim().split(`
+`)[0];
+      if (firstLine)
+        return firstLine;
+    }
+  }
+  return;
+}
+function addMetadataHeader(skillContent, toolId, binary, description, generatedAt, version) {
+  const lines = [
+    "---",
+    `name: ${toolId}`,
+    `description: ${description}`,
+    `${GENERATED_MARKER}`,
+    `tool-id: ${toolId}`,
+    `tool-binary: ${binary}`
+  ];
+  if (version)
+    lines.push(`tool-version: ${version}`);
+  lines.push(`generated-at: ${generatedAt}`, "---", "");
+  return lines.join(`
+`) + skillContent;
 }
 
 // src/cli.ts
@@ -7933,7 +7951,7 @@ async function handleDistill(flags) {
   for (const tool of tools) {
     const outDir = path2.join(outBase, tool.id);
     process.stdout.write(`distill ${tool.id}... `);
-    const result = await distillTool({ toolId: tool.id, docsDir, outDir, model });
+    const result = await distillTool({ toolId: tool.id, binary: tool.binary, docsDir, outDir, model });
     if (result.skipped) {
       console.log(`skipped (${result.skipReason})`);
       skipped += 1;
