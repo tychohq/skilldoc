@@ -5,6 +5,7 @@ import { parseHelp } from "../src/parser.js";
 const gitHelp = readFileSync(new URL("./fixtures/git-help.txt", import.meta.url), "utf8");
 const rgHelp = readFileSync(new URL("./fixtures/rg-help.txt", import.meta.url), "utf8");
 const ghHelp = readFileSync(new URL("./fixtures/gh-help.txt", import.meta.url), "utf8");
+const vercelHelp = readFileSync(new URL("./fixtures/vercel-help.txt", import.meta.url), "utf8");
 
 describe("parseHelp", () => {
   it("extracts usage from git help", () => {
@@ -249,6 +250,45 @@ GLOBAL OPTIONS
   --verbose   Enable verbose output
 `.trim();
     const parsed = parseHelp(input);
+    expect(parsed.warnings).not.toContain("No options detected.");
+  });
+});
+
+describe("parseHelp — vercel-style grouped commands with indented headers", () => {
+  it("extracts commands from the Basic group", () => {
+    const parsed = parseHelp(vercelHelp);
+    const names = parsed.commands.map((c) => c.name);
+    expect(names.some((n) => n.startsWith("deploy"))).toBe(true);
+    expect(names.some((n) => n.startsWith("build"))).toBe(true);
+    expect(names.some((n) => n.startsWith("dev"))).toBe(true);
+  });
+
+  it("extracts commands from the Advanced group", () => {
+    const parsed = parseHelp(vercelHelp);
+    const names = parsed.commands.map((c) => c.name);
+    expect(names.some((n) => n.startsWith("alias"))).toBe(true);
+    expect(names.some((n) => n.startsWith("domains"))).toBe(true);
+    expect(names.some((n) => n.startsWith("whoami"))).toBe(true);
+  });
+
+  it("does not treat Basic or Advanced as command names", () => {
+    const parsed = parseHelp(vercelHelp);
+    const names = parsed.commands.map((c) => c.name);
+    expect(names).not.toContain("Basic");
+    expect(names).not.toContain("Advanced");
+  });
+
+  it("extracts options from the Global Options section", () => {
+    const parsed = parseHelp(vercelHelp);
+    expect(parsed.options.length).toBeGreaterThan(0);
+    const flags = parsed.options.map((o) => o.flags);
+    expect(flags.some((f) => f.includes("--help"))).toBe(true);
+    expect(flags.some((f) => f.includes("--version"))).toBe(true);
+  });
+
+  it("does not produce no-commands or no-options warnings", () => {
+    const parsed = parseHelp(vercelHelp);
+    expect(parsed.warnings).not.toContain("No commands detected.");
     expect(parsed.warnings).not.toContain("No options detected.");
   });
 });

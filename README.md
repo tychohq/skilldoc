@@ -1,73 +1,280 @@
 # agent-tool-docs
 
-Deterministic CLI that generates static Markdown docs (plus JSON/YAML sidecars) from CLI `--help` output.
+[![version](https://img.shields.io/badge/version-0.2.0-blue)](package.json)
+[![license](https://img.shields.io/badge/license-MIT-green)](#license)
+[![works with](https://img.shields.io/badge/works%20with-Claude%20Code-purple)](https://claude.ai/claude-code)
+[![works with](https://img.shields.io/badge/works%20with-Gemini%20CLI-orange)](https://github.com/google-gemini/gemini-cli)
+[![works with](https://img.shields.io/badge/works%20with-OpenClaw-lightgrey)](https://github.com/brenner/openclaw)
 
-## Output Layout
+**Auto-generate agent-optimized CLI docs from `--help` output — verified, compressed, ready for AGENTS.md**
 
-Each tool is written to:
+---
+
+## The Problem
+
+Your AI agent hallucinates CLI flags because it's guessing from training data. Hand-writing tool docs is tedious and goes stale. A typical `--help` page is 48KB — that's ~12K tokens burned every time your agent needs to look something up.
+
+## The Solution
+
+A three-stage pipeline turns raw `--help` output into a verified, compressed skill doc:
+
+```
+CLI --help
+    ↓
+extract     →  raw docs + structured JSON  (~48KB)
+    ↓
+distill     →  agent-optimized SKILL.md    (~2KB)
+    ↓
+validate    →  multi-model score 9/10+
+    ↓
+SKILL.md    →  drop into AGENTS.md, CLAUDE.md, OpenClaw skills
+```
+
+---
+
+## Quick Start
+
+```bash
+# Install
+bun install && bun run build
+
+# Initialize a registry (or bring your own)
+tool-docs init
+
+# Generate raw docs from --help output
+tool-docs generate
+
+# Distill to compressed SKILL.md files
+tool-docs distill
+
+# Validate quality with LLM scoring
+tool-docs validate jq
+```
+
+Output lands in `~/.agents/skills/<tool-id>/SKILL.md`.
+
+---
+
+## Example Output
+
+The `jq` SKILL.md — distilled from 48KB of `--help` into ~1KB:
+
+```markdown
+# jq
+
+JSON processor for filtering, transforming, and extracting data.
+
+## Quick Reference
+jq '.field' file.json           # Extract field
+jq '.[] | .name' file.json      # Extract from array
+jq -r '.email' file.json        # Raw output (unquoted strings)
+jq -s 'add' file1.json file2.json  # Merge arrays/objects
+jq '.[] | select(.active)' file.json  # Filter elements
+
+## Key Flags
+| Flag | Purpose |
+|------|----------|
+| `-r` | Output strings without quotes (raw mode) |
+| `-s` | Slurp: read all inputs into single array |
+| `-n` | Start with null input (no file reading) |
+| `-c` | Compact output (single line) |
+| `--arg x v` | Bind `$x` to string value `v` |
+
+## Common Patterns
+Extract nested field: `jq '.user.address.city'`
+Filter + transform: `jq '.items[] | select(.qty > 0) | .name'`
+Use variables: `jq --arg role admin '.users[] | select(.role == $role)'`
+```
+
+See [`examples/`](examples/) for real generated output for `jq`, `gh`, `curl`, `ffmpeg`, and `rg`.
+
+---
+
+## How It Works
+
+### 1. Extract (`generate`)
+
+Runs each tool's `--help` (and subcommand help) with `LANG=C NO_COLOR=1 PAGER=cat` for stable, deterministic output. Parses usage lines, flags, subcommands, examples, and env vars into structured JSON + Markdown. Stores a SHA-256 hash for change detection.
 
 ```
 ~/.agents/docs/tool-docs/<tool-id>/
-  tool.md
-  tool.yaml
-  tool.json
-  commands/
-    <command-slug>/
-      command.md
-      command.yaml
+  tool.json        # structured parse
+  tool.md          # rendered markdown
+  commands/        # per-subcommand docs
+    <command>/
       command.json
+      command.md
 ```
 
-An `index.md` is generated at `~/.agents/docs/tool-docs/index.md`.
+### 2. Distill (`distill`)
 
-## Registry
+Passes raw docs to an LLM (default: `claude-haiku-4-5`) with a task-focused prompt. Output is a `SKILL.md` optimized for agents: quick reference, key flags, common patterns. Target size ~2KB. Skips re-distillation if help output is unchanged.
 
-Registry is a YAML file describing how to invoke each tool's help command.
+### 3. Validate (`validate`)
 
-Example `~/.agents/tool-docs/registry.yaml`:
+Runs scenario-based evaluation across multiple LLM models. Each model attempts realistic tasks using only the SKILL.md, then scores itself 1–10 on accuracy, completeness, and absence of hallucinations. Threshold: 9/10.
+
+```
+tool-docs validate jq --models claude-sonnet-4-6,claude-opus-4-6 --threshold 9
+```
+
+### 4. Refresh (`refresh`)
+
+Re-runs generate + distill only for tools whose `--help` output has changed (by hash). Use `--diff` to see what changed in the SKILL.md.
+
+```bash
+tool-docs refresh --diff
+```
+
+---
+
+## Supported Tools
+
+### Development
+| Tool | Binary | Category |
+|------|--------|----------|
+| ✅ Git | `git` | Version control |
+| ✅ GitHub CLI | `gh` | Code review / CI |
+| ✅ ripgrep | `rg` | Search |
+
+### Data & APIs
+| Tool | Binary | Category |
+|------|--------|----------|
+| ✅ jq | `jq` | JSON processing |
+| ✅ curl | `curl` | HTTP requests |
+
+### Python Tooling
+| Tool | Binary | Category |
+|------|--------|----------|
+| ✅ uv | `uv` | Package management |
+| ✅ uvx | `uvx` | Ephemeral tool runner |
+
+### Deployment
+| Tool | Binary | Category |
+|------|--------|----------|
+| ✅ Vercel CLI | `vercel` | Frontend deployment |
+| ✅ Supabase CLI | `supabase` | Database / backend |
+
+### Media
+| Tool | Binary | Category |
+|------|--------|----------|
+| ✅ FFmpeg | `ffmpeg` | Video / audio processing |
+
+### AI & Agents
+| Tool | Binary | Category |
+|------|--------|----------|
+| ✅ Claude Code | `claude` | AI coding agent |
+| ✅ agent-browser | `agent-browser` | Browser automation |
+| ✅ Ralphy | `ralphy` | AI coding loop runner |
+
+Works with any CLI that has `--help` output. Add custom tools in minutes (see [Configuration](#configuration)).
+
+---
+
+## Validation
+
+Skills are evaluated by asking an LLM to complete realistic tasks using only the generated SKILL.md. Each scenario is graded 1–10 for correctness and absence of hallucinations.
+
+Example report for `jq`:
+
+```
+validate jq (claude-sonnet-4-6, claude-opus-4-6)
+
+claude-sonnet-4-6  average: 9.3/10
+  Scenario 1: "extract all .name fields from an array of objects" → 9/10
+  Scenario 2: "filter objects where .active is true, output .email" → 10/10
+  Scenario 3: "merge two JSON files into a single array" → 9/10
+
+claude-opus-4-6    average: 9.7/10
+  Scenario 1: "extract all .name fields from an array of objects" → 10/10
+  Scenario 2: "filter objects where .active is true, output .email" → 9/10
+  Scenario 3: "merge two JSON files into a single array" → 10/10
+
+overall: 9.5/10 — PASSED (threshold: 9)
+```
+
+If validation fails, `--auto-redist` re-runs distillation with feedback and you can re-validate.
+
+---
+
+## Output Format
+
+```
+~/.agents/skills/<tool-id>/
+  SKILL.md          # compressed, agent-optimized (drop into AGENTS.md)
+  docs/
+    advanced.md     # extended reference
+    recipes.md      # common patterns
+    troubleshooting.md
+```
+
+`SKILL.md` is the primary file — small enough to include inline in any agent system prompt. The `docs/` subfolder holds overflow content for tools with complex help text.
+
+---
+
+## Configuration
+
+Registry lives at `~/.agents/tool-docs/registry.yaml`. Run `tool-docs init` to create a starter file.
 
 ```yaml
 version: 1
 tools:
+  - id: jq
+    binary: jq
+    displayName: jq (JSON processor)
+    category: cli
+    homepage: https://jqlang.github.io/jq
+    useCases:
+      - filter and transform JSON data
+      - extract fields from API responses
+
   - id: git
     binary: git
     displayName: Git
     helpArgs: ["-h"]
     commandHelpArgs: ["help", "{command}"]
-  - id: rg
-    binary: rg
-    displayName: ripgrep
-    helpArgs: ["--help"]
+    useCases:
+      - version control and branching
 ```
 
-## Usage
+**Fields:**
 
-```text
-tool-docs
+| Field | Required | Description |
+|-------|----------|-------------|
+| `id` | yes | Unique identifier, used as directory name |
+| `binary` | yes | Executable name on PATH |
+| `helpArgs` | no | Args to invoke help (default: `["--help"]`) |
+| `commandHelpArgs` | no | Args for subcommand help; `{command}` is replaced |
+| `useCases` | no | Hints for distillation prompt |
+| `enabled` | no | Set `false` to skip a tool without removing it |
 
-Usage:
-  tool-docs generate [--registry <path>] [--out <path>] [--only <id1,id2>]
-  tool-docs init [--registry <path>] [--force]
-  tool-docs --help
+Run `tool-docs generate --only jq` to process a single tool.
 
-Commands:
-  generate   Generate markdown + JSON docs for tools in the registry
-  init       Create a starter registry file
+---
 
-Options:
-  --registry <path>   Path to registry YAML (default: ~/.agents/tool-docs/registry.yaml)
-  --out <path>        Output directory (default: ~/.agents/docs/tool-docs)
-  --only <ids>        Comma-separated list of tool ids to generate
-  --force             Overwrite registry on init
-  -h, --help          Show this help
+## Contributing
+
+### Add a tool to the registry
+
+1. Add an entry to `~/.agents/tool-docs/registry.yaml`
+2. Run `tool-docs generate --only <id>`
+3. Run `tool-docs distill --only <id>`
+4. Run `tool-docs validate <id>` — score must be ≥ 9/10
+
+### Run tests
+
+```bash
+bun test
 ```
 
-## Development
+### Build
 
-- `bun install`
-- `bun test`
-- `bun run build`
+```bash
+bun run build   # outputs bin/tool-docs.js
+```
 
-## Notes
+---
 
-- Help output is captured with `LANG=C`, `LC_ALL=C`, and `NO_COLOR=1` for stable, deterministic output.
+## License
+
+MIT

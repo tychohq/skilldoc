@@ -48,7 +48,7 @@ export function parseHelp(rawHelp: string): ParsedHelp {
       continue;
     }
 
-    const headerName = matchHeader(line);
+    const headerName = matchHeader(line.trim());
     if (headerName) {
       if (current) {
         sections.push(current);
