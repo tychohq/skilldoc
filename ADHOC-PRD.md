@@ -72,8 +72,8 @@ Pass a tool name, get a skill. No registry, no config, no init.
 ### Phase 5: All-in-One Command
 
 - [x] Add `tool-docs run <tool>` command that runs the full pipeline: generate → distill → validate
-- [ ] On success, print the path to the generated SKILL.md and the validation score
-- [ ] On validation failure, print the score and suggest `--auto-redist` to retry
+- [x] On success, print the path to the generated SKILL.md and the validation score
+- [x] On validation failure, print the score and suggest `--auto-redist` to retry
 - [ ] Also support batch mode: `tool-docs run` (no arg) runs the full pipeline for all registry tools
 - [ ] Update help text and README to show `run` as the recommended first command:
   ```
