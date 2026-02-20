@@ -8086,7 +8086,12 @@ function runCommand(binary, args) {
     exitCode: result.status ?? null
   };
 }
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
-});
+if (__require.main == __require.module) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  });
+}
+export {
+  parseFlags
+};

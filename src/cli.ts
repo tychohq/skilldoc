@@ -74,7 +74,7 @@ async function main(): Promise<void> {
   process.exit(1);
 }
 
-function parseFlags(args: string[]): Record<string, string | boolean> {
+export function parseFlags(args: string[]): Record<string, string | boolean> {
   const flags: Record<string, string | boolean> = {};
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
@@ -355,7 +355,9 @@ function runCommand(binary: string, args: string[]): { output: string; exitCode:
   };
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
-});
+if ((import.meta as { main?: boolean }).main) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  });
+}
