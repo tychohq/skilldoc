@@ -1,6 +1,23 @@
 {
   "name": "agent-tool-docs",
   "version": "0.2.0",
+  "description": "Auto-generate agent-optimized CLI docs from --help output — verified, compressed, ready for AGENTS.md",
+  "keywords": [
+    "cli",
+    "docs",
+    "agent",
+    "ai",
+    "llm",
+    "tool-docs",
+    "claude",
+    "skill"
+  ],
+  "homepage": "https://github.com/BrennerSpear/agent-tool-docs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BrennerSpear/agent-tool-docs.git"
+  },
+  "license": "MIT",
   "private": true,
   "type": "module",
   "bin": {
