@@ -2,6 +2,16 @@ import YAML from "yaml";
 import { Registry, RegistryTool } from "./types.js";
 import { readText } from "./utils.js";
 
+export function createToolEntry(binaryName: string): RegistryTool {
+  return {
+    id: binaryName,
+    binary: binaryName,
+    displayName: binaryName,
+    helpArgs: ["--help"],
+    enabled: true,
+  };
+}
+
 export async function loadRegistry(path: string): Promise<Registry> {
   const raw = await readText(path);
   const parsed = YAML.parse(raw);

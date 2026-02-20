@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import YAML from "yaml";
-import { loadRegistry } from "../src/config.js";
+import { createToolEntry, loadRegistry } from "../src/config.js";
 import { writeFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -15,6 +15,40 @@ async function withTmpRegistry(content: string, fn: (p: string) => Promise<void>
     await rm(tmpPath, { force: true });
   }
 }
+
+describe("createToolEntry", () => {
+  it("sets id to the binary name", () => {
+    const entry = createToolEntry("jq");
+    expect(entry.id).toBe("jq");
+  });
+
+  it("sets binary to the binary name", () => {
+    const entry = createToolEntry("jq");
+    expect(entry.binary).toBe("jq");
+  });
+
+  it("sets displayName to the binary name", () => {
+    const entry = createToolEntry("jq");
+    expect(entry.displayName).toBe("jq");
+  });
+
+  it("sets helpArgs to ['--help']", () => {
+    const entry = createToolEntry("jq");
+    expect(entry.helpArgs).toEqual(["--help"]);
+  });
+
+  it("sets enabled to true", () => {
+    const entry = createToolEntry("jq");
+    expect(entry.enabled).toBe(true);
+  });
+
+  it("works with hyphenated binary names", () => {
+    const entry = createToolEntry("my-tool");
+    expect(entry.id).toBe("my-tool");
+    expect(entry.binary).toBe("my-tool");
+    expect(entry.displayName).toBe("my-tool");
+  });
+});
 
 describe("loadRegistry — category field", () => {
   it("accepts category: cli", async () => {

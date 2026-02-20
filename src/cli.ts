@@ -5,7 +5,7 @@ import { rm } from "node:fs/promises";
 import { writeFileSync, unlinkSync } from "node:fs";
 import { createHash } from "node:crypto";
 import YAML from "yaml";
-import { loadRegistry } from "./config.js";
+import { createToolEntry, loadRegistry } from "./config.js";
 import { parseHelp } from "./parser.js";
 import { renderCommandMarkdown, renderToolMarkdown } from "./render.js";
 import { buildUsageDoc, extractUsageTokens } from "./usage.js";
@@ -337,12 +337,7 @@ export async function handleGenerate(flags: Record<string, string | boolean>, bi
       console.error(`Error: binary "${binaryName}" not found on PATH`);
       process.exit(1);
     }
-    tools = [{
-      id: binaryName,
-      binary: binaryName,
-      enabled: true,
-      helpArgs: ["--help"],
-    }];
+    tools = [createToolEntry(binaryName)];
   } else {
     const registryPath = expandHome(
       typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY

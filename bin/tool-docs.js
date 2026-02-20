@@ -7011,6 +7011,15 @@ function compactWhitespace(text) {
 }
 
 // src/config.ts
+function createToolEntry(binaryName) {
+  return {
+    id: binaryName,
+    binary: binaryName,
+    displayName: binaryName,
+    helpArgs: ["--help"],
+    enabled: true
+  };
+}
 async function loadRegistry(path) {
   const raw = await readText(path);
   const parsed = import_yaml.default.parse(raw);
@@ -8675,12 +8684,7 @@ async function handleGenerate(flags, binaryName) {
       console.error(`Error: binary "${binaryName}" not found on PATH`);
       process.exit(1);
     }
-    tools = [{
-      id: binaryName,
-      binary: binaryName,
-      enabled: true,
-      helpArgs: ["--help"]
-    }];
+    tools = [createToolEntry(binaryName)];
   } else {
     const registryPath = expandHome(typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY);
     const only = typeof flags.only === "string" ? new Set(flags.only.split(",").map((v) => v.trim())) : null;

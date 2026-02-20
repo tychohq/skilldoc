@@ -338,6 +338,12 @@ describe("handleGenerate with binary name", () => {
     expect(doc.helpArgs).toEqual(["--help"]);
   });
 
+  it("sets displayName to binary name for ad-hoc binary", async () => {
+    await handleGenerate({ out: tmpDir }, "echo");
+    const toolJson = path.join(tmpDir, "echo", "tool.json");
+    const doc = JSON.parse(readFileSync(toolJson, "utf8"));
+    expect(doc.displayName).toBe("echo");
+  });
 });
 
 describe("resolveBinary", () => {
