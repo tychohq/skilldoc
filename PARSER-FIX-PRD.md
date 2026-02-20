@@ -28,10 +28,10 @@ This breaks on:
 
 ## Tasks
 
-- [ ] Fix section header regex to match headers WITHOUT trailing colons (e.g. `CORE COMMANDS`, `USAGE`, `FLAGS`)
-- [ ] Add fuzzy section name matching for commands: match any header containing "command" or "subcommand" (case-insensitive)
-- [ ] Add fuzzy section name matching for options: match any header containing "option" or "flag" (case-insensitive)
-- [ ] Handle `gh`-style command lines with trailing colons: `auth:   description` → command name `auth`
+- [x] Fix section header regex to match headers WITHOUT trailing colons (e.g. `CORE COMMANDS`, `USAGE`, `FLAGS`)
+- [x] Add fuzzy section name matching for commands: match any header containing "command" or "subcommand" (case-insensitive)
+- [x] Add fuzzy section name matching for options: match any header containing "option" or "flag" (case-insensitive)
+- [x] Handle `gh`-style command lines with trailing colons: `auth:   description` → command name `auth`
 - [ ] Handle `vercel`-style grouped commands with sub-headers (Basic, Advanced, etc.)
 - [ ] Handle `ffmpeg`-style lowercase usage line: `usage: ffmpeg [options]...`
 - [ ] Handle `curl` registry entry: update helpArgs to `["--help", "all"]` in registry.yaml so we capture the full help
