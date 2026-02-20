@@ -32,7 +32,7 @@ const HELP_TEXT = `tool-docs
 
 Usage:
   tool-docs generate [<binary>] [--registry <path>] [--out <path>] [--only <id1,id2>]
-  tool-docs distill [--registry <path>] [--docs <path>] [--out <path>] [--only <id1,id2>] [--model <model>] [--distill-config <path>]
+  tool-docs distill [<tool-id>] [--registry <path>] [--docs <path>] [--out <path>] [--only <id1,id2>] [--model <model>] [--distill-config <path>]
   tool-docs refresh [--registry <path>] [--out <path>] [--only <id1,id2>] [--model <model>] [--diff]
   tool-docs validate <tool-id> [--skills <path>] [--models <m1,m2>] [--threshold <n>] [--auto-redist]
   tool-docs report [--skills <path>]
@@ -87,7 +87,8 @@ async function main(): Promise<void> {
   }
 
   if (command === "distill") {
-    await handleDistill(flags);
+    const positional = extractPositionalArgs(args.slice(1));
+    await handleDistill(flags, positional[0]);
     return;
   }
 

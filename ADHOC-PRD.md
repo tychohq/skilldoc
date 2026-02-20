@@ -29,8 +29,8 @@ Pass a tool name, get a skill. No registry, no config, no init.
 - [x] Create an in-memory tool entry with sensible defaults: `id = binary name`, `helpArgs = ["--help"]`, `displayName = binary name`
 - [x] Run generation for that single tool, outputting to the same default location (`~/.agents/docs/tool-docs/<id>/`)
 - [x] If the binary isn't found on PATH, print a clear error: `Error: binary "xyz" not found on PATH`
-- [ ] If a positional arg is given AND the tool exists in the registry, use the registry entry (registry takes precedence for custom helpArgs etc.)
-- [ ] The `--only` flag still works as before for batch registry operations
+- [x] If a positional arg is given AND the tool exists in the registry, use the registry entry (registry takes precedence for custom helpArgs etc.)
+- [x] The `--only` flag still works as before for batch registry operations
 
 ### Phase 2: Ad-Hoc Mode for `distill`
 
