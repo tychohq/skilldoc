@@ -39,15 +39,21 @@ SKILL.md    →  drop into AGENTS.md, CLAUDE.md, OpenClaw skills
 git clone https://github.com/BrennerSpear/agent-tool-docs && cd agent-tool-docs
 bun install && bun run build
 
-# Generate a skill for jq (or any CLI tool)
-tool-docs generate jq
-tool-docs distill jq
-tool-docs validate jq
+# Generate a verified skill for jq (or any CLI tool)
+tool-docs run jq
 
 # Your agent-optimized skill is at ~/.agents/skills/jq/SKILL.md
 ```
 
-Drop `~/.agents/skills/jq/SKILL.md` into your `AGENTS.md`, `CLAUDE.md`, or OpenClaw skills directory. Your agent has verified docs instead of guessing from training data.
+`run` executes the full pipeline in one shot: generate → distill → validate. Drop `~/.agents/skills/jq/SKILL.md` into your `AGENTS.md`, `CLAUDE.md`, or OpenClaw skills directory. Your agent has verified docs instead of guessing from training data.
+
+You can also run each step individually:
+
+```bash
+tool-docs generate jq    # extract raw docs from --help
+tool-docs distill jq     # compress into agent-optimized SKILL.md
+tool-docs validate jq    # score quality with multi-model evaluation
+```
 
 ---
 
@@ -261,9 +267,7 @@ Run `tool-docs generate --only jq` to process a single tool.
 ### Add a tool
 
 ```bash
-tool-docs generate <binary>
-tool-docs distill <binary>
-tool-docs validate <binary>   # score must be ≥ 9/10
+tool-docs run <binary>   # full pipeline, score must be ≥ 9/10
 ```
 
 Or add an entry to `~/.agents/tool-docs/registry.yaml` for batch operations with custom `helpArgs`.

@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
-import { parseFlags, extractPositionalArgs, handleAutoRedist, handleGenerate, handleDistill, handleRun, resolveBinary, lookupRegistryTool, type RunDeps } from "../src/cli.js";
+import { parseFlags, extractPositionalArgs, handleAutoRedist, handleGenerate, handleDistill, handleRun, handleRunBatch, resolveBinary, lookupRegistryTool, type RunDeps, type RunBatchDeps, type RunResult } from "../src/cli.js";
 import { DEFAULT_MODEL, DEFAULT_SKILLS_DIR, DistillOptions, DistillResult } from "../src/distill.js";
 import { DEFAULT_VALIDATION_MODELS, type MultiModelValidationReport } from "../src/validate.js";
 
@@ -959,10 +959,11 @@ describe("bin/tool-docs.js distill <tool-id> (integration)", () => {
     expect(result.stdout).toContain("tool-docs distill [--registry");
   });
 
-  it("help text shows the run command", () => {
+  it("help text shows the run command with batch mode", () => {
     const result = spawnSync("node", [binPath, "--help"], { encoding: "utf8" });
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("tool-docs run <tool>");
+    expect(result.stdout).toContain("tool-docs run [--registry");
     expect(result.stdout).toContain("run        Run full pipeline");
   });
 });
@@ -1083,9 +1084,240 @@ describe("handleRun", () => {
     expect(capturedOpts.threshold).toBe(7);
   });
 
-  it("exits with code 1 on validation failure", async () => {
+  it("returns failed result on validation failure", async () => {
     const deps = makeDeps({
       validateFn: async ({ toolId }) => makeFailingReport(toolId),
+    });
+    const result = await handleRun("mytool", { skills: path.join(tmpDir, "skills") }, deps);
+    expect(result.passed).toBe(false);
+    expect(result.score).toBe(6.0);
+    expect(result.toolId).toBe("mytool");
+  });
+
+  it("returns passing result on validation success", async () => {
+    const deps = makeDeps();
+    const result = await handleRun("mytool", { skills: path.join(tmpDir, "skills") }, deps);
+    expect(result.passed).toBe(true);
+    expect(result.score).toBe(9.5);
+    expect(result.toolId).toBe("mytool");
+    expect(result.skillPath).toContain("mytool/SKILL.md");
+  });
+
+  it("runs auto-redist when --auto-redist is set and validation fails", async () => {
+    let validateCallCount = 0;
+    const calls: string[] = [];
+    const deps: RunDeps & { calls: string[] } = {
+      calls,
+      generateFn: async () => { calls.push("generate"); },
+      distillFn: async () => { calls.push("distill"); },
+      validateFn: async ({ toolId }) => {
+        validateCallCount++;
+        calls.push("validate");
+        // Fail first time, pass second time
+        if (validateCallCount === 1) return makeFailingReport(toolId);
+        return makePassingReport(toolId);
+      },
+      distillToolFn: async () => {
+        calls.push("distillTool");
+        return { toolId: "mytool", outDir: path.join(tmpDir, "skills", "mytool") };
+      },
+    };
+
+    const result = await handleRun("mytool", { skills: path.join(tmpDir, "skills"), "auto-redist": true }, deps);
+    expect(result.passed).toBe(true);
+    expect(validateCallCount).toBe(2);
+    expect(deps.calls).toEqual(["generate", "distill", "validate", "distillTool", "validate"]);
+  });
+
+  it("returns failed result when auto-redist still fails", async () => {
+    const deps = makeDeps({
+      validateFn: async ({ toolId }) => makeFailingReport(toolId),
+      distillToolFn: async () => ({ toolId: "mytool", outDir: path.join(tmpDir, "skills", "mytool") }),
+    });
+
+    const result = await handleRun("mytool", { skills: path.join(tmpDir, "skills"), "auto-redist": true }, deps);
+    expect(result.passed).toBe(false);
+  });
+
+  it("does not suggest --auto-redist when already using it", async () => {
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: unknown[]) => { logs.push(args.join(" ")); };
+
+    const deps = makeDeps({
+      validateFn: async ({ toolId }) => makeFailingReport(toolId),
+      distillToolFn: async () => ({ toolId: "mytool", outDir: path.join(tmpDir, "skills", "mytool") }),
+    });
+
+    try {
+      await handleRun("mytool", { skills: path.join(tmpDir, "skills"), "auto-redist": true }, deps);
+    } finally {
+      console.log = origLog;
+    }
+
+    expect(logs.some((l) => l.includes("--auto-redist"))).toBe(false);
+  });
+});
+
+describe("bin/tool-docs.js run (integration)", () => {
+  const binPath = path.resolve(import.meta.dir, "../bin/tool-docs.js");
+
+  it("batch mode exits with code 1 when no registry exists", () => {
+    const result = spawnSync("node", [binPath, "run", "--registry", "/tmp/nonexistent-registry.yaml"], { encoding: "utf8" });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("No registry found");
+  });
+
+  it("exits with code 1 for a nonexistent binary", () => {
+    const result = spawnSync("node", [binPath, "run", "nonexistent-binary-xyz", "--out", os.tmpdir()], { encoding: "utf8" });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('binary "nonexistent-binary-xyz" not found on PATH');
+  });
+});
+
+describe("handleRunBatch", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), `run-batch-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function makePassingReport(toolId: string): MultiModelValidationReport {
+    return {
+      toolId,
+      skillPath: path.join(tmpDir, "skills", toolId, "SKILL.md"),
+      models: ["test-model"],
+      reports: [],
+      overallAverageScore: 9.5,
+      passed: true,
+      threshold: 9,
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  function makeBatchDeps(overrides: Partial<RunBatchDeps> = {}): RunBatchDeps & { calls: string[] } {
+    const calls: string[] = [];
+    return {
+      calls,
+      generateFn: overrides.generateFn ?? (async () => { calls.push("generate"); }),
+      distillFn: overrides.distillFn ?? (async () => { calls.push("distill"); }),
+      validateFn: overrides.validateFn ?? (async ({ toolId }) => {
+        calls.push(`validate:${toolId}`);
+        return makePassingReport(toolId);
+      }),
+      loadRegistryFn: overrides.loadRegistryFn,
+    };
+  }
+
+  it("runs the pipeline for each registry tool", async () => {
+    const deps = makeBatchDeps({
+      loadRegistryFn: async () => ({
+        version: 1,
+        tools: [
+          { id: "jq", binary: "jq", enabled: true },
+          { id: "curl", binary: "curl", enabled: true },
+        ],
+      }),
+    });
+
+    await handleRunBatch({ skills: path.join(tmpDir, "skills") }, deps);
+    expect(deps.calls).toContain("validate:curl");
+    expect(deps.calls).toContain("validate:jq");
+  });
+
+  it("skips disabled tools", async () => {
+    const deps = makeBatchDeps({
+      loadRegistryFn: async () => ({
+        version: 1,
+        tools: [
+          { id: "jq", binary: "jq", enabled: true },
+          { id: "disabled-tool", binary: "disabled-tool", enabled: false },
+        ],
+      }),
+    });
+
+    await handleRunBatch({ skills: path.join(tmpDir, "skills") }, deps);
+    expect(deps.calls).toContain("validate:jq");
+    expect(deps.calls).not.toContain("validate:disabled-tool");
+  });
+
+  it("filters by --only flag", async () => {
+    const deps = makeBatchDeps({
+      loadRegistryFn: async () => ({
+        version: 1,
+        tools: [
+          { id: "jq", binary: "jq", enabled: true },
+          { id: "curl", binary: "curl", enabled: true },
+        ],
+      }),
+    });
+
+    await handleRunBatch({ skills: path.join(tmpDir, "skills"), only: "jq" }, deps);
+    expect(deps.calls).toContain("validate:jq");
+    expect(deps.calls).not.toContain("validate:curl");
+  });
+
+  it("skips tools with missing binaries", async () => {
+    const deps = makeBatchDeps({
+      loadRegistryFn: async () => ({
+        version: 1,
+        tools: [
+          { id: "nonexistent-xyz", binary: "nonexistent-xyz-binary", enabled: true },
+        ],
+      }),
+    });
+
+    const logs: string[] = [];
+    const origError = console.error;
+    console.error = (...args: unknown[]) => { logs.push(args.join(" ")); };
+    const origExit = process.exit;
+    process.exit = ((code: number) => { throw new Error(`exit:${code}`); }) as never;
+
+    try {
+      await handleRunBatch({ skills: path.join(tmpDir, "skills") }, deps);
+    } catch {
+      // expected — process.exit(1) for failed tools
+    } finally {
+      console.error = origError;
+      process.exit = origExit;
+    }
+
+    expect(deps.calls).toEqual([]);
+    expect(logs.some((l) => l.includes("not found on PATH"))).toBe(true);
+  });
+
+  it("prints summary after batch", async () => {
+    const deps = makeBatchDeps({
+      loadRegistryFn: async () => ({
+        version: 1,
+        tools: [
+          { id: "jq", binary: "jq", enabled: true },
+        ],
+      }),
+    });
+
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: unknown[]) => { logs.push(args.join(" ")); };
+
+    try {
+      await handleRunBatch({ skills: path.join(tmpDir, "skills") }, deps);
+    } finally {
+      console.log = origLog;
+    }
+
+    expect(logs.some((l) => l.includes("Summary"))).toBe(true);
+    expect(logs.some((l) => l.includes("1/1 tools passed"))).toBe(true);
+  });
+
+  it("exits with code 1 when registry loading fails", async () => {
+    const deps = makeBatchDeps({
+      loadRegistryFn: async () => { throw new Error("file not found"); },
     });
 
     let exitCode: number | undefined;
@@ -1093,7 +1325,7 @@ describe("handleRun", () => {
     process.exit = ((code: number) => { exitCode = code; throw new Error("exit"); }) as never;
 
     try {
-      await handleRun("mytool", { skills: path.join(tmpDir, "skills") }, deps);
+      await handleRunBatch({ skills: path.join(tmpDir, "skills") }, deps);
     } catch {
       // expected
     } finally {
@@ -1103,26 +1335,21 @@ describe("handleRun", () => {
     expect(exitCode).toBe(1);
   });
 
-  it("completes without exit on validation success", async () => {
-    const deps = makeDeps();
-    await expect(
-      handleRun("mytool", { skills: path.join(tmpDir, "skills") }, deps)
-    ).resolves.toBeUndefined();
-  });
-});
+  it("prints nothing-to-do message for empty registry", async () => {
+    const deps = makeBatchDeps({
+      loadRegistryFn: async () => ({ version: 1, tools: [] }),
+    });
 
-describe("bin/tool-docs.js run (integration)", () => {
-  const binPath = path.resolve(import.meta.dir, "../bin/tool-docs.js");
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: unknown[]) => { logs.push(args.join(" ")); };
 
-  it("exits with code 1 when no tool argument is provided", () => {
-    const result = spawnSync("node", [binPath, "run"], { encoding: "utf8" });
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain("run requires a <tool> argument");
-  });
+    try {
+      await handleRunBatch({ skills: path.join(tmpDir, "skills") }, deps);
+    } finally {
+      console.log = origLog;
+    }
 
-  it("exits with code 1 for a nonexistent binary", () => {
-    const result = spawnSync("node", [binPath, "run", "nonexistent-binary-xyz", "--out", os.tmpdir()], { encoding: "utf8" });
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain('binary "nonexistent-binary-xyz" not found on PATH');
+    expect(logs.some((l) => l.includes("No tools to process"))).toBe(true);
   });
 });

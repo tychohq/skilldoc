@@ -8417,7 +8417,8 @@ var DEFAULT_SKILLS_OUT_DIR = DEFAULT_SKILLS_DIR;
 var HELP_TEXT = `tool-docs
 
 Usage:
-  tool-docs run <tool>                         # run full pipeline: generate → distill → validate
+  tool-docs run <tool>                         # recommended: full pipeline for a single tool
+  tool-docs run [--registry <path>] ...        # full pipeline for all registry tools
   tool-docs generate <tool>                    # generate docs for a single tool
   tool-docs generate [--registry <path>] ...   # generate from registry
   tool-docs distill <tool>                     # distill a single tool
@@ -8429,7 +8430,7 @@ Usage:
   tool-docs --help
 
 Commands:
-  run        Run full pipeline: generate → distill → validate
+  run        Run full pipeline: generate → distill → validate (single tool or batch)
   generate   Generate docs for a single tool (ad-hoc) or all tools in the registry
   distill    Distill raw docs into agent-optimized skills (SKILL.md + docs/)
   refresh    Re-run generate + distill for tools whose --help output has changed
@@ -8466,13 +8467,14 @@ async function main() {
     return;
   }
   if (command === "run") {
-    const subArgs = args.slice(1);
-    const toolId = subArgs.find((a) => !a.startsWith("-"));
-    if (!toolId) {
-      console.error("run requires a <tool> argument");
-      process.exit(1);
+    const positional = extractPositionalArgs(args.slice(1));
+    if (positional.length > 0) {
+      const result = await handleRun(positional[0], flags);
+      if (!result.passed)
+        process.exit(1);
+    } else {
+      await handleRunBatch(flags);
     }
-    await handleRun(toolId, flags);
     return;
   }
   if (command === "generate") {
@@ -8678,12 +8680,14 @@ async function handleReport(flags) {
 async function handleRun(toolId, flags, {
   generateFn = handleGenerate,
   distillFn = handleDistill,
-  validateFn = validateSkillMultiModel
+  validateFn = validateSkillMultiModel,
+  distillToolFn = distillTool
 } = {}) {
   const skillsDir = expandHome(typeof flags.skills === "string" ? flags.skills : DEFAULT_SKILLS_OUT_DIR);
   const modelsFlag = typeof flags.models === "string" ? flags.models : DEFAULT_VALIDATION_MODELS.join(",");
   const models = modelsFlag.split(",").map((m) => m.trim()).filter((m) => m.length > 0);
   const threshold = typeof flags.threshold === "string" ? parseInt(flags.threshold, 10) : DEFAULT_THRESHOLD;
+  const autoRedist = flags["auto-redist"] === true;
   if (isNaN(threshold) || threshold < 1 || threshold > 10) {
     console.error("--threshold must be a number between 1 and 10");
     process.exit(1);
@@ -8696,9 +8700,25 @@ async function handleRun(toolId, flags, {
   await distillFn(flags, toolId);
   console.log(`
 — validate ${toolId}`);
-  const report = await validateFn({ toolId, skillsDir, models, threshold });
+  let report = await validateFn({ toolId, skillsDir, models, threshold });
   console.log(formatMultiModelReport(report));
   await saveValidationReport(report, skillsDir);
+  if (!report.passed && autoRedist) {
+    const docsDir = expandHome(typeof flags.docs === "string" ? flags.docs : DEFAULT_DOCS_DIR);
+    const model = typeof flags.model === "string" ? flags.model : DEFAULT_MODEL;
+    const distillConfigPath = typeof flags["distill-config"] === "string" ? flags["distill-config"] : undefined;
+    const promptConfig = await loadDistillConfig(distillConfigPath);
+    const feedback = buildValidationFeedback(report);
+    const outDir = path3.join(skillsDir, toolId);
+    console.log(`
+— auto-redist ${toolId}`);
+    await distillToolFn({ toolId, binary: toolId, docsDir, outDir, model, feedback, promptConfig });
+    console.log(`
+— re-validate ${toolId}`);
+    report = await validateFn({ toolId, skillsDir, models, threshold });
+    console.log(formatMultiModelReport(report));
+    await saveValidationReport(report, skillsDir);
+  }
   const skillPath = path3.join(skillsDir, toolId, "SKILL.md");
   if (report.passed) {
     console.log(`
@@ -8706,7 +8726,57 @@ Pipeline complete — ${skillPath} (score: ${report.overallAverageScore.toFixed(
   } else {
     console.log(`
 Validation failed (score: ${report.overallAverageScore.toFixed(1)}, threshold: ${threshold})`);
-    console.log(`Tip: re-run with --auto-redist to improve: tool-docs validate ${toolId} --auto-redist`);
+    if (!autoRedist) {
+      console.log(`Tip: re-run with --auto-redist to improve: tool-docs run ${toolId} --auto-redist`);
+    }
+  }
+  return { toolId, passed: report.passed, score: report.overallAverageScore, skillPath };
+}
+async function handleRunBatch(flags, {
+  loadRegistryFn = loadRegistry,
+  ...runDeps
+} = {}) {
+  const registryPath = expandHome(typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY);
+  const only = typeof flags.only === "string" ? new Set(flags.only.split(",").map((v) => v.trim())) : null;
+  let registry;
+  try {
+    registry = await loadRegistryFn(registryPath);
+  } catch {
+    console.error(`No registry found at ${registryPath}. Use: tool-docs run <tool> or create a registry with: tool-docs init`);
+    return process.exit(1);
+  }
+  const tools = registry.tools.filter((tool) => tool.enabled !== false).filter((tool) => only ? only.has(tool.id) : true).sort((a, b) => a.id.localeCompare(b.id));
+  if (tools.length === 0) {
+    console.log("No tools to process.");
+    return;
+  }
+  const results = [];
+  for (const tool of tools) {
+    console.log(`
+═══ ${tool.id} ═══`);
+    if (!resolveBinary(tool.binary)) {
+      console.error(`Skipping ${tool.id}: binary "${tool.binary}" not found on PATH`);
+      results.push({ toolId: tool.id, passed: false, score: 0, skillPath: "" });
+      continue;
+    }
+    try {
+      const result = await handleRun(tool.id, flags, runDeps);
+      results.push(result);
+    } catch (err) {
+      console.error(`Pipeline failed for ${tool.id}: ${err instanceof Error ? err.message : String(err)}`);
+      results.push({ toolId: tool.id, passed: false, score: 0, skillPath: "" });
+    }
+  }
+  console.log(`
+═══ Summary ═══`);
+  for (const r of results) {
+    const status = r.passed ? "PASS" : "FAIL";
+    console.log(`  ${r.toolId}: ${r.score.toFixed(1)}/10 — ${status}`);
+  }
+  const passed = results.filter((r) => r.passed).length;
+  console.log(`
+${passed}/${results.length} tools passed`);
+  if (passed < results.length) {
     process.exit(1);
   }
 }
@@ -9006,6 +9076,7 @@ export {
   resolveBinary,
   parseFlags,
   lookupRegistryTool,
+  handleRunBatch,
   handleRun,
   handleRefresh,
   handleGenerate,
