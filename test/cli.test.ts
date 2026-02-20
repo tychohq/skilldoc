@@ -1,6 +1,9 @@
-import { describe, expect, it } from "bun:test";
-import { parseFlags } from "../src/cli.js";
-import { DEFAULT_MODEL, DEFAULT_SKILLS_DIR } from "../src/distill.js";
+import { describe, expect, it, beforeEach, afterEach } from "bun:test";
+import path from "node:path";
+import { mkdirSync, writeFileSync, rmSync } from "node:fs";
+import os from "node:os";
+import { parseFlags, handleAutoRedist } from "../src/cli.js";
+import { DEFAULT_MODEL, DEFAULT_SKILLS_DIR, DistillOptions, DistillResult } from "../src/distill.js";
 import { DEFAULT_VALIDATION_MODELS } from "../src/validate.js";
 
 describe("parseFlags --out", () => {
@@ -128,5 +131,97 @@ describe("parseFlags --auto-redist", () => {
     expect(flags["auto-redist"]).toBe(true);
     expect(flags.threshold).toBe("8");
     expect(flags.models).toBe("claude-sonnet-4-6");
+  });
+});
+
+describe("handleAutoRedist", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), `auto-redist-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function writeRegistry(toolId: string, binary: string): string {
+    const registryPath = path.join(tmpDir, "registry.yaml");
+    writeFileSync(registryPath, `version: 1\ntools:\n  - id: ${toolId}\n    binary: ${binary}\n`);
+    return registryPath;
+  }
+
+  function makeDistillFn(captured: DistillOptions[]): (opts: DistillOptions) => Promise<DistillResult> {
+    return async (opts) => {
+      captured.push(opts);
+      return { toolId: opts.toolId, outDir: opts.outDir };
+    };
+  }
+
+  it("calls distillFn with the feedback when tool is found in registry", async () => {
+    const registryPath = writeRegistry("mytool", "mytool-bin");
+    const captured: DistillOptions[] = [];
+    await handleAutoRedist("mytool", "agents needed --count flag", { registry: registryPath }, makeDistillFn(captured));
+    expect(captured).toHaveLength(1);
+    expect(captured[0].feedback).toBe("agents needed --count flag");
+    expect(captured[0].toolId).toBe("mytool");
+    expect(captured[0].binary).toBe("mytool-bin");
+  });
+
+  it("uses the tool binary from the registry", async () => {
+    const registryPath = writeRegistry("rg", "rg-binary");
+    const captured: DistillOptions[] = [];
+    await handleAutoRedist("rg", "feedback text", { registry: registryPath }, makeDistillFn(captured));
+    expect(captured[0].binary).toBe("rg-binary");
+  });
+
+  it("uses model from flags when provided", async () => {
+    const registryPath = writeRegistry("mytool", "mytool");
+    const captured: DistillOptions[] = [];
+    await handleAutoRedist("mytool", "feedback", { registry: registryPath, model: "claude-opus-4-6" }, makeDistillFn(captured));
+    expect(captured[0].model).toBe("claude-opus-4-6");
+  });
+
+  it("uses DEFAULT_MODEL when model flag is not provided", async () => {
+    const registryPath = writeRegistry("mytool", "mytool");
+    const captured: DistillOptions[] = [];
+    await handleAutoRedist("mytool", "feedback", { registry: registryPath }, makeDistillFn(captured));
+    expect(captured[0].model).toBe(DEFAULT_MODEL);
+  });
+
+  it("does not call distillFn when tool is not found in registry", async () => {
+    const registryPath = writeRegistry("othertool", "othertool");
+    const captured: DistillOptions[] = [];
+    await handleAutoRedist("notexist", "feedback", { registry: registryPath }, makeDistillFn(captured));
+    expect(captured).toHaveLength(0);
+  });
+
+  it("resolves without throwing when tool is not found in registry", async () => {
+    const registryPath = writeRegistry("othertool", "othertool");
+    await expect(
+      handleAutoRedist("notexist", "feedback", { registry: registryPath }, makeDistillFn([]))
+    ).resolves.toBeUndefined();
+  });
+
+  it("resolves without throwing when distillFn throws", async () => {
+    const registryPath = writeRegistry("mytool", "mytool");
+    const failDistill = async () => { throw new Error("LLM failed"); };
+    await expect(
+      handleAutoRedist("mytool", "feedback", { registry: registryPath }, failDistill)
+    ).resolves.toBeUndefined();
+  });
+
+  it("logs skipped message when distillFn returns skipped result", async () => {
+    const registryPath = writeRegistry("mytool", "mytool");
+    const skipDistill = async (opts: DistillOptions): Promise<DistillResult> => ({
+      toolId: opts.toolId,
+      outDir: opts.outDir,
+      skipped: true,
+      skipReason: "hand-written skill",
+    });
+    await expect(
+      handleAutoRedist("mytool", "feedback", { registry: registryPath }, skipDistill)
+    ).resolves.toBeUndefined();
   });
 });

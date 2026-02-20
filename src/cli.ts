@@ -8,7 +8,7 @@ import { renderCommandMarkdown, renderToolMarkdown } from "./render.js";
 import { buildUsageDoc, extractUsageTokens } from "./usage.js";
 import { expandHome, ensureDir, writeFileEnsured } from "./utils.js";
 import { CommandDoc, CommandSummary, ToolDoc } from "./types.js";
-import { distillTool, DEFAULT_SKILLS_DIR, DEFAULT_DOCS_DIR, DEFAULT_MODEL } from "./distill.js";
+import { distillTool, DEFAULT_SKILLS_DIR, DEFAULT_DOCS_DIR, DEFAULT_MODEL, DistillOptions, DistillResult } from "./distill.js";
 import {
   validateSkillMultiModel,
   formatMultiModelReport,
@@ -252,10 +252,11 @@ async function handleReport(flags: Record<string, string | boolean>): Promise<vo
   }
 }
 
-async function handleAutoRedist(
+export async function handleAutoRedist(
   toolId: string,
   feedback: string,
-  flags: Record<string, string | boolean>
+  flags: Record<string, string | boolean>,
+  distillFn: (opts: DistillOptions) => Promise<DistillResult> = distillTool
 ): Promise<void> {
   const registryPath = expandHome(
     typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY
@@ -279,7 +280,7 @@ async function handleAutoRedist(
     }
 
     const outDir = path.join(skillsDir, toolId);
-    const result = await distillTool({ toolId, binary: tool.binary, docsDir, outDir, model, feedback });
+    const result = await distillFn({ toolId, binary: tool.binary, docsDir, outDir, model, feedback });
     if (result.skipped) {
       console.log(`auto-redist skipped: ${result.skipReason}`);
     } else {
