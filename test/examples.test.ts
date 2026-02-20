@@ -4,7 +4,7 @@ import path from "node:path";
 
 const EXAMPLES_DIR = path.resolve(import.meta.dir, "../examples");
 
-const EXAMPLE_TOOLS = ["jq", "curl", "gh", "ffmpeg", "uv"];
+const EXAMPLE_TOOLS = ["jq", "curl", "gh", "ffmpeg", "uv", "uvx", "claude", "gog", "bird"];
 const DOCS = ["advanced.md", "recipes.md", "troubleshooting.md"];
 
 describe("examples/", () => {

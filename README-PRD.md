@@ -42,11 +42,11 @@ The current README is bare-bones. We need it to sell the tool on first glance �
   13. **License** — MIT
 - [x] Keep total README under 400 lines — dense but scannable
 - [x] Use clear section headers, bullet points, and code blocks
-- [ ] NO marketing fluff or superlatives — let the tool speak for itself
+- [x] NO marketing fluff or superlatives — let the tool speak for itself
 
 ### Phase 2: Example Skills
 
-- [ ] Create an `examples/` directory in the repo
+- [x] Create an `examples/` directory in the repo
 - [ ] Copy 3-5 of the best generated skills into `examples/` (pick from existing generated output at `~/.agents/skills/`):
   - `jq` — universally known, shows compression value
   - `curl` — everyone uses it, complex `--help`
