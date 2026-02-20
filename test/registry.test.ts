@@ -73,6 +73,13 @@ describe("registry.yaml — content validation", () => {
     }
   });
 
+  it("curl uses helpArgs [--help, all]", async () => {
+    const registry = await loadRegistry(REGISTRY_PATH);
+    const curl = registry.tools.find((t) => t.id === "curl");
+    expect(curl).toBeDefined();
+    expect(curl?.helpArgs).toEqual(["--help", "all"]);
+  });
+
   it("tool ids are unique", async () => {
     const registry = await loadRegistry(REGISTRY_PATH);
     const ids = registry.tools.map((t) => t.id);
