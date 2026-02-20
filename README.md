@@ -220,6 +220,12 @@ For batch operations across many tools, use a registry file at `~/.agents/tool-d
 
 ```bash
 tool-docs init        # create a starter registry with common tools
+tool-docs run         # full pipeline for all registry tools
+```
+
+You can also run individual steps across the registry:
+
+```bash
 tool-docs generate    # extract docs for all registry tools
 tool-docs distill     # distill all into agent-optimized skills
 ```
