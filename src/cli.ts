@@ -10,7 +10,7 @@ import { parseHelp } from "./parser.js";
 import { renderCommandMarkdown, renderToolMarkdown } from "./render.js";
 import { buildUsageDoc, extractUsageTokens } from "./usage.js";
 import { expandHome, ensureDir, writeFileEnsured, readText } from "./utils.js";
-import { CommandDoc, CommandSummary, ToolDoc } from "./types.js";
+import { CommandDoc, CommandSummary, RegistryTool, ToolDoc } from "./types.js";
 import { distillTool, DEFAULT_SKILLS_DIR, DEFAULT_DOCS_DIR, DEFAULT_MODEL, DEFAULT_DISTILL_CONFIG_PATH, loadDistillConfig, DistillOptions, DistillResult } from "./distill.js";
 import {
   validateSkillMultiModel,
@@ -31,7 +31,7 @@ const DEFAULT_SKILLS_OUT_DIR = DEFAULT_SKILLS_DIR;
 const HELP_TEXT = `tool-docs
 
 Usage:
-  tool-docs generate [--registry <path>] [--out <path>] [--only <id1,id2>]
+  tool-docs generate [<binary>] [--registry <path>] [--out <path>] [--only <id1,id2>]
   tool-docs distill [--registry <path>] [--docs <path>] [--out <path>] [--only <id1,id2>] [--model <model>] [--distill-config <path>]
   tool-docs refresh [--registry <path>] [--out <path>] [--only <id1,id2>] [--model <model>] [--diff]
   tool-docs validate <tool-id> [--skills <path>] [--models <m1,m2>] [--threshold <n>] [--auto-redist]
@@ -40,7 +40,7 @@ Usage:
   tool-docs --help
 
 Commands:
-  generate   Generate markdown + JSON docs for tools in the registry
+  generate   Generate docs for a single binary or all tools in the registry
   distill    Distill raw docs into agent-optimized skills (SKILL.md + docs/)
   refresh    Re-run generate + distill for tools whose --help output has changed
   validate   Test skill quality using LLM-based scenario evaluation
@@ -81,7 +81,8 @@ async function main(): Promise<void> {
   }
 
   if (command === "generate") {
-    await handleGenerate(flags);
+    const positional = extractPositionalArgs(args.slice(1));
+    await handleGenerate(flags, positional[0]);
     return;
   }
 
@@ -118,6 +119,24 @@ async function main(): Promise<void> {
 
   console.error(`Unknown command: ${command}`);
   process.exit(1);
+}
+
+const VALUE_FLAGS = new Set([
+  "--registry", "--out", "--only", "--docs", "--model",
+  "--models", "--skills", "--threshold", "--distill-config",
+]);
+
+export function extractPositionalArgs(args: string[]): string[] {
+  const positional: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg.startsWith("-")) {
+      if (VALUE_FLAGS.has(arg)) i++;
+      continue;
+    }
+    positional.push(arg);
+  }
+  return positional;
 }
 
 export function parseFlags(args: string[]): Record<string, string | boolean> {
@@ -306,20 +325,31 @@ export async function handleAutoRedist(
   }
 }
 
-async function handleGenerate(flags: Record<string, string | boolean>): Promise<void> {
-  const registryPath = expandHome(
-    typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY
-  );
+export async function handleGenerate(flags: Record<string, string | boolean>, binaryName?: string): Promise<void> {
   const outDir = expandHome(
     typeof flags.out === "string" ? flags.out : DEFAULT_OUT_DIR
   );
-  const only = typeof flags.only === "string" ? new Set(flags.only.split(",").map((v) => v.trim())) : null;
 
-  const registry = await loadRegistry(registryPath);
-  const tools = registry.tools
-    .filter((tool) => tool.enabled !== false)
-    .filter((tool) => (only ? only.has(tool.id) : true))
-    .sort((a, b) => a.id.localeCompare(b.id));
+  let tools: RegistryTool[];
+
+  if (binaryName) {
+    tools = [{
+      id: binaryName,
+      binary: binaryName,
+      enabled: true,
+      helpArgs: ["--help"],
+    }];
+  } else {
+    const registryPath = expandHome(
+      typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY
+    );
+    const only = typeof flags.only === "string" ? new Set(flags.only.split(",").map((v) => v.trim())) : null;
+    const registry = await loadRegistry(registryPath);
+    tools = registry.tools
+      .filter((tool) => tool.enabled !== false)
+      .filter((tool) => (only ? only.has(tool.id) : true))
+      .sort((a, b) => a.id.localeCompare(b.id));
+  }
 
   await ensureDir(outDir);
 
