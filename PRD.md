@@ -55,7 +55,7 @@ The SKILL.md is the entry point. The `docs/` folder has deeper sections that age
 ### Phase 3: Registry Expansion
 - [x] Expand the registry.yaml to support richer tool metadata: category (cli/sdk/api), homepage URL, typical use cases
 - [x] Add these tools to the registry (our most-used agent-focused CLIs): `gh` (GitHub CLI), `bird` (Twitter/X CLI), `gog` (Google Workspace), `agentmail` (AgentMail CLI), `claude` (Claude Code CLI), `openclaw` (OpenClaw CLI), `ralphy` (Ralph loop runner), `agent-browser` (browser automation), `memo` (Apple Notes), `remindctl` (Apple Reminders), `gifgrep` (GIF search), `vercel` (Vercel CLI), `supabase` (Supabase CLI), `ffmpeg`, `jq`, `curl`, `uv`/`uvx`
-- [ ] Run `tool-docs generate` for all new registry entries to produce raw docs
+- [x] Run `tool-docs generate` for all new registry entries to produce raw docs
 - [ ] Run `tool-docs distill` for all new registry entries to produce skills
 
 ### Phase 4: Multi-Model Validation
