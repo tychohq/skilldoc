@@ -51,7 +51,8 @@ Commands:
   refresh    Re-run generate + distill for tools whose --help output has changed
   validate   Test skill quality using LLM-based scenario evaluation
   report     Show aggregate quality report across all validated tools
-  init       Create a starter registry file
+  init       Create a starter registry file at ~/.agents/tool-docs/registry.yaml with example
+             tool entries (git, ripgrep). Use this to configure batch generation for multiple tools.
 
 Options:
   --registry <path>       Path to registry YAML (default: ${DEFAULT_REGISTRY})

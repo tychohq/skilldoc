@@ -973,6 +973,14 @@ describe("bin/tool-docs.js distill <tool-id> (integration)", () => {
     expect(result.stdout).toContain("generate + distill + validate in one shot");
     expect(result.stdout).toContain("recommended start here");
   });
+
+  it("help text describes init with registry path and example tools", () => {
+    const result = spawnSync("node", [binPath, "--help"], { encoding: "utf8" });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("~/.agents/tool-docs/registry.yaml");
+    expect(result.stdout).toContain("git, ripgrep");
+    expect(result.stdout).toContain("batch generation for multiple tools");
+  });
 });
 
 describe("handleRun", () => {
