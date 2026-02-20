@@ -145,7 +145,7 @@ function parseCommands(lines: string[], requireIndent: boolean): CommandSummary[
     const match = trimmed.match(/^(\S+(?:\s+\S+)*)\s{2,}(.+)$/);
     if (!match) continue;
     commands.push({
-      name: match[1].trim(),
+      name: match[1].trim().replace(/:$/, ""),
       summary: match[2].trim(),
     });
   }

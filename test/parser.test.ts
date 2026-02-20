@@ -160,6 +160,28 @@ CORE COMMANDS
   });
 });
 
+describe("parseHelp — gh-style trailing colon command names", () => {
+  it("strips trailing colon from command name", () => {
+    const input = `
+COMMANDS
+  auth:   Authenticate the tool
+  repo:   Manage repositories
+`.trim();
+    const parsed = parseHelp(input);
+    const names = parsed.commands.map((c) => c.name);
+    expect(names).toContain("auth");
+    expect(names).toContain("repo");
+    expect(names.every((n) => !n.endsWith(":"))).toBe(true);
+  });
+
+  it("parses CORE COMMANDS from gh fixture with clean names (no trailing colon)", () => {
+    const parsed = parseHelp(ghHelp);
+    const names = parsed.commands.map((c) => c.name);
+    expect(names).toContain("auth");
+    expect(names.every((n) => !n.endsWith(":"))).toBe(true);
+  });
+});
+
 describe("parseHelp — fuzzy option section matching", () => {
   it("matches a section named 'GLOBAL OPTIONS'", () => {
     const input = `
