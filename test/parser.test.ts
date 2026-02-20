@@ -31,9 +31,8 @@ describe("parseHelp — all-caps headers (gh style)", () => {
     expect(parsed.usageLines[0]).toContain("gh");
   });
 
-  it("parses CORE COMMANDS section as a section", () => {
+  it("parses CORE COMMANDS section via fuzzy matching", () => {
     const parsed = parseHelp(ghHelp);
-    // Commands fall through to section scan when no named commands section found
     const names = parsed.commands.map((c) => c.name);
     expect(names.some((n) => n.startsWith("auth"))).toBe(true);
   });
@@ -81,5 +80,82 @@ FLAGS
     expect(parsed.options.length).toBe(2);
     expect(parsed.options[0].flags).toBe("--verbose");
     expect(parsed.options[1].flags).toBe("--dry-run");
+  });
+});
+
+describe("parseHelp — fuzzy command section matching", () => {
+  it("matches a section named 'CORE COMMANDS'", () => {
+    const input = `
+CORE COMMANDS
+  init   Initialize the project
+  run    Run the project
+`.trim();
+    const parsed = parseHelp(input);
+    const names = parsed.commands.map((c) => c.name);
+    expect(names).toContain("init");
+    expect(names).toContain("run");
+  });
+
+  it("matches a section named 'MANAGEMENT COMMANDS'", () => {
+    const input = `
+MANAGEMENT COMMANDS
+  start   Start a service
+  stop    Stop a service
+`.trim();
+    const parsed = parseHelp(input);
+    const names = parsed.commands.map((c) => c.name);
+    expect(names).toContain("start");
+    expect(names).toContain("stop");
+  });
+
+  it("matches a section named 'ADDITIONAL SUBCOMMANDS'", () => {
+    const input = `
+ADDITIONAL SUBCOMMANDS
+  deploy   Deploy the app
+  destroy  Tear down resources
+`.trim();
+    const parsed = parseHelp(input);
+    const names = parsed.commands.map((c) => c.name);
+    expect(names).toContain("deploy");
+    expect(names).toContain("destroy");
+  });
+
+  it("combines commands from multiple command-containing sections", () => {
+    const input = `
+CORE COMMANDS
+  auth   Authenticate
+  repo   Manage repositories
+
+ADDITIONAL COMMANDS
+  alias  Create shortcuts
+  api    Make API requests
+`.trim();
+    const parsed = parseHelp(input);
+    const names = parsed.commands.map((c) => c.name);
+    expect(names).toContain("auth");
+    expect(names).toContain("repo");
+    expect(names).toContain("alias");
+    expect(names).toContain("api");
+  });
+
+  it("still matches a plain 'Commands:' header", () => {
+    const input = `
+Commands:
+  build  Build the project
+  test   Run tests
+`.trim();
+    const parsed = parseHelp(input);
+    const names = parsed.commands.map((c) => c.name);
+    expect(names).toContain("build");
+    expect(names).toContain("test");
+  });
+
+  it("does not produce no-commands warning when fuzzy section found", () => {
+    const input = `
+CORE COMMANDS
+  run   Execute
+`.trim();
+    const parsed = parseHelp(input);
+    expect(parsed.warnings).not.toContain("No commands detected.");
   });
 });

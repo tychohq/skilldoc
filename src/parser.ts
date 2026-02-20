@@ -12,7 +12,6 @@ function matchHeader(line: string): string | null {
   return m ? m[1] : null;
 }
 const SECTION_NAMES = {
-  commands: ["Commands", "Command", "Available Commands", "Subcommands", "Sub-commands"],
   examples: ["Examples", "Example"],
   env: ["Environment", "Environment Variables", "Env", "ENV"],
 };
@@ -74,13 +73,14 @@ export function parseHelp(rawHelp: string): ParsedHelp {
     }
   }
 
-  const commandsSection = findSection(sections, SECTION_NAMES.commands);
+  const commandsSections = sections.filter((s) => /command/i.test(s.name));
   const examplesSection = findSection(sections, SECTION_NAMES.examples);
   const envSection = findSection(sections, SECTION_NAMES.env);
 
-  const commandLines = commandsSection
-    ? commandsSection.lines
-    : sections.flatMap((section) => section.lines);
+  const commandLines =
+    commandsSections.length > 0
+      ? commandsSections.flatMap((s) => s.lines)
+      : sections.flatMap((section) => section.lines);
   const commands = parseCommands(commandLines, true);
 
   const optionsSections = sections.filter((section) =>
@@ -92,7 +92,7 @@ export function parseHelp(rawHelp: string): ParsedHelp {
   const examples = examplesSection ? trimEmpty(examplesSection.lines) : [];
   const env = envSection ? parseEnv(envSection.lines) : [];
 
-  if (!commandsSection && commands.length === 0) {
+  if (commandsSections.length === 0 && commands.length === 0) {
     warnings.push("No commands detected.");
   }
   if (options.length === 0) {
