@@ -8,25 +8,32 @@ import { renderCommandMarkdown, renderToolMarkdown } from "./render.js";
 import { buildUsageDoc, extractUsageTokens } from "./usage.js";
 import { expandHome, ensureDir, writeFileEnsured } from "./utils.js";
 import { CommandDoc, CommandSummary, ToolDoc } from "./types.js";
+import { distillTool, DEFAULT_SKILLS_DIR, DEFAULT_DOCS_DIR, DEFAULT_MODEL } from "./distill.js";
 
 const DEFAULT_REGISTRY = "~/.agents/tool-docs/registry.yaml";
 const DEFAULT_OUT_DIR = "~/.agents/docs/tool-docs";
+
+const DEFAULT_SKILLS_OUT_DIR = DEFAULT_SKILLS_DIR;
 
 const HELP_TEXT = `tool-docs
 
 Usage:
   tool-docs generate [--registry <path>] [--out <path>] [--only <id1,id2>]
+  tool-docs distill [--registry <path>] [--docs <path>] [--out <path>] [--only <id1,id2>] [--model <model>]
   tool-docs init [--registry <path>] [--force]
   tool-docs --help
 
 Commands:
   generate   Generate markdown + JSON docs for tools in the registry
+  distill    Distill raw docs into agent-optimized skills (SKILL.md + docs/)
   init       Create a starter registry file
 
 Options:
   --registry <path>   Path to registry YAML (default: ${DEFAULT_REGISTRY})
-  --out <path>        Output directory (default: ${DEFAULT_OUT_DIR})
-  --only <ids>        Comma-separated list of tool ids to generate
+  --out <path>        Output directory (default: generate=${DEFAULT_OUT_DIR}, distill=${DEFAULT_SKILLS_OUT_DIR})
+  --docs <path>       Path to raw docs dir for distill (default: ${DEFAULT_DOCS_DIR})
+  --only <ids>        Comma-separated list of tool ids to process
+  --model <model>     LLM model for distill (default: ${DEFAULT_MODEL})
   --force             Overwrite registry on init
   -h, --help          Show this help
 `;
@@ -53,6 +60,11 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "distill") {
+    await handleDistill(flags);
+    return;
+  }
+
   if (command === "--version" || command === "-v") {
     console.log(VERSION);
     return;
@@ -71,7 +83,7 @@ function parseFlags(args: string[]): Record<string, string | boolean> {
       flags.force = true;
       continue;
     }
-    if (arg === "--registry" || arg === "--out" || arg === "--only") {
+    if (arg === "--registry" || arg === "--out" || arg === "--only" || arg === "--docs" || arg === "--model") {
       const value = args[i + 1];
       if (!value || value.startsWith("-")) {
         throw new Error(`Missing value for ${arg}`);
@@ -110,6 +122,44 @@ async function handleInit(flags: Record<string, string | boolean>): Promise<void
 
   await writeFileEnsured(registryPath, sample);
   console.log(`Wrote registry: ${registryPath}`);
+}
+
+async function handleDistill(flags: Record<string, string | boolean>): Promise<void> {
+  const registryPath = expandHome(
+    typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY
+  );
+  const docsDir = expandHome(
+    typeof flags.docs === "string" ? flags.docs : DEFAULT_DOCS_DIR
+  );
+  const outBase = expandHome(
+    typeof flags.out === "string" ? flags.out : DEFAULT_SKILLS_OUT_DIR
+  );
+  const model = typeof flags.model === "string" ? flags.model : DEFAULT_MODEL;
+  const only = typeof flags.only === "string" ? new Set(flags.only.split(",").map((v) => v.trim())) : null;
+
+  const registry = await loadRegistry(registryPath);
+  const tools = registry.tools
+    .filter((tool) => tool.enabled !== false)
+    .filter((tool) => (only ? only.has(tool.id) : true))
+    .sort((a, b) => a.id.localeCompare(b.id));
+
+  let generated = 0;
+  let skipped = 0;
+
+  for (const tool of tools) {
+    const outDir = path.join(outBase, tool.id);
+    process.stdout.write(`distill ${tool.id}... `);
+    const result = await distillTool({ toolId: tool.id, docsDir, outDir, model });
+    if (result.skipped) {
+      console.log(`skipped (${result.skipReason})`);
+      skipped += 1;
+    } else {
+      console.log("done");
+      generated += 1;
+    }
+  }
+
+  console.log(`Distilled ${generated} tool(s), skipped ${skipped}, output: ${outBase}`);
 }
 
 async function handleGenerate(flags: Record<string, string | boolean>): Promise<void> {

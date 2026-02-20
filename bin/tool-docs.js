@@ -6972,8 +6972,8 @@ var require_dist = __commonJS((exports) => {
 
 // src/cli.ts
 var import_yaml2 = __toESM(require_dist(), 1);
-import path from "node:path";
-import { spawnSync } from "node:child_process";
+import path2 from "node:path";
+import { spawnSync as spawnSync2 } from "node:child_process";
 import { rm } from "node:fs/promises";
 
 // src/config.ts
@@ -7585,24 +7585,183 @@ function unique(tokens) {
   return result;
 }
 
+// src/distill.ts
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+import { readFile as readFile2 } from "node:fs/promises";
+import { existsSync, readdirSync } from "node:fs";
+var DEFAULT_SKILLS_DIR = "~/.agents/skills";
+var DEFAULT_DOCS_DIR = "~/.agents/docs/tool-docs";
+var DEFAULT_MODEL = "claude-haiku-4-5-20251001";
+var GENERATED_MARKER = "generated-from: agent-tool-docs";
+async function distillTool(options) {
+  const { toolId, docsDir, outDir, model } = options;
+  const skillPath = path.join(outDir, "SKILL.md");
+  if (existsSync(skillPath)) {
+    const existing = await readFile2(skillPath, "utf8");
+    if (!existing.includes(GENERATED_MARKER)) {
+      return { toolId, outDir, skipped: true, skipReason: "hand-written skill (no generated-from marker)" };
+    }
+  }
+  const rawContent = await gatherRawDocs(toolId, docsDir);
+  if (!rawContent) {
+    return { toolId, outDir, skipped: true, skipReason: `no raw docs found in ${docsDir}/${toolId}` };
+  }
+  const distilled = callLLM(rawContent, toolId, model);
+  await ensureDir(outDir);
+  await ensureDir(path.join(outDir, "docs"));
+  const now = new Date().toISOString();
+  const skillMd = addMetadataHeader(distilled.skill, toolId, now);
+  await writeFileEnsured(path.join(outDir, "SKILL.md"), skillMd);
+  await writeFileEnsured(path.join(outDir, "docs", "advanced.md"), distilled.advanced);
+  await writeFileEnsured(path.join(outDir, "docs", "recipes.md"), distilled.recipes);
+  await writeFileEnsured(path.join(outDir, "docs", "troubleshooting.md"), distilled.troubleshooting);
+  return { toolId, outDir };
+}
+async function gatherRawDocs(toolId, docsDir) {
+  const toolMdPath = path.join(docsDir, toolId, "tool.md");
+  if (!existsSync(toolMdPath))
+    return null;
+  const parts = [];
+  parts.push(await readFile2(toolMdPath, "utf8"));
+  const commandsDir = path.join(docsDir, toolId, "commands");
+  if (existsSync(commandsDir)) {
+    const commandDirs = readdirSync(commandsDir);
+    for (const cmdDir of commandDirs.sort()) {
+      const cmdMd = path.join(commandsDir, cmdDir, "command.md");
+      if (existsSync(cmdMd)) {
+        parts.push(await readFile2(cmdMd, "utf8"));
+      }
+    }
+  }
+  return parts.join(`
+
+---
+
+`);
+}
+function buildPrompt(rawDocs, toolId) {
+  return `You are an agent documentation specialist. Your task is to distill raw CLI documentation into lean, agent-optimized skill files.
+
+## Raw Documentation for: ${toolId}
+
+${rawDocs}
+
+---
+
+## Your Task
+
+Produce 4 documentation files in JSON format. Each file must be under 2000 bytes. Prioritize:
+1. Most-used flags/commands first (80/20 rule)
+2. Real-world task patterns over exhaustive flag lists
+3. Agent-specific gotchas (quoting, escaping, common errors)
+4. Concrete examples over abstract descriptions
+
+Return ONLY a JSON object with exactly these keys:
+- "skill": SKILL.md content — quick reference, the most important commands/flags, common patterns
+- "advanced": docs/advanced.md content — power-user flags, edge cases
+- "recipes": docs/recipes.md content — task-oriented recipes showing real commands
+- "troubleshooting": docs/troubleshooting.md content — known gotchas, error patterns, things LLMs get wrong
+
+SKILL.md format:
+\`\`\`
+# <tool display name>
+
+<one-line description>
+
+## Quick Reference
+\`\`\`
+<binary> <most common usage>
+\`\`\`
+
+## Key Commands / Flags
+<concise table or list of the 5-10 most important commands/flags>
+
+## Common Patterns
+<3-5 concrete examples covering the most common use cases>
+\`\`\`
+
+Keep each file focused and under 2KB. No padding, no exhaustive lists. Be ruthlessly concise.
+
+Return ONLY valid JSON, no markdown fences around the JSON itself.`;
+}
+function callLLM(rawDocs, toolId, model) {
+  const prompt = buildPrompt(rawDocs, toolId);
+  const result = spawnSync("claude", ["-p", "--output-format", "text", "--model", model, "--tools", "", prompt], {
+    encoding: "utf8",
+    maxBuffer: 10 * 1024 * 1024
+  });
+  if (result.error) {
+    throw new Error(`Failed to run claude: ${result.error.message}`);
+  }
+  const output = result.stdout ?? "";
+  if (!output.trim()) {
+    const stderr = result.stderr ?? "";
+    throw new Error(`claude returned empty output${stderr ? `: ${stderr.slice(0, 200)}` : ""}`);
+  }
+  return parseDistilledOutput(output);
+}
+function parseDistilledOutput(output) {
+  const stripped = output.trim().replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "").trim();
+  let parsed;
+  try {
+    parsed = JSON.parse(stripped);
+  } catch {
+    throw new Error(`Failed to parse LLM output as JSON: ${stripped.slice(0, 200)}`);
+  }
+  if (typeof parsed !== "object" || parsed === null) {
+    throw new Error("LLM output is not a JSON object");
+  }
+  const obj = parsed;
+  const required = ["skill", "advanced", "recipes", "troubleshooting"];
+  for (const key of required) {
+    if (typeof obj[key] !== "string") {
+      throw new Error(`LLM output missing required key: ${key}`);
+    }
+  }
+  return {
+    skill: obj.skill,
+    advanced: obj.advanced,
+    recipes: obj.recipes,
+    troubleshooting: obj.troubleshooting
+  };
+}
+function addMetadataHeader(skillContent, toolId, generatedAt) {
+  const meta = [
+    "<!--",
+    `  ${GENERATED_MARKER}`,
+    `  tool-id: ${toolId}`,
+    `  generated-at: ${generatedAt}`,
+    "-->",
+    ""
+  ].join(`
+`);
+  return meta + skillContent;
+}
+
 // src/cli.ts
 var DEFAULT_REGISTRY = "~/.agents/tool-docs/registry.yaml";
 var DEFAULT_OUT_DIR = "~/.agents/docs/tool-docs";
+var DEFAULT_SKILLS_OUT_DIR = DEFAULT_SKILLS_DIR;
 var HELP_TEXT = `tool-docs
 
 Usage:
   tool-docs generate [--registry <path>] [--out <path>] [--only <id1,id2>]
+  tool-docs distill [--registry <path>] [--docs <path>] [--out <path>] [--only <id1,id2>] [--model <model>]
   tool-docs init [--registry <path>] [--force]
   tool-docs --help
 
 Commands:
   generate   Generate markdown + JSON docs for tools in the registry
+  distill    Distill raw docs into agent-optimized skills (SKILL.md + docs/)
   init       Create a starter registry file
 
 Options:
   --registry <path>   Path to registry YAML (default: ${DEFAULT_REGISTRY})
-  --out <path>        Output directory (default: ${DEFAULT_OUT_DIR})
-  --only <ids>        Comma-separated list of tool ids to generate
+  --out <path>        Output directory (default: generate=${DEFAULT_OUT_DIR}, distill=${DEFAULT_SKILLS_OUT_DIR})
+  --docs <path>       Path to raw docs dir for distill (default: ${DEFAULT_DOCS_DIR})
+  --only <ids>        Comma-separated list of tool ids to process
+  --model <model>     LLM model for distill (default: ${DEFAULT_MODEL})
   --force             Overwrite registry on init
   -h, --help          Show this help
 `;
@@ -7623,6 +7782,10 @@ async function main() {
     await handleGenerate(flags);
     return;
   }
+  if (command === "distill") {
+    await handleDistill(flags);
+    return;
+  }
   if (command === "--version" || command === "-v") {
     console.log(VERSION);
     return;
@@ -7640,7 +7803,7 @@ function parseFlags(args) {
       flags.force = true;
       continue;
     }
-    if (arg === "--registry" || arg === "--out" || arg === "--only") {
+    if (arg === "--registry" || arg === "--out" || arg === "--only" || arg === "--docs" || arg === "--model") {
       const value = args[i + 1];
       if (!value || value.startsWith("-")) {
         throw new Error(`Missing value for ${arg}`);
@@ -7682,6 +7845,30 @@ tools:
   }
   await writeFileEnsured(registryPath, sample);
   console.log(`Wrote registry: ${registryPath}`);
+}
+async function handleDistill(flags) {
+  const registryPath = expandHome(typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY);
+  const docsDir = expandHome(typeof flags.docs === "string" ? flags.docs : DEFAULT_DOCS_DIR);
+  const outBase = expandHome(typeof flags.out === "string" ? flags.out : DEFAULT_SKILLS_OUT_DIR);
+  const model = typeof flags.model === "string" ? flags.model : DEFAULT_MODEL;
+  const only = typeof flags.only === "string" ? new Set(flags.only.split(",").map((v) => v.trim())) : null;
+  const registry = await loadRegistry(registryPath);
+  const tools = registry.tools.filter((tool) => tool.enabled !== false).filter((tool) => only ? only.has(tool.id) : true).sort((a, b) => a.id.localeCompare(b.id));
+  let generated = 0;
+  let skipped = 0;
+  for (const tool of tools) {
+    const outDir = path2.join(outBase, tool.id);
+    process.stdout.write(`distill ${tool.id}... `);
+    const result = await distillTool({ toolId: tool.id, docsDir, outDir, model });
+    if (result.skipped) {
+      console.log(`skipped (${result.skipReason})`);
+      skipped += 1;
+    } else {
+      console.log("done");
+      generated += 1;
+    }
+  }
+  console.log(`Distilled ${generated} tool(s), skipped ${skipped}, output: ${outBase}`);
 }
 async function handleGenerate(flags) {
   const registryPath = expandHome(typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY);
@@ -7731,23 +7918,23 @@ async function handleGenerate(flags) {
       env: parsed.env,
       warnings
     };
-    const toolDir = path.join(outDir, tool.id);
+    const toolDir = path2.join(outDir, tool.id);
     await ensureDir(toolDir);
-    await writeFileEnsured(path.join(toolDir, "tool.json"), JSON.stringify(doc, null, 2));
-    await writeFileEnsured(path.join(toolDir, "tool.yaml"), import_yaml2.default.stringify(doc));
-    await writeFileEnsured(path.join(toolDir, "tool.md"), renderToolMarkdown(doc));
-    await rm(path.join(toolDir, "raw.txt"), { force: true });
+    await writeFileEnsured(path2.join(toolDir, "tool.json"), JSON.stringify(doc, null, 2));
+    await writeFileEnsured(path2.join(toolDir, "tool.yaml"), import_yaml2.default.stringify(doc));
+    await writeFileEnsured(path2.join(toolDir, "tool.md"), renderToolMarkdown(doc));
+    await rm(path2.join(toolDir, "raw.txt"), { force: true });
     if (tool.commandHelpArgs) {
       await generateCommandDocs(tool.id, tool.binary, tool.commandHelpArgs, commands, toolDir);
     }
     indexLines.push(`| ${tool.id} | ${tool.binary} |`);
   }
-  await writeFileEnsured(path.join(outDir, "index.md"), indexLines.join(`
+  await writeFileEnsured(path2.join(outDir, "index.md"), indexLines.join(`
 `));
   console.log(`Generated docs for ${tools.length} tool(s) in ${outDir}`);
 }
 async function generateCommandDocs(toolId, binary, commandHelpArgs, commands, toolDir) {
-  const commandsDir = path.join(toolDir, "commands");
+  const commandsDir = path2.join(toolDir, "commands");
   await ensureDir(commandsDir);
   for (const command of commands) {
     const args = commandHelpArgs.map((arg) => arg.replace("{command}", command.name));
@@ -7782,11 +7969,11 @@ async function generateCommandDocs(toolId, binary, commandHelpArgs, commands, to
       env: parsed.env,
       warnings
     };
-    const commandDir = path.join(commandsDir, slugify(command.name));
+    const commandDir = path2.join(commandsDir, slugify(command.name));
     await ensureDir(commandDir);
-    await writeFileEnsured(path.join(commandDir, "command.json"), JSON.stringify(doc, null, 2));
-    await writeFileEnsured(path.join(commandDir, "command.yaml"), import_yaml2.default.stringify(doc));
-    await writeFileEnsured(path.join(commandDir, "command.md"), renderCommandMarkdown(doc));
+    await writeFileEnsured(path2.join(commandDir, "command.json"), JSON.stringify(doc, null, 2));
+    await writeFileEnsured(path2.join(commandDir, "command.yaml"), import_yaml2.default.stringify(doc));
+    await writeFileEnsured(path2.join(commandDir, "command.md"), renderCommandMarkdown(doc));
   }
 }
 function commandDocPath(command) {
@@ -7808,7 +7995,7 @@ function runCommand(binary, args) {
     MANPAGER: "cat",
     LESS: "FRX"
   };
-  const result = spawnSync(binary, args, {
+  const result = spawnSync2(binary, args, {
     encoding: "utf8",
     env
   });
