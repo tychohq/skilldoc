@@ -1282,6 +1282,22 @@ describe("loadQualityReports", () => {
     expect(entry.threshold).toBe(9);
     expect(entry.models).toEqual(["claude-sonnet-4-6", "claude-opus-4-6"]);
   });
+
+  it("extracts groundednessScore when groundedness is present in saved report", async () => {
+    const reportWithGround: MultiModelValidationReport = {
+      ...sampleMultiReport,
+      groundedness: { score: 8, hallucinatedItems: ["--fake"], reasoning: "one issue" },
+    };
+    await saveValidationReport(reportWithGround, tmpDir);
+    const report = await loadQualityReports(tmpDir);
+    expect(report.entries[0].groundednessScore).toBe(8);
+  });
+
+  it("omits groundednessScore when groundedness is absent in saved report", async () => {
+    await saveValidationReport(sampleMultiReport, tmpDir);
+    const report = await loadQualityReports(tmpDir);
+    expect(report.entries[0].groundednessScore).toBeUndefined();
+  });
 });
 
 describe("formatQualityReport", () => {
@@ -1364,6 +1380,62 @@ describe("formatQualityReport", () => {
     };
     const output = formatQualityReport(single);
     expect(output).toContain("1 tool");
+  });
+
+  it("shows a Ground column header when any entry has groundednessScore", () => {
+    const withGround: QualityReport = {
+      ...reportWithTools,
+      entries: [
+        { ...reportWithTools.entries[0], groundednessScore: 9.0 },
+        { ...reportWithTools.entries[1], groundednessScore: 6.5 },
+        { ...reportWithTools.entries[2], groundednessScore: 8.0 },
+      ],
+    };
+    expect(formatQualityReport(withGround)).toContain("Ground");
+  });
+
+  it("shows each tool's groundedness score formatted to 1 decimal", () => {
+    const withGround: QualityReport = {
+      ...reportWithTools,
+      entries: [
+        { ...reportWithTools.entries[0], groundednessScore: 9.0 },
+        { ...reportWithTools.entries[1], groundednessScore: 6.5 },
+        { ...reportWithTools.entries[2], groundednessScore: 8.0 },
+      ],
+    };
+    const output = formatQualityReport(withGround);
+    expect(output).toContain("9.0/10");
+    expect(output).toContain("6.5/10");
+    expect(output).toContain("8.0/10");
+  });
+
+  it("shows N/A for entries without groundednessScore when others have it", () => {
+    const mixed: QualityReport = {
+      ...reportWithTools,
+      entries: [
+        { ...reportWithTools.entries[0], groundednessScore: 9.0 },
+        { ...reportWithTools.entries[1] }, // no groundednessScore
+        { ...reportWithTools.entries[2], groundednessScore: 8.0 },
+      ],
+    };
+    expect(formatQualityReport(mixed)).toContain("N/A");
+  });
+
+  it("does not show Ground column when no entry has groundednessScore", () => {
+    expect(formatQualityReport(reportWithTools)).not.toContain("Ground");
+  });
+
+  it("shows average groundedness in the Total row", () => {
+    const withGround: QualityReport = {
+      ...reportWithTools,
+      entries: reportWithTools.entries.map((e, i) => ({
+        ...e,
+        groundednessScore: [8.0, 6.0, 10.0][i],
+      })),
+    };
+    const output = formatQualityReport(withGround);
+    const expectedAvg = ((8.0 + 6.0 + 10.0) / 3).toFixed(1);
+    expect(output).toContain(`${expectedAvg}/10`);
   });
 });
 

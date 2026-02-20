@@ -622,6 +622,7 @@ export type QualityReportEntry = {
   passed: boolean;
   threshold: number;
   generatedAt: string;
+  groundednessScore?: number;
 };
 
 export type QualityReport = {
@@ -655,14 +656,18 @@ export async function loadQualityReports(skillsDir: string): Promise<QualityRepo
     try {
       const raw = await readFile(reportPath, "utf8");
       const parsed = JSON.parse(raw) as MultiModelValidationReport;
-      entries.push({
+      const entry: QualityReportEntry = {
         toolId: parsed.toolId,
         overallAverageScore: parsed.overallAverageScore,
         models: parsed.models,
         passed: parsed.passed,
         threshold: parsed.threshold,
         generatedAt: parsed.generatedAt,
-      });
+      };
+      if (parsed.groundedness !== undefined) {
+        entry.groundednessScore = parsed.groundedness.score;
+      }
+      entries.push(entry);
     } catch {
       // skip malformed report files
     }
@@ -688,21 +693,39 @@ export function formatQualityReport(report: QualityReport): string {
   lines.push("");
 
   const colTool = Math.max(4, ...report.entries.map((e) => e.toolId.length));
-  const header = `${"Tool".padEnd(colTool)}  ${"Score".padStart(6)}  ${"Status"}`;
+  const hasGroundedness = report.entries.some((e) => e.groundednessScore !== undefined);
+  const header = hasGroundedness
+    ? `${"Tool".padEnd(colTool)}  ${"Score".padStart(6)}  ${"Ground".padStart(7)}  ${"Status"}`
+    : `${"Tool".padEnd(colTool)}  ${"Score".padStart(6)}  ${"Status"}`;
   lines.push(header);
   lines.push("-".repeat(header.length));
 
   for (const entry of report.entries) {
     const score = `${entry.overallAverageScore.toFixed(1)}/10`.padStart(6);
     const status = entry.passed ? "PASS" : "FAIL";
-    lines.push(`${entry.toolId.padEnd(colTool)}  ${score}  ${status}`);
+    if (hasGroundedness) {
+      const ground =
+        entry.groundednessScore !== undefined
+          ? `${entry.groundednessScore.toFixed(1)}/10`.padStart(7)
+          : "    N/A";
+      lines.push(`${entry.toolId.padEnd(colTool)}  ${score}  ${ground}  ${status}`);
+    } else {
+      lines.push(`${entry.toolId.padEnd(colTool)}  ${score}  ${status}`);
+    }
   }
 
   lines.push("-".repeat(header.length));
   const overallAvg =
     report.entries.reduce((sum, e) => sum + e.overallAverageScore, 0) / report.entries.length;
   const summaryScore = `${overallAvg.toFixed(1)}/10`.padStart(6);
-  lines.push(`${"Total".padEnd(colTool)}  ${summaryScore}  ${passing}/${report.entries.length} PASS`);
+  if (hasGroundedness) {
+    const groundEntries = report.entries.filter((e) => e.groundednessScore !== undefined);
+    const avgGround = groundEntries.reduce((sum, e) => sum + e.groundednessScore!, 0) / groundEntries.length;
+    const groundSummary = `${avgGround.toFixed(1)}/10`.padStart(7);
+    lines.push(`${"Total".padEnd(colTool)}  ${summaryScore}  ${groundSummary}  ${passing}/${report.entries.length} PASS`);
+  } else {
+    lines.push(`${"Total".padEnd(colTool)}  ${summaryScore}  ${passing}/${report.entries.length} PASS`);
+  }
 
   if (failing > 0) {
     lines.push("");
