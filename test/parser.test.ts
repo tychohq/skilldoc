@@ -159,3 +159,74 @@ CORE COMMANDS
     expect(parsed.warnings).not.toContain("No commands detected.");
   });
 });
+
+describe("parseHelp — fuzzy option section matching", () => {
+  it("matches a section named 'GLOBAL OPTIONS'", () => {
+    const input = `
+GLOBAL OPTIONS
+  --verbose   Enable verbose output
+  --debug     Enable debug mode
+`.trim();
+    const parsed = parseHelp(input);
+    expect(parsed.options.length).toBe(2);
+    expect(parsed.options[0].flags).toBe("--verbose");
+    expect(parsed.options[1].flags).toBe("--debug");
+  });
+
+  it("matches a section named 'OPTION' (singular)", () => {
+    const input = `
+OPTION
+  --quiet   Suppress output
+`.trim();
+    const parsed = parseHelp(input);
+    expect(parsed.options.length).toBe(1);
+    expect(parsed.options[0].flags).toBe("--quiet");
+  });
+
+  it("matches a section named 'FLAG' (singular)", () => {
+    const input = `
+FLAG
+  --force   Force the operation
+`.trim();
+    const parsed = parseHelp(input);
+    expect(parsed.options.length).toBe(1);
+    expect(parsed.options[0].flags).toBe("--force");
+  });
+
+  it("matches a section named 'FLAGS' (plural)", () => {
+    const input = `
+FLAGS
+  --help      Show help
+  --version   Show version
+`.trim();
+    const parsed = parseHelp(input);
+    expect(parsed.options.length).toBe(2);
+    const flags = parsed.options.map((o) => o.flags);
+    expect(flags).toContain("--help");
+    expect(flags).toContain("--version");
+  });
+
+  it("combines options from multiple option-containing sections", () => {
+    const input = `
+GLOBAL OPTIONS
+  --config   Path to config file
+
+LOCAL OPTIONS
+  --output   Output file path
+`.trim();
+    const parsed = parseHelp(input);
+    expect(parsed.options.length).toBe(2);
+    const flags = parsed.options.map((o) => o.flags);
+    expect(flags).toContain("--config");
+    expect(flags).toContain("--output");
+  });
+
+  it("does not produce no-options warning when fuzzy section found", () => {
+    const input = `
+GLOBAL OPTIONS
+  --verbose   Enable verbose output
+`.trim();
+    const parsed = parseHelp(input);
+    expect(parsed.warnings).not.toContain("No options detected.");
+  });
+});

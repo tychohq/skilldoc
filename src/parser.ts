@@ -84,7 +84,7 @@ export function parseHelp(rawHelp: string): ParsedHelp {
   const commands = parseCommands(commandLines, true);
 
   const optionsSections = sections.filter((section) =>
-    /options|flags|arguments/i.test(section.name)
+    /option|flag/i.test(section.name)
   );
   const optionLines = optionsSections.flatMap((section) => section.lines);
   const options = parseOptions(optionLines);
