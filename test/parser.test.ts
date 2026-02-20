@@ -7,6 +7,7 @@ const rgHelp = readFileSync(new URL("./fixtures/rg-help.txt", import.meta.url), 
 const ghHelp = readFileSync(new URL("./fixtures/gh-help.txt", import.meta.url), "utf8");
 const vercelHelp = readFileSync(new URL("./fixtures/vercel-help.txt", import.meta.url), "utf8");
 const ffmpegHelp = readFileSync(new URL("./fixtures/ffmpeg-help.txt", import.meta.url), "utf8");
+const curlHelp = readFileSync(new URL("./fixtures/curl-help.txt", import.meta.url), "utf8");
 
 describe("parseHelp", () => {
   it("extracts usage from git help", () => {
@@ -315,6 +316,31 @@ describe("parseHelp — vercel-style grouped commands with indented headers", ()
   it("does not produce no-commands or no-options warnings", () => {
     const parsed = parseHelp(vercelHelp);
     expect(parsed.warnings).not.toContain("No commands detected.");
+    expect(parsed.warnings).not.toContain("No options detected.");
+  });
+});
+
+describe("parseHelp — curl flat option list (no section headers)", () => {
+  it("parses options from a flat list with no section headers", () => {
+    const input = `     --verbose                     Make the operation more talkative
+     --output <file>               Write to file instead of stdout`;
+    const parsed = parseHelp(input);
+    expect(parsed.options.length).toBe(2);
+    const flags = parsed.options.map((o) => o.flags);
+    expect(flags).toContain("--verbose");
+    expect(flags).toContain("--output <file>");
+  });
+
+  it("extracts options from curl fixture", () => {
+    const parsed = parseHelp(curlHelp);
+    expect(parsed.options.length).toBeGreaterThan(0);
+    const flags = parsed.options.map((o) => o.flags);
+    expect(flags.some((f) => f.includes("--verbose"))).toBe(true);
+    expect(flags.some((f) => f.includes("--output"))).toBe(true);
+  });
+
+  it("does not produce no-options warning for curl fixture", () => {
+    const parsed = parseHelp(curlHelp);
     expect(parsed.warnings).not.toContain("No options detected.");
   });
 });

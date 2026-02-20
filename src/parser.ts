@@ -33,6 +33,7 @@ export function parseHelp(rawHelp: string): ParsedHelp {
 
   let current: SectionDoc | null = null;
   const usageLines: string[] = [];
+  const preambleLines: string[] = [];
 
   for (let i = 0; i < lines.length; i += 1) {
     const line = compactWhitespace(lines[i]);
@@ -59,6 +60,8 @@ export function parseHelp(rawHelp: string): ParsedHelp {
 
     if (current) {
       current.lines.push(line);
+    } else {
+      preambleLines.push(line);
     }
   }
 
@@ -86,7 +89,14 @@ export function parseHelp(rawHelp: string): ParsedHelp {
   const optionsSections = sections.filter((section) =>
     /option|flag/i.test(section.name)
   );
-  const optionLines = optionsSections.flatMap((section) => section.lines);
+  // Fall back to preamble lines when no sections exist at all (e.g. curl --help all
+  // outputs a flat list of options with no structural headers).
+  const optionLines =
+    optionsSections.length > 0
+      ? optionsSections.flatMap((section) => section.lines)
+      : sections.length === 0
+        ? preambleLines
+        : [];
   const options = parseOptions(optionLines);
 
   const examples = examplesSection ? trimEmpty(examplesSection.lines) : [];

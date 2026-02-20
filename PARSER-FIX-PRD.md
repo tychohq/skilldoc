@@ -32,11 +32,11 @@ This breaks on:
 - [x] Add fuzzy section name matching for commands: match any header containing "command" or "subcommand" (case-insensitive)
 - [x] Add fuzzy section name matching for options: match any header containing "option" or "flag" (case-insensitive)
 - [x] Handle `gh`-style command lines with trailing colons: `auth:   description` → command name `auth`
-- [ ] Handle `vercel`-style grouped commands with sub-headers (Basic, Advanced, etc.)
-- [ ] Handle `ffmpeg`-style lowercase usage line: `usage: ffmpeg [options]...`
-- [ ] Handle `curl` registry entry: update helpArgs to `["--help", "all"]` in registry.yaml so we capture the full help
-- [ ] Update existing parser tests to not break
-- [ ] Add parser test cases for gh, vercel, ffmpeg, and curl help output formats
+- [x] Handle `vercel`-style grouped commands with sub-headers (Basic, Advanced, etc.)
+- [x] Handle `ffmpeg`-style lowercase usage line: `usage: ffmpeg [options]...`
+- [x] Handle `curl` registry entry: update helpArgs to `["--help", "all"]` in registry.yaml so we capture the full help
+- [x] Update existing parser tests to not break
+- [x] Add parser test cases for gh, vercel, ffmpeg, and curl help output formats
 - [ ] Re-run `tool-docs generate` on all tools and verify the 9 previously-failing tools now produce non-empty raw docs
 - [ ] Re-run `tool-docs distill` on tools that had broken raw docs and verify the output improves
 
