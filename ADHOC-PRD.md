@@ -24,9 +24,9 @@ Pass a tool name, get a skill. No registry, no config, no init.
 
 ### Phase 1: Ad-Hoc Mode for `generate`
 
-- [ ] Accept a positional argument after `generate`: `tool-docs generate <binary-name>`
-- [ ] When a positional arg is given (no `--registry` and not in the registry), auto-detect the binary on PATH using `which`
-- [ ] Create an in-memory tool entry with sensible defaults: `id = binary name`, `helpArgs = ["--help"]`, `displayName = binary name`
+- [x] Accept a positional argument after `generate`: `tool-docs generate <binary-name>`
+- [x] When a positional arg is given (no `--registry` and not in the registry), auto-detect the binary on PATH using `which`
+- [x] Create an in-memory tool entry with sensible defaults: `id = binary name`, `helpArgs = ["--help"]`, `displayName = binary name`
 - [ ] Run generation for that single tool, outputting to the same default location (`~/.agents/docs/tool-docs/<id>/`)
 - [ ] If the binary isn't found on PATH, print a clear error: `Error: binary "xyz" not found on PATH`
 - [ ] If a positional arg is given AND the tool exists in the registry, use the registry entry (registry takes precedence for custom helpArgs etc.)
@@ -107,14 +107,16 @@ Pass a tool name, get a skill. No registry, no config, no init.
 - [ ] Create a Homebrew tap repo (`homebrew-tap` or `homebrew-agent-tool-docs`) with a formula
 - [ ] Use `bun build --compile` to produce standalone binaries (darwin-arm64, darwin-x64, linux-x64, linux-arm64) that don't require Node/Bun at runtime
 - [ ] Set up a GitHub Actions release workflow: on git tag → build binaries → create GitHub release → update Homebrew formula SHA
-- [ ] Update README Quick Start to show the install options:
+- [ ] Update README Quick Start to show install options as an inline stack (all variants visible, copy-pasteable):
   ```bash
-  # npm (works everywhere)
+  # npm
   npx agent-tool-docs run jq
 
-  # or install globally
-  npm install -g agent-tool-docs
-  tool-docs run jq
+  # pnpm
+  pnpx agent-tool-docs run jq
+
+  # bun
+  bunx agent-tool-docs run jq
 
   # Homebrew (macOS / Linux)
   brew tap BrennerSpear/tap
