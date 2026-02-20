@@ -94,6 +94,54 @@ describe("callLLM", () => {
     expect(capturedInput).toContain("my-special-tool");
   });
 
+  it("prompt includes SKILL.md format spec with Quick Reference, Key Commands, Common Patterns", () => {
+    let capturedInput = "";
+    const exec = (_cmd: string, _args: ReadonlyArray<string>, opts: { input: string }) => {
+      capturedInput = opts.input;
+      return { stdout: validJson, stderr: "", status: 0 };
+    };
+    callLLM("docs", "tool", "model", exec);
+    expect(capturedInput).toContain("## Quick Reference");
+    expect(capturedInput).toContain("## Key Commands / Flags");
+    expect(capturedInput).toContain("## Common Patterns");
+  });
+
+  it("prompt includes advanced.md format spec with Power-User Flags and Edge Cases", () => {
+    let capturedInput = "";
+    const exec = (_cmd: string, _args: ReadonlyArray<string>, opts: { input: string }) => {
+      capturedInput = opts.input;
+      return { stdout: validJson, stderr: "", status: 0 };
+    };
+    callLLM("docs", "tool", "model", exec);
+    expect(capturedInput).toContain("docs/advanced.md format");
+    expect(capturedInput).toContain("## Power-User Flags");
+    expect(capturedInput).toContain("## Edge Cases");
+  });
+
+  it("prompt includes recipes.md format spec with task-oriented structure", () => {
+    let capturedInput = "";
+    const exec = (_cmd: string, _args: ReadonlyArray<string>, opts: { input: string }) => {
+      capturedInput = opts.input;
+      return { stdout: validJson, stderr: "", status: 0 };
+    };
+    callLLM("docs", "tool", "model", exec);
+    expect(capturedInput).toContain("docs/recipes.md format");
+    expect(capturedInput).toContain("task-oriented recipes");
+  });
+
+  it("prompt includes troubleshooting.md format spec with Symptom/Fix structure and LLM Mistakes", () => {
+    let capturedInput = "";
+    const exec = (_cmd: string, _args: ReadonlyArray<string>, opts: { input: string }) => {
+      capturedInput = opts.input;
+      return { stdout: validJson, stderr: "", status: 0 };
+    };
+    callLLM("docs", "tool", "model", exec);
+    expect(capturedInput).toContain("docs/troubleshooting.md format");
+    expect(capturedInput).toContain("**Symptom:**");
+    expect(capturedInput).toContain("**Fix:**");
+    expect(capturedInput).toContain("## Common LLM Mistakes");
+  });
+
   it("uses -p and --output-format text flags", () => {
     let capturedArgs: ReadonlyArray<string> = [];
     const exec = (_cmd: string, args: ReadonlyArray<string>) => {

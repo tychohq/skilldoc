@@ -133,6 +133,41 @@ SKILL.md format:
 <3-5 concrete examples covering the most common use cases>
 \`\`\`
 
+docs/advanced.md format:
+\`\`\`
+# <tool> — Advanced Usage
+
+## Power-User Flags
+<flags and options that experienced users rely on, with concrete usage>
+
+## Edge Cases
+<known edge cases, non-obvious behaviors, environment-specific quirks>
+\`\`\`
+
+docs/recipes.md format:
+\`\`\`
+# <tool> — Recipes
+
+## <Task Name>
+\`\`\`
+<complete, runnable command>
+\`\`\`
+
+(3-6 task-oriented recipes covering the most common real-world use cases)
+\`\`\`
+
+docs/troubleshooting.md format:
+\`\`\`
+# <tool> — Troubleshooting
+
+## <Issue or Error Name>
+**Symptom:** <what the user or agent sees>
+**Fix:** <what to do>
+
+## Common LLM Mistakes
+<things AI agents typically get wrong — wrong flags, quoting issues, incorrect assumptions>
+\`\`\`
+
 Keep each file focused and under 2KB. No padding, no exhaustive lists. Be ruthlessly concise.
 
 Return ONLY valid JSON, no markdown fences around the JSON itself.`;
