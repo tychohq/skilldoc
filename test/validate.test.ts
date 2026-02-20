@@ -8,12 +8,17 @@ import {
   generateScenarios,
   evaluateScenario,
   validateSkill,
+  validateSkillMultiModel,
   formatReport,
+  formatMultiModelReport,
+  buildValidationFeedback,
   buildScenariosPrompt,
   buildEvaluationPrompt,
   DEFAULT_THRESHOLD,
+  DEFAULT_VALIDATION_MODELS,
   ExecFn,
   ValidationReport,
+  MultiModelValidationReport,
 } from "../src/validate.js";
 
 const validScenariosJson = JSON.stringify([
@@ -622,5 +627,476 @@ describe("formatReport", () => {
   it("shows the command for each scenario", () => {
     const output = formatReport(baseReport);
     expect(output).toContain("rg pattern --type py");
+  });
+});
+
+describe("DEFAULT_VALIDATION_MODELS", () => {
+  it("includes claude-sonnet-4-6 and claude-opus-4-6", () => {
+    expect(DEFAULT_VALIDATION_MODELS).toContain("claude-sonnet-4-6");
+    expect(DEFAULT_VALIDATION_MODELS).toContain("claude-opus-4-6");
+  });
+
+  it("has at least 2 models", () => {
+    expect(DEFAULT_VALIDATION_MODELS.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("validateSkillMultiModel", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), `validate-multi-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function writeSkill(toolId: string, content: string): string {
+    const skillDir = path.join(tmpDir, "skills", toolId);
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(path.join(skillDir, "SKILL.md"), content);
+    return path.join(tmpDir, "skills");
+  }
+
+  // Exec that returns scenarios on call 1, scorecards on subsequent calls
+  // For N models with 4 scenarios each: call 1 = scenarios, calls 2..N*4+1 = scorecards
+  function makeMultiModelExec(scoresByModel: Record<string, number>): ExecFn {
+    let calls = 0;
+    return (_cmd, args) => {
+      calls += 1;
+      if (calls === 1) {
+        return { stdout: validScenariosJson, stderr: "", status: 0 };
+      }
+      // Figure out which model is being called from args
+      const modelIdx = [...args].indexOf("--model");
+      const model = modelIdx !== -1 ? (args[modelIdx + 1] as string) : "default";
+      const score = scoresByModel[model] ?? 9;
+      const scorecard = JSON.stringify({ ...JSON.parse(validScorecardJson), score });
+      return { stdout: scorecard, stderr: "", status: 0 };
+    };
+  }
+
+  it("throws when SKILL.md does not exist", async () => {
+    await expect(
+      validateSkillMultiModel({
+        toolId: "notool",
+        skillsDir: path.join(tmpDir, "skills"),
+        models: ["model-a"],
+        exec: makeMultiModelExec({}),
+      })
+    ).rejects.toThrow("No SKILL.md found for notool");
+  });
+
+  it("throws when no models are specified", async () => {
+    const skillsDir = writeSkill("mytool", "# mytool");
+    await expect(
+      validateSkillMultiModel({ toolId: "mytool", skillsDir, models: [], exec: makeMultiModelExec({}) })
+    ).rejects.toThrow("At least one model must be specified");
+  });
+
+  it("returns one ValidationReport per model", async () => {
+    const skillsDir = writeSkill("mytool", "# mytool");
+    const exec = makeMultiModelExec({ "model-a": 8, "model-b": 9 });
+    const report = await validateSkillMultiModel({
+      toolId: "mytool",
+      skillsDir,
+      models: ["model-a", "model-b"],
+      exec,
+    });
+    expect(report.reports).toHaveLength(2);
+    expect(report.models).toEqual(["model-a", "model-b"]);
+  });
+
+  it("generates scenarios using the primary (first) model only once", async () => {
+    const skillsDir = writeSkill("mytool", "# mytool");
+    const scenarioCallModels: string[] = [];
+    let firstCall = true;
+    const exec: ExecFn = (_cmd, args) => {
+      const modelIdx = [...args].indexOf("--model");
+      const model = modelIdx !== -1 ? (args[modelIdx + 1] as string) : "";
+      if (firstCall) {
+        scenarioCallModels.push(model);
+        firstCall = false;
+        return { stdout: validScenariosJson, stderr: "", status: 0 };
+      }
+      return { stdout: validScorecardJson, stderr: "", status: 0 };
+    };
+    await validateSkillMultiModel({ toolId: "mytool", skillsDir, models: ["primary", "secondary"], exec });
+    expect(scenarioCallModels).toHaveLength(1);
+    expect(scenarioCallModels[0]).toBe("primary");
+  });
+
+  it("calculates overallAverageScore across all models", async () => {
+    const skillsDir = writeSkill("mytool", "# mytool");
+    const exec = makeMultiModelExec({ "model-a": 6, "model-b": 10 });
+    const report = await validateSkillMultiModel({
+      toolId: "mytool",
+      skillsDir,
+      models: ["model-a", "model-b"],
+      exec,
+    });
+    expect(report.overallAverageScore).toBeCloseTo((6 + 10) / 2);
+  });
+
+  it("passed is true when overallAverageScore >= threshold", async () => {
+    const skillsDir = writeSkill("mytool", "# mytool");
+    const exec = makeMultiModelExec({ "model-a": 9, "model-b": 9 });
+    const report = await validateSkillMultiModel({
+      toolId: "mytool",
+      skillsDir,
+      models: ["model-a", "model-b"],
+      threshold: 9,
+      exec,
+    });
+    expect(report.passed).toBe(true);
+  });
+
+  it("passed is false when overallAverageScore < threshold", async () => {
+    const skillsDir = writeSkill("mytool", "# mytool");
+    const exec = makeMultiModelExec({ "model-a": 5, "model-b": 7 });
+    const report = await validateSkillMultiModel({
+      toolId: "mytool",
+      skillsDir,
+      models: ["model-a", "model-b"],
+      threshold: 9,
+      exec,
+    });
+    expect(report.passed).toBe(false);
+  });
+
+  it("skips models that fail with ENOENT and continues with the rest", async () => {
+    const skillsDir = writeSkill("mytool", "# mytool");
+    let calls = 0;
+    const exec: ExecFn = (_cmd, args) => {
+      calls += 1;
+      if (calls === 1) return { stdout: validScenariosJson, stderr: "", status: 0 };
+      const modelIdx = [...args].indexOf("--model");
+      const model = modelIdx !== -1 ? (args[modelIdx + 1] as string) : "";
+      if (model === "unavailable-model") {
+        return { error: new Error("spawn ENOENT"), stdout: null, stderr: null, status: null };
+      }
+      return { stdout: validScorecardJson, stderr: "", status: 0 };
+    };
+    const report = await validateSkillMultiModel({
+      toolId: "mytool",
+      skillsDir,
+      models: ["model-a", "unavailable-model"],
+      exec,
+    });
+    expect(report.models).toEqual(["model-a"]);
+    expect(report.reports).toHaveLength(1);
+  });
+
+  it("throws when all models are unavailable", async () => {
+    const skillsDir = writeSkill("mytool", "# mytool");
+    // First call (scenarios) succeeds, but all eval calls fail with ENOENT
+    let calls = 0;
+    const failExec: ExecFn = () => {
+      calls += 1;
+      if (calls === 1) return { stdout: validScenariosJson, stderr: "", status: 0 };
+      return { error: new Error("spawn ENOENT"), stdout: null, stderr: null, status: null };
+    };
+    await expect(
+      validateSkillMultiModel({ toolId: "mytool", skillsDir, models: ["gone-model"], exec: failExec })
+    ).rejects.toThrow("No models were available");
+  });
+
+  it("returns toolId and skillPath in the report", async () => {
+    const skillsDir = writeSkill("mytool", "# mytool");
+    const exec = makeMultiModelExec({ "model-a": 9 });
+    const report = await validateSkillMultiModel({
+      toolId: "mytool",
+      skillsDir,
+      models: ["model-a"],
+      exec,
+    });
+    expect(report.toolId).toBe("mytool");
+    expect(report.skillPath).toContain("mytool");
+    expect(report.skillPath).toContain("SKILL.md");
+  });
+
+  it("uses DEFAULT_VALIDATION_MODELS when no models option is given", async () => {
+    const skillsDir = writeSkill("mytool", "# mytool");
+    const capturedModels: string[] = [];
+    let calls = 0;
+    const exec: ExecFn = (_cmd, args) => {
+      calls += 1;
+      if (calls === 1) return { stdout: validScenariosJson, stderr: "", status: 0 };
+      const modelIdx = [...args].indexOf("--model");
+      if (modelIdx !== -1) capturedModels.push(args[modelIdx + 1] as string);
+      return { stdout: validScorecardJson, stderr: "", status: 0 };
+    };
+    await validateSkillMultiModel({ toolId: "mytool", skillsDir, exec });
+    // Each default model should appear in captured models
+    for (const m of DEFAULT_VALIDATION_MODELS) {
+      expect(capturedModels).toContain(m);
+    }
+  });
+});
+
+describe("formatMultiModelReport", () => {
+  const baseMultiReport: MultiModelValidationReport = {
+    toolId: "rg",
+    skillPath: "/home/.agents/skills/rg/SKILL.md",
+    models: ["claude-sonnet-4-6", "claude-opus-4-6"],
+    reports: [
+      {
+        toolId: "rg",
+        skillPath: "/home/.agents/skills/rg/SKILL.md",
+        model: "claude-sonnet-4-6",
+        scenarios: [
+          {
+            task: "search Python files",
+            command: "rg pattern --type py",
+            completed: true,
+            correct: true,
+            hallucinated: false,
+            missing: "",
+            score: 9,
+            reasoning: "Clear docs",
+          },
+        ],
+        averageScore: 9,
+        passed: true,
+        threshold: 9,
+        generatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        toolId: "rg",
+        skillPath: "/home/.agents/skills/rg/SKILL.md",
+        model: "claude-opus-4-6",
+        scenarios: [
+          {
+            task: "search Python files",
+            command: "rg pattern --type py",
+            completed: true,
+            correct: true,
+            hallucinated: false,
+            missing: "",
+            score: 8,
+            reasoning: "Good docs",
+          },
+        ],
+        averageScore: 8,
+        passed: false,
+        threshold: 9,
+        generatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ],
+    overallAverageScore: 8.5,
+    passed: false,
+    threshold: 9,
+    generatedAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  it("includes the toolId", () => {
+    expect(formatMultiModelReport(baseMultiReport)).toContain("rg");
+  });
+
+  it("includes all model names", () => {
+    const output = formatMultiModelReport(baseMultiReport);
+    expect(output).toContain("claude-sonnet-4-6");
+    expect(output).toContain("claude-opus-4-6");
+  });
+
+  it("includes the skillPath", () => {
+    expect(formatMultiModelReport(baseMultiReport)).toContain("/home/.agents/skills/rg/SKILL.md");
+  });
+
+  it("includes per-model average scores", () => {
+    const output = formatMultiModelReport(baseMultiReport);
+    expect(output).toContain("9.0/10");
+    expect(output).toContain("8.0/10");
+  });
+
+  it("includes overall average score", () => {
+    expect(formatMultiModelReport(baseMultiReport)).toContain("8.5/10");
+  });
+
+  it("shows PASS when passed is true", () => {
+    const passing = { ...baseMultiReport, passed: true, overallAverageScore: 9 };
+    expect(formatMultiModelReport(passing)).toContain("PASS");
+  });
+
+  it("shows FAIL when passed is false", () => {
+    expect(formatMultiModelReport(baseMultiReport)).toContain("FAIL");
+  });
+
+  it("shows threshold in output", () => {
+    expect(formatMultiModelReport(baseMultiReport)).toContain("threshold: 9/10");
+  });
+
+  it("shows scenario tasks for each model", () => {
+    expect(formatMultiModelReport(baseMultiReport)).toContain("search Python files");
+  });
+
+  it("shows Missing from skill section when report fails and missing info exists", () => {
+    const report: MultiModelValidationReport = {
+      ...baseMultiReport,
+      passed: false,
+      reports: [
+        {
+          ...baseMultiReport.reports[0],
+          scenarios: [{ ...baseMultiReport.reports[0].scenarios[0], missing: "the -v flag" }],
+        },
+      ],
+    };
+    expect(formatMultiModelReport(report)).toContain("the -v flag");
+  });
+
+  it("does not show Missing section when report passes", () => {
+    const passing: MultiModelValidationReport = {
+      ...baseMultiReport,
+      passed: true,
+      reports: [
+        {
+          ...baseMultiReport.reports[0],
+          scenarios: [{ ...baseMultiReport.reports[0].scenarios[0], missing: "minor thing" }],
+        },
+      ],
+    };
+    expect(formatMultiModelReport(passing)).not.toContain("Missing from skill:");
+  });
+
+  it("shows [hallucinated] tag for hallucinated scenarios", () => {
+    const report: MultiModelValidationReport = {
+      ...baseMultiReport,
+      reports: [
+        {
+          ...baseMultiReport.reports[0],
+          scenarios: [{ ...baseMultiReport.reports[0].scenarios[0], hallucinated: true }],
+        },
+      ],
+    };
+    expect(formatMultiModelReport(report)).toContain("hallucinated");
+  });
+});
+
+describe("buildValidationFeedback", () => {
+  const passingReport: MultiModelValidationReport = {
+    toolId: "rg",
+    skillPath: "/skills/rg/SKILL.md",
+    models: ["model-a", "model-b"],
+    reports: [
+      {
+        toolId: "rg",
+        skillPath: "/skills/rg/SKILL.md",
+        model: "model-a",
+        scenarios: [
+          {
+            task: "search files",
+            command: "rg pattern",
+            completed: true,
+            correct: true,
+            hallucinated: false,
+            missing: "the -l flag for filenames only",
+            score: 7,
+            reasoning: "ok",
+          },
+        ],
+        averageScore: 7,
+        passed: false,
+        threshold: 9,
+        generatedAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        toolId: "rg",
+        skillPath: "/skills/rg/SKILL.md",
+        model: "model-b",
+        scenarios: [
+          {
+            task: "search files",
+            command: "rg --list pattern",
+            completed: true,
+            correct: false,
+            hallucinated: true,
+            missing: "",
+            score: 6,
+            reasoning: "hallucinated --list",
+          },
+        ],
+        averageScore: 6,
+        passed: false,
+        threshold: 9,
+        generatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ],
+    overallAverageScore: 6.5,
+    passed: false,
+    threshold: 9,
+    generatedAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  it("includes the toolId and average score", () => {
+    const feedback = buildValidationFeedback(passingReport);
+    expect(feedback).toContain("rg");
+    expect(feedback).toContain("6.5/10");
+  });
+
+  it("includes the number of models", () => {
+    const feedback = buildValidationFeedback(passingReport);
+    expect(feedback).toContain("2 model");
+  });
+
+  it("includes missing information from scenarios", () => {
+    const feedback = buildValidationFeedback(passingReport);
+    expect(feedback).toContain("the -l flag for filenames only");
+  });
+
+  it("includes hallucinated task names", () => {
+    const feedback = buildValidationFeedback(passingReport);
+    expect(feedback).toContain("search files");
+    expect(feedback).toContain("hallucinated");
+  });
+
+  it("deduplicates missing info across models", () => {
+    const report: MultiModelValidationReport = {
+      ...passingReport,
+      reports: [
+        { ...passingReport.reports[0] },
+        {
+          ...passingReport.reports[1],
+          scenarios: [{ ...passingReport.reports[0].scenarios[0] }], // same missing info
+        },
+      ],
+    };
+    const feedback = buildValidationFeedback(report);
+    const count = (feedback.match(/the -l flag for filenames only/g) || []).length;
+    expect(count).toBe(1);
+  });
+
+  it("omits missing section when no scenarios have missing info", () => {
+    const report: MultiModelValidationReport = {
+      ...passingReport,
+      reports: [
+        {
+          ...passingReport.reports[0],
+          scenarios: [{ ...passingReport.reports[0].scenarios[0], missing: "" }],
+        },
+      ],
+    };
+    const feedback = buildValidationFeedback(report);
+    expect(feedback).not.toContain("missing from the skill");
+  });
+
+  it("omits hallucination section when no scenarios hallucinated", () => {
+    const report: MultiModelValidationReport = {
+      ...passingReport,
+      reports: [
+        {
+          ...passingReport.reports[0],
+          scenarios: [{ ...passingReport.reports[0].scenarios[0], hallucinated: false }],
+        },
+      ],
+    };
+    const feedback = buildValidationFeedback(report);
+    expect(feedback).not.toContain("hallucinated non-existent");
+  });
+
+  it("ends with a call to improve the skill", () => {
+    const feedback = buildValidationFeedback(passingReport);
+    expect(feedback).toContain("improve the skill");
   });
 });

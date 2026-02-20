@@ -9,7 +9,13 @@ import { buildUsageDoc, extractUsageTokens } from "./usage.js";
 import { expandHome, ensureDir, writeFileEnsured } from "./utils.js";
 import { CommandDoc, CommandSummary, ToolDoc } from "./types.js";
 import { distillTool, DEFAULT_SKILLS_DIR, DEFAULT_DOCS_DIR, DEFAULT_MODEL } from "./distill.js";
-import { validateSkill, formatReport, DEFAULT_THRESHOLD } from "./validate.js";
+import {
+  validateSkillMultiModel,
+  formatMultiModelReport,
+  buildValidationFeedback,
+  DEFAULT_THRESHOLD,
+  DEFAULT_VALIDATION_MODELS,
+} from "./validate.js";
 
 const DEFAULT_REGISTRY = "~/.agents/tool-docs/registry.yaml";
 const DEFAULT_OUT_DIR = "~/.agents/docs/tool-docs";
@@ -21,7 +27,7 @@ const HELP_TEXT = `tool-docs
 Usage:
   tool-docs generate [--registry <path>] [--out <path>] [--only <id1,id2>]
   tool-docs distill [--registry <path>] [--docs <path>] [--out <path>] [--only <id1,id2>] [--model <model>]
-  tool-docs validate <tool-id> [--skills <path>] [--model <model>] [--threshold <n>]
+  tool-docs validate <tool-id> [--skills <path>] [--models <m1,m2>] [--threshold <n>] [--auto-redist]
   tool-docs init [--registry <path>] [--force]
   tool-docs --help
 
@@ -37,8 +43,10 @@ Options:
   --docs <path>       Path to raw docs dir for distill (default: ${DEFAULT_DOCS_DIR})
   --skills <path>     Path to skills dir for validate (default: ${DEFAULT_SKILLS_OUT_DIR})
   --only <ids>        Comma-separated list of tool ids to process
-  --model <model>     LLM model for distill/validate (default: ${DEFAULT_MODEL})
+  --model <model>     LLM model for distill/auto-redist (default: ${DEFAULT_MODEL})
+  --models <m1,m2>    Comma-separated models for validate (default: ${DEFAULT_VALIDATION_MODELS.join(",")})
   --threshold <n>     Minimum passing score for validate (default: ${DEFAULT_THRESHOLD})
+  --auto-redist       Re-run distill with feedback if validation fails
   --force             Overwrite registry on init
   -h, --help          Show this help
 `;
@@ -95,11 +103,11 @@ export function parseFlags(args: string[]): Record<string, string | boolean> {
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
     if (!arg.startsWith("-")) continue;
-    if (arg === "--force") {
-      flags.force = true;
+    if (arg === "--force" || arg === "--auto-redist") {
+      flags[arg.replace(/^--/, "")] = true;
       continue;
     }
-    if (arg === "--registry" || arg === "--out" || arg === "--only" || arg === "--docs" || arg === "--model" || arg === "--skills" || arg === "--threshold") {
+    if (arg === "--registry" || arg === "--out" || arg === "--only" || arg === "--docs" || arg === "--model" || arg === "--models" || arg === "--skills" || arg === "--threshold") {
       const value = args[i + 1];
       if (!value || value.startsWith("-")) {
         throw new Error(`Missing value for ${arg}`);
@@ -183,26 +191,76 @@ async function handleValidate(toolId: string, flags: Record<string, string | boo
   const skillsDir = expandHome(
     typeof flags.skills === "string" ? flags.skills : DEFAULT_SKILLS_OUT_DIR
   );
-  const model = typeof flags.model === "string" ? flags.model : DEFAULT_MODEL;
+  const modelsFlag = typeof flags.models === "string" ? flags.models : DEFAULT_VALIDATION_MODELS.join(",");
+  const models = modelsFlag.split(",").map((m) => m.trim()).filter((m) => m.length > 0);
   const threshold =
     typeof flags.threshold === "string" ? parseInt(flags.threshold, 10) : DEFAULT_THRESHOLD;
+  const autoRedist = flags["auto-redist"] === true;
 
   if (isNaN(threshold) || threshold < 1 || threshold > 10) {
     console.error("--threshold must be a number between 1 and 10");
     process.exit(1);
   }
 
-  process.stdout.write(`validate ${toolId}...\n`);
+  if (models.length === 0) {
+    console.error("--models must include at least one model");
+    process.exit(1);
+  }
+
+  process.stdout.write(`validate ${toolId} (${models.join(", ")})...\n`);
 
   try {
-    const report = await validateSkill({ toolId, skillsDir, model, threshold });
-    console.log(formatReport(report));
+    const report = await validateSkillMultiModel({ toolId, skillsDir, models, threshold });
+    console.log(formatMultiModelReport(report));
+
+    if (!report.passed && autoRedist) {
+      await handleAutoRedist(toolId, buildValidationFeedback(report), flags);
+    }
+
     if (!report.passed) {
       process.exit(1);
     }
   } catch (err) {
     console.error(err instanceof Error ? err.message : String(err));
     process.exit(1);
+  }
+}
+
+async function handleAutoRedist(
+  toolId: string,
+  feedback: string,
+  flags: Record<string, string | boolean>
+): Promise<void> {
+  const registryPath = expandHome(
+    typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY
+  );
+  const docsDir = expandHome(
+    typeof flags.docs === "string" ? flags.docs : DEFAULT_DOCS_DIR
+  );
+  const model = typeof flags.model === "string" ? flags.model : DEFAULT_MODEL;
+  const skillsDir = expandHome(
+    typeof flags.skills === "string" ? flags.skills : DEFAULT_SKILLS_OUT_DIR
+  );
+
+  process.stdout.write(`\nauto-redist: re-distilling ${toolId} with validation feedback...\n`);
+
+  try {
+    const registry = await loadRegistry(registryPath);
+    const tool = registry.tools.find((t) => t.id === toolId);
+    if (!tool) {
+      console.error(`Tool ${toolId} not found in registry; skipping auto-redist`);
+      return;
+    }
+
+    const outDir = path.join(skillsDir, toolId);
+    const result = await distillTool({ toolId, binary: tool.binary, docsDir, outDir, model, feedback });
+    if (result.skipped) {
+      console.log(`auto-redist skipped: ${result.skipReason}`);
+    } else {
+      console.log("auto-redist complete — re-run validate to check updated score");
+    }
+  } catch (err) {
+    console.error(`auto-redist failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 

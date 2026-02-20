@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { parseFlags } from "../src/cli.js";
 import { DEFAULT_MODEL, DEFAULT_SKILLS_DIR } from "../src/distill.js";
+import { DEFAULT_VALIDATION_MODELS } from "../src/validate.js";
 
 describe("parseFlags --out", () => {
   it("returns the specified path when --out is provided", () => {
@@ -72,5 +73,60 @@ describe("parseFlags --model", () => {
   it("DEFAULT_MODEL is a non-empty string used as fallback", () => {
     expect(typeof DEFAULT_MODEL).toBe("string");
     expect(DEFAULT_MODEL.length).toBeGreaterThan(0);
+  });
+});
+
+describe("parseFlags --models", () => {
+  it("returns the specified models string when --models is provided", () => {
+    const flags = parseFlags(["--models", "claude-sonnet-4-6,claude-opus-4-6"]);
+    expect(flags.models).toBe("claude-sonnet-4-6,claude-opus-4-6");
+  });
+
+  it("returns undefined for models when --models is not provided", () => {
+    const flags = parseFlags(["--registry", "/some/path"]);
+    expect(flags.models).toBeUndefined();
+  });
+
+  it("accepts a single model", () => {
+    const flags = parseFlags(["--models", "claude-haiku-4-5-20251001"]);
+    expect(flags.models).toBe("claude-haiku-4-5-20251001");
+  });
+
+  it("throws when --models flag has no value", () => {
+    expect(() => parseFlags(["--models"])).toThrow("Missing value for --models");
+  });
+
+  it("throws when --models value looks like another flag", () => {
+    expect(() => parseFlags(["--models", "--skills"])).toThrow("Missing value for --models");
+  });
+
+  it("parses --models alongside other flags", () => {
+    const flags = parseFlags(["--models", "model-a,model-b", "--threshold", "8"]);
+    expect(flags.models).toBe("model-a,model-b");
+    expect(flags.threshold).toBe("8");
+  });
+
+  it("DEFAULT_VALIDATION_MODELS contains at least 2 Claude models", () => {
+    expect(DEFAULT_VALIDATION_MODELS.length).toBeGreaterThanOrEqual(2);
+    expect(DEFAULT_VALIDATION_MODELS.every((m) => m.startsWith("claude-"))).toBe(true);
+  });
+});
+
+describe("parseFlags --auto-redist", () => {
+  it("returns true when --auto-redist is provided", () => {
+    const flags = parseFlags(["--auto-redist"]);
+    expect(flags["auto-redist"]).toBe(true);
+  });
+
+  it("returns undefined when --auto-redist is not provided", () => {
+    const flags = parseFlags(["--model", "claude-sonnet-4-6"]);
+    expect(flags["auto-redist"]).toBeUndefined();
+  });
+
+  it("parses --auto-redist alongside other flags", () => {
+    const flags = parseFlags(["--auto-redist", "--threshold", "8", "--models", "claude-sonnet-4-6"]);
+    expect(flags["auto-redist"]).toBe(true);
+    expect(flags.threshold).toBe("8");
+    expect(flags.models).toBe("claude-sonnet-4-6");
   });
 });

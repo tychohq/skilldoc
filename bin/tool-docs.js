@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#\!/usr/bin/env node
 import { createRequire } from "node:module";
 var __create = Object.create;
 var __getProtoOf = Object.getPrototypeOf;
@@ -7613,8 +7613,9 @@ var SIZE_LIMITS = {
   "recipes.md": 2000,
   "troubleshooting.md": 1000
 };
+var defaultLLMCaller = (rawDocs, toolId, model, feedback) => callLLM(rawDocs, toolId, model, defaultExec, feedback);
 async function distillTool(options) {
-  const { toolId, binary, docsDir, outDir, model, llmCaller = callLLM } = options;
+  const { toolId, binary, docsDir, outDir, model, llmCaller = defaultLLMCaller, feedback } = options;
   const skillPath = path.join(outDir, "SKILL.md");
   if (existsSync(skillPath)) {
     const existing = await readFile2(skillPath, "utf8");
@@ -7626,7 +7627,7 @@ async function distillTool(options) {
   if (!rawContent) {
     return { toolId, outDir, skipped: true, skipReason: `no raw docs found in ${docsDir}/${toolId}` };
   }
-  const distilled = llmCaller(rawContent, toolId, model);
+  const distilled = llmCaller(rawContent, toolId, model, feedback);
   await ensureDir(outDir);
   await ensureDir(path.join(outDir, "docs"));
   const now = new Date().toISOString();
@@ -7679,7 +7680,7 @@ function checkSizeLimits(files) {
   }
   return warnings;
 }
-function buildPrompt(rawDocs, toolId) {
+function buildPrompt(rawDocs, toolId, feedback) {
   return `You are an agent documentation specialist. Your task is to distill raw CLI documentation into lean, agent-optimized skill files.
 
 ## Raw Documentation for: ${toolId}
@@ -7768,11 +7769,21 @@ docs/troubleshooting.md format:
 
 Keep each file ruthlessly concise. No padding, no exhaustive lists. Respect the per-file byte limits. SKILL.md is the most important — agents rely on it first.
 
-Return ONLY valid JSON, no markdown fences around the JSON itself.`;
+Return ONLY valid JSON, no markdown fences around the JSON itself.${feedback ? `
+
+---
+
+## Validation Feedback
+
+A previous version of this skill was tested by AI agents and received a failing score. Please address these issues:
+
+${feedback}
+
+Fix the above gaps in your new distillation.` : ""}`;
 }
 var defaultExec = (command, args, options) => spawnSync(command, [...args], options);
-function callLLM(rawDocs, toolId, model, exec = defaultExec) {
-  const prompt = buildPrompt(rawDocs, toolId);
+function callLLM(rawDocs, toolId, model, exec = defaultExec, feedback) {
+  const prompt = buildPrompt(rawDocs, toolId, feedback);
   const result = exec("claude", ["-p", "--output-format", "text", "--model", model, "--no-session-persistence"], {
     input: prompt,
     encoding: "utf8",
@@ -7852,6 +7863,7 @@ import { existsSync as existsSync2 } from "node:fs";
 import { readFile as readFile3 } from "node:fs/promises";
 import { spawnSync as spawnSync2 } from "node:child_process";
 var DEFAULT_THRESHOLD = 9;
+var DEFAULT_VALIDATION_MODELS = ["claude-sonnet-4-6", "claude-opus-4-6"];
 var NUM_SCENARIOS = 4;
 var defaultExec2 = (command, args, options) => spawnSync2(command, [...args], options);
 function buildScenariosPrompt(skillContent, toolId) {
@@ -7903,19 +7915,29 @@ Return ONLY valid JSON with exactly these keys:
   "reasoning": "<brief explanation of your score>"
 }`;
 }
+function getModelCommand(model) {
+  if (model === "gemini" || model.startsWith("gemini-")) {
+    return { command: "gemini", args: ["-p"] };
+  }
+  return {
+    command: "claude",
+    args: ["-p", "--output-format", "text", "--model", model, "--no-session-persistence"]
+  };
+}
 function callLLM2(prompt, model, exec) {
-  const result = exec("claude", ["-p", "--output-format", "text", "--model", model, "--no-session-persistence"], { input: prompt, encoding: "utf8", maxBuffer: 10 * 1024 * 1024 });
+  const { command, args } = getModelCommand(model);
+  const result = exec(command, args, { input: prompt, encoding: "utf8", maxBuffer: 10 * 1024 * 1024 });
   if (result.error) {
-    throw new Error(`Failed to run claude: ${result.error.message}`);
+    throw new Error(`Failed to run ${command}: ${result.error.message}`);
   }
   if (result.status !== 0) {
     const stderr = result.stderr ?? "";
-    throw new Error(`claude exited with code ${result.status}${stderr ? `: ${stderr.slice(0, 200)}` : ""}`);
+    throw new Error(`${command} exited with code ${result.status}${stderr ? `: ${stderr.slice(0, 200)}` : ""}`);
   }
   const output = result.stdout ?? "";
   if (!output.trim()) {
     const stderr = result.stderr ?? "";
-    throw new Error(`claude returned empty output${stderr ? `: ${stderr.slice(0, 200)}` : ""}`);
+    throw new Error(`${command} returned empty output${stderr ? `: ${stderr.slice(0, 200)}` : ""}`);
   }
   return output;
 }
@@ -7989,69 +8011,129 @@ function evaluateScenario(skillContent, task, model, exec = defaultExec2) {
   const output = callLLM2(prompt, model, exec);
   return parseScorecard(task, output);
 }
-async function validateSkill(options) {
+async function validateSkillMultiModel(options) {
   const {
     toolId,
     skillsDir = expandHome(DEFAULT_SKILLS_DIR),
-    model = DEFAULT_MODEL,
+    models = DEFAULT_VALIDATION_MODELS,
     threshold = DEFAULT_THRESHOLD,
     exec = defaultExec2
   } = options;
+  if (models.length === 0) {
+    throw new Error("At least one model must be specified");
+  }
   const skillPath = path2.join(skillsDir, toolId, "SKILL.md");
   if (!existsSync2(skillPath)) {
     throw new Error(`No SKILL.md found for ${toolId} at ${skillPath}`);
   }
   const skillContent = await readFile3(skillPath, "utf8");
-  const scenarios = generateScenarios(skillContent, toolId, model, exec);
-  const scorecards = [];
-  for (const scenario of scenarios) {
-    const scorecard = evaluateScenario(skillContent, scenario.task, model, exec);
-    scorecards.push(scorecard);
+  const primaryModel = models[0];
+  const scenarios = generateScenarios(skillContent, toolId, primaryModel, exec);
+  const reports = [];
+  for (const model of models) {
+    const scorecards = [];
+    let skipped = false;
+    for (const scenario of scenarios) {
+      try {
+        const scorecard = evaluateScenario(skillContent, scenario.task, model, exec);
+        scorecards.push(scorecard);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes("ENOENT")) {
+          skipped = true;
+          break;
+        }
+        throw err;
+      }
+    }
+    if (skipped)
+      continue;
+    const averageScore = scorecards.reduce((sum, s) => sum + s.score, 0) / scorecards.length;
+    reports.push({
+      toolId,
+      skillPath,
+      model,
+      scenarios: scorecards,
+      averageScore,
+      passed: averageScore >= threshold,
+      threshold,
+      generatedAt: new Date().toISOString()
+    });
   }
-  const averageScore = scorecards.reduce((sum, s) => sum + s.score, 0) / scorecards.length;
+  if (reports.length === 0) {
+    throw new Error("No models were available to validate against");
+  }
+  const overallAverageScore = reports.reduce((sum, r) => sum + r.averageScore, 0) / reports.length;
   return {
     toolId,
     skillPath,
-    model,
-    scenarios: scorecards,
-    averageScore,
-    passed: averageScore >= threshold,
+    models: reports.map((r) => r.model),
+    reports,
+    overallAverageScore,
+    passed: overallAverageScore >= threshold,
     threshold,
     generatedAt: new Date().toISOString()
   };
 }
-function formatReport(report) {
+function formatMultiModelReport(report) {
   const lines = [];
-  lines.push(`Validation Report: ${report.toolId}`);
-  lines.push(`Model: ${report.model}`);
+  lines.push(`Multi-Model Validation: ${report.toolId}`);
+  lines.push(`Models: ${report.models.join(", ")}`);
   lines.push(`Skill: ${report.skillPath}`);
   lines.push("");
-  for (let i = 0;i < report.scenarios.length; i++) {
-    const s = report.scenarios[i];
-    const issues = [];
-    if (!s.completed)
-      issues.push("incomplete");
-    if (!s.correct)
-      issues.push("incorrect");
-    if (s.hallucinated)
-      issues.push("hallucinated");
-    const issueStr = issues.length > 0 ? ` [${issues.join(", ")}]` : "";
-    lines.push(`  Scenario ${i + 1}: "${s.task}" → ${s.score}/10${issueStr}`);
-    if (s.command)
-      lines.push(`    Command: ${s.command}`);
-    if (s.missing)
-      lines.push(`    Missing: ${s.missing}`);
+  for (const modelReport of report.reports) {
+    lines.push(`--- ${modelReport.model} ---`);
+    for (let i = 0;i < modelReport.scenarios.length; i++) {
+      const s = modelReport.scenarios[i];
+      const issues = [];
+      if (!s.completed)
+        issues.push("incomplete");
+      if (!s.correct)
+        issues.push("incorrect");
+      if (s.hallucinated)
+        issues.push("hallucinated");
+      const issueStr = issues.length > 0 ? ` [${issues.join(", ")}]` : "";
+      lines.push(`  Scenario ${i + 1}: "${s.task}" → ${s.score}/10${issueStr}`);
+      if (s.command)
+        lines.push(`    Command: ${s.command}`);
+      if (s.missing)
+        lines.push(`    Missing: ${s.missing}`);
+    }
+    const modelStatus = modelReport.passed ? "PASS" : "FAIL";
+    lines.push(`  Average: ${modelReport.averageScore.toFixed(1)}/10 — ${modelStatus}`);
+    lines.push("");
   }
-  lines.push("");
-  const avgFormatted = report.averageScore.toFixed(1);
+  const avgFormatted = report.overallAverageScore.toFixed(1);
   const status = report.passed ? "PASS" : "FAIL";
-  lines.push(`Average: ${avgFormatted}/10 — ${status} (threshold: ${report.threshold}/10)`);
+  lines.push(`Overall: ${avgFormatted}/10 — ${status} (threshold: ${report.threshold}/10)`);
   if (!report.passed) {
-    const allMissing = report.scenarios.map((s) => s.missing).filter((m) => m.length > 0).filter((m, i, arr) => arr.indexOf(m) === i);
+    const allMissing = report.reports.flatMap((r) => r.scenarios.map((s) => s.missing)).filter((m) => m.length > 0).filter((m, i, arr) => arr.indexOf(m) === i);
     if (allMissing.length > 0) {
       lines.push(`Missing from skill: ${allMissing.join("; ")}`);
     }
   }
+  return lines.join(`
+`);
+}
+function buildValidationFeedback(report) {
+  const allMissing = report.reports.flatMap((r) => r.scenarios.map((s) => s.missing)).filter((m) => m.length > 0).filter((m, i, arr) => arr.indexOf(m) === i);
+  const hallucinations = report.reports.flatMap((r) => r.scenarios.filter((s) => s.hallucinated).map((s) => s.task)).filter((t, i, arr) => arr.indexOf(t) === i);
+  const lines = [];
+  lines.push(`Validation failed for ${report.toolId} (average score: ${report.overallAverageScore.toFixed(1)}/10 across ${report.models.length} model(s)).`);
+  if (allMissing.length > 0) {
+    lines.push(`
+Information missing from the skill that agents needed:`);
+    for (const m of allMissing)
+      lines.push(`- ${m}`);
+  }
+  if (hallucinations.length > 0) {
+    lines.push(`
+Tasks where models hallucinated non-existent flags or options:`);
+    for (const h of hallucinations)
+      lines.push(`- ${h}`);
+  }
+  lines.push(`
+Please improve the skill to address these gaps.`);
   return lines.join(`
 `);
 }
@@ -8065,7 +8147,7 @@ var HELP_TEXT = `tool-docs
 Usage:
   tool-docs generate [--registry <path>] [--out <path>] [--only <id1,id2>]
   tool-docs distill [--registry <path>] [--docs <path>] [--out <path>] [--only <id1,id2>] [--model <model>]
-  tool-docs validate <tool-id> [--skills <path>] [--model <model>] [--threshold <n>]
+  tool-docs validate <tool-id> [--skills <path>] [--models <m1,m2>] [--threshold <n>] [--auto-redist]
   tool-docs init [--registry <path>] [--force]
   tool-docs --help
 
@@ -8081,8 +8163,10 @@ Options:
   --docs <path>       Path to raw docs dir for distill (default: ${DEFAULT_DOCS_DIR})
   --skills <path>     Path to skills dir for validate (default: ${DEFAULT_SKILLS_OUT_DIR})
   --only <ids>        Comma-separated list of tool ids to process
-  --model <model>     LLM model for distill/validate (default: ${DEFAULT_MODEL})
+  --model <model>     LLM model for distill/auto-redist (default: ${DEFAULT_MODEL})
+  --models <m1,m2>    Comma-separated models for validate (default: ${DEFAULT_VALIDATION_MODELS.join(",")})
   --threshold <n>     Minimum passing score for validate (default: ${DEFAULT_THRESHOLD})
+  --auto-redist       Re-run distill with feedback if validation fails
   --force             Overwrite registry on init
   -h, --help          Show this help
 `;
@@ -8130,11 +8214,11 @@ function parseFlags(args) {
     const arg = args[i];
     if (!arg.startsWith("-"))
       continue;
-    if (arg === "--force") {
-      flags.force = true;
+    if (arg === "--force" || arg === "--auto-redist") {
+      flags[arg.replace(/^--/, "")] = true;
       continue;
     }
-    if (arg === "--registry" || arg === "--out" || arg === "--only" || arg === "--docs" || arg === "--model" || arg === "--skills" || arg === "--threshold") {
+    if (arg === "--registry" || arg === "--out" || arg === "--only" || arg === "--docs" || arg === "--model" || arg === "--models" || arg === "--skills" || arg === "--threshold") {
       const value = args[i + 1];
       if (!value || value.startsWith("-")) {
         throw new Error(`Missing value for ${arg}`);
@@ -8214,23 +8298,58 @@ async function handleDistill(flags) {
 }
 async function handleValidate(toolId, flags) {
   const skillsDir = expandHome(typeof flags.skills === "string" ? flags.skills : DEFAULT_SKILLS_OUT_DIR);
-  const model = typeof flags.model === "string" ? flags.model : DEFAULT_MODEL;
+  const modelsFlag = typeof flags.models === "string" ? flags.models : DEFAULT_VALIDATION_MODELS.join(",");
+  const models = modelsFlag.split(",").map((m) => m.trim()).filter((m) => m.length > 0);
   const threshold = typeof flags.threshold === "string" ? parseInt(flags.threshold, 10) : DEFAULT_THRESHOLD;
+  const autoRedist = flags["auto-redist"] === true;
   if (isNaN(threshold) || threshold < 1 || threshold > 10) {
     console.error("--threshold must be a number between 1 and 10");
     process.exit(1);
   }
-  process.stdout.write(`validate ${toolId}...
+  if (models.length === 0) {
+    console.error("--models must include at least one model");
+    process.exit(1);
+  }
+  process.stdout.write(`validate ${toolId} (${models.join(", ")})...
 `);
   try {
-    const report = await validateSkill({ toolId, skillsDir, model, threshold });
-    console.log(formatReport(report));
+    const report = await validateSkillMultiModel({ toolId, skillsDir, models, threshold });
+    console.log(formatMultiModelReport(report));
+    if (!report.passed && autoRedist) {
+      await handleAutoRedist(toolId, buildValidationFeedback(report), flags);
+    }
     if (!report.passed) {
       process.exit(1);
     }
   } catch (err) {
     console.error(err instanceof Error ? err.message : String(err));
     process.exit(1);
+  }
+}
+async function handleAutoRedist(toolId, feedback, flags) {
+  const registryPath = expandHome(typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY);
+  const docsDir = expandHome(typeof flags.docs === "string" ? flags.docs : DEFAULT_DOCS_DIR);
+  const model = typeof flags.model === "string" ? flags.model : DEFAULT_MODEL;
+  const skillsDir = expandHome(typeof flags.skills === "string" ? flags.skills : DEFAULT_SKILLS_OUT_DIR);
+  process.stdout.write(`
+auto-redist: re-distilling ${toolId} with validation feedback...
+`);
+  try {
+    const registry = await loadRegistry(registryPath);
+    const tool = registry.tools.find((t) => t.id === toolId);
+    if (!tool) {
+      console.error(`Tool ${toolId} not found in registry; skipping auto-redist`);
+      return;
+    }
+    const outDir = path3.join(skillsDir, toolId);
+    const result = await distillTool({ toolId, binary: tool.binary, docsDir, outDir, model, feedback });
+    if (result.skipped) {
+      console.log(`auto-redist skipped: ${result.skipReason}`);
+    } else {
+      console.log("auto-redist complete — re-run validate to check updated score");
+    }
+  } catch (err) {
+    console.error(`auto-redist failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 async function handleGenerate(flags) {

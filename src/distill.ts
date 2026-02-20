@@ -25,7 +25,10 @@ const SIZE_LIMITS: Record<string, number> = {
   "troubleshooting.md": 1000,
 };
 
-export type LLMCaller = (rawDocs: string, toolId: string, model: string) => DistilledContent;
+export type LLMCaller = (rawDocs: string, toolId: string, model: string, feedback?: string) => DistilledContent;
+
+const defaultLLMCaller: LLMCaller = (rawDocs, toolId, model, feedback) =>
+  callLLM(rawDocs, toolId, model, defaultExec, feedback);
 
 export type DistillOptions = {
   toolId: string;
@@ -34,10 +37,11 @@ export type DistillOptions = {
   outDir: string;
   model: string;
   llmCaller?: LLMCaller;
+  feedback?: string;
 };
 
 export async function distillTool(options: DistillOptions): Promise<DistillResult> {
-  const { toolId, binary, docsDir, outDir, model, llmCaller = callLLM } = options;
+  const { toolId, binary, docsDir, outDir, model, llmCaller = defaultLLMCaller, feedback } = options;
 
   // Check if skill exists and was hand-written (no marker)
   const skillPath = path.join(outDir, "SKILL.md");
@@ -55,7 +59,7 @@ export async function distillTool(options: DistillOptions): Promise<DistillResul
   }
 
   // Call LLM to distill
-  const distilled = llmCaller(rawContent, toolId, model);
+  const distilled = llmCaller(rawContent, toolId, model, feedback);
 
   // Write output files
   await ensureDir(outDir);
@@ -123,7 +127,7 @@ function checkSizeLimits(files: Record<string, string>): string[] {
   return warnings;
 }
 
-function buildPrompt(rawDocs: string, toolId: string): string {
+function buildPrompt(rawDocs: string, toolId: string, feedback?: string): string {
   return `You are an agent documentation specialist. Your task is to distill raw CLI documentation into lean, agent-optimized skill files.
 
 ## Raw Documentation for: ${toolId}
@@ -212,7 +216,11 @@ docs/troubleshooting.md format:
 
 Keep each file ruthlessly concise. No padding, no exhaustive lists. Respect the per-file byte limits. SKILL.md is the most important — agents rely on it first.
 
-Return ONLY valid JSON, no markdown fences around the JSON itself.`;
+Return ONLY valid JSON, no markdown fences around the JSON itself.${
+    feedback
+      ? `\n\n---\n\n## Validation Feedback\n\nA previous version of this skill was tested by AI agents and received a failing score. Please address these issues:\n\n${feedback}\n\nFix the above gaps in your new distillation.`
+      : ""
+  }`;
 }
 
 type ExecResult = {
@@ -235,9 +243,10 @@ export function callLLM(
   rawDocs: string,
   toolId: string,
   model: string,
-  exec: ExecFn = defaultExec
+  exec: ExecFn = defaultExec,
+  feedback?: string
 ): DistilledContent {
-  const prompt = buildPrompt(rawDocs, toolId);
+  const prompt = buildPrompt(rawDocs, toolId, feedback);
 
   const result = exec("claude", ["-p", "--output-format", "text", "--model", model, "--no-session-persistence"], {
     input: prompt,

@@ -236,6 +236,27 @@ describe("callLLM", () => {
     expect(() => callLLM("docs", "tool", "model", exec)).toThrow("spawn ENOENT");
   });
 
+  it("includes feedback in the prompt when provided", () => {
+    let capturedInput = "";
+    const exec = (_cmd: string, _args: ReadonlyArray<string>, opts: { input: string }) => {
+      capturedInput = opts.input;
+      return { stdout: validJson, stderr: "", status: 0 };
+    };
+    callLLM("docs", "tool", "model", exec, "agents needed the --files flag");
+    expect(capturedInput).toContain("agents needed the --files flag");
+    expect(capturedInput).toContain("Validation Feedback");
+  });
+
+  it("does not include feedback section when feedback is undefined", () => {
+    let capturedInput = "";
+    const exec = (_cmd: string, _args: ReadonlyArray<string>, opts: { input: string }) => {
+      capturedInput = opts.input;
+      return { stdout: validJson, stderr: "", status: 0 };
+    };
+    callLLM("docs", "tool", "model", exec);
+    expect(capturedInput).not.toContain("Validation Feedback");
+  });
+
   it("throws when claude exits with non-zero status", () => {
     const exec = () => ({ stdout: "", stderr: "Error: model not found", status: 1 });
     expect(() => callLLM("docs", "tool", "model", exec)).toThrow("claude exited with code 1");
@@ -677,5 +698,43 @@ describe("distillTool - full flow", () => {
     expect(result.sizeWarnings?.length).toBeGreaterThanOrEqual(2);
     expect(result.sizeWarnings?.some((w) => w.includes("SKILL.md"))).toBe(true);
     expect(result.sizeWarnings?.some((w) => w.includes("advanced.md"))).toBe(true);
+  });
+
+  it("passes feedback to the LLM caller when provided", async () => {
+    const docsDir = setupDocs("mytool");
+    const outDir = path.join(tmpDir, "skills", "mytool");
+
+    let capturedFeedback: string | undefined;
+    const mockLLM: LLMCaller = (_rawDocs, _toolId, _model, feedback) => {
+      capturedFeedback = feedback;
+      return { description: "d", skill: "s", advanced: "a", recipes: "r", troubleshooting: "t" };
+    };
+
+    await distillTool({
+      toolId: "mytool",
+      binary: "mytool",
+      docsDir,
+      outDir,
+      model: "test-model",
+      llmCaller: mockLLM,
+      feedback: "agents needed the --count flag",
+    });
+
+    expect(capturedFeedback).toBe("agents needed the --count flag");
+  });
+
+  it("passes undefined feedback to the LLM caller when not provided", async () => {
+    const docsDir = setupDocs("mytool");
+    const outDir = path.join(tmpDir, "skills", "mytool");
+
+    let capturedFeedback: string | undefined = "sentinel";
+    const mockLLM: LLMCaller = (_rawDocs, _toolId, _model, feedback) => {
+      capturedFeedback = feedback;
+      return { description: "d", skill: "s", advanced: "a", recipes: "r", troubleshooting: "t" };
+    };
+
+    await distillTool({ toolId: "mytool", binary: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
+
+    expect(capturedFeedback).toBeUndefined();
   });
 });
