@@ -43,7 +43,7 @@ The SKILL.md is the entry point. The `docs/` folder has deeper sections that age
 - [x] Distillation should use an LLM (via CLI — `claude -p` or similar) to compress raw docs into the skill format
 - [x] The distill prompt should produce: (1) SKILL.md with quick reference, key commands/flags, and common patterns, (2) docs/advanced.md for power-user flags, (3) docs/recipes.md for task-oriented examples, (4) docs/troubleshooting.md for gotchas
 - [x] Each output file should target ~2KB max, with SKILL.md being the most important
-- [ ] The distill prompt should instruct the LLM to prioritize: most-used flags/commands first, real-world usage patterns over exhaustive flag lists, agent-specific gotchas (quoting, escaping, common errors)
+- [x] The distill prompt should instruct the LLM to prioritize: most-used flags/commands first, real-world usage patterns over exhaustive flag lists, agent-specific gotchas (quoting, escaping, common errors)
 - [ ] Add `--model` flag to distill command (default: claude via `claude -p`)
 
 ### Phase 2: Skill Output Format
