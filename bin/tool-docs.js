@@ -8417,6 +8417,7 @@ var DEFAULT_SKILLS_OUT_DIR = DEFAULT_SKILLS_DIR;
 var HELP_TEXT = `tool-docs
 
 Usage:
+  tool-docs run <tool>                         # run full pipeline: generate → distill → validate
   tool-docs generate <tool>                    # generate docs for a single tool
   tool-docs generate [--registry <path>] ...   # generate from registry
   tool-docs distill <tool>                     # distill a single tool
@@ -8428,6 +8429,7 @@ Usage:
   tool-docs --help
 
 Commands:
+  run        Run full pipeline: generate → distill → validate
   generate   Generate docs for a single tool (ad-hoc) or all tools in the registry
   distill    Distill raw docs into agent-optimized skills (SKILL.md + docs/)
   refresh    Re-run generate + distill for tools whose --help output has changed
@@ -8461,6 +8463,16 @@ async function main() {
   const flags = parseFlags(args.slice(1));
   if (command === "init") {
     await handleInit(flags);
+    return;
+  }
+  if (command === "run") {
+    const subArgs = args.slice(1);
+    const toolId = subArgs.find((a) => !a.startsWith("-"));
+    if (!toolId) {
+      console.error("run requires a <tool> argument");
+      process.exit(1);
+    }
+    await handleRun(toolId, flags);
     return;
   }
   if (command === "generate") {
@@ -8660,6 +8672,41 @@ async function handleReport(flags) {
     console.log(formatQualityReport(report));
   } catch (err) {
     console.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+}
+async function handleRun(toolId, flags, {
+  generateFn = handleGenerate,
+  distillFn = handleDistill,
+  validateFn = validateSkillMultiModel
+} = {}) {
+  const skillsDir = expandHome(typeof flags.skills === "string" ? flags.skills : DEFAULT_SKILLS_OUT_DIR);
+  const modelsFlag = typeof flags.models === "string" ? flags.models : DEFAULT_VALIDATION_MODELS.join(",");
+  const models = modelsFlag.split(",").map((m) => m.trim()).filter((m) => m.length > 0);
+  const threshold = typeof flags.threshold === "string" ? parseInt(flags.threshold, 10) : DEFAULT_THRESHOLD;
+  if (isNaN(threshold) || threshold < 1 || threshold > 10) {
+    console.error("--threshold must be a number between 1 and 10");
+    process.exit(1);
+  }
+  console.log(`
+— generate ${toolId}`);
+  await generateFn(flags, toolId);
+  console.log(`
+— distill ${toolId}`);
+  await distillFn(flags, toolId);
+  console.log(`
+— validate ${toolId}`);
+  const report = await validateFn({ toolId, skillsDir, models, threshold });
+  console.log(formatMultiModelReport(report));
+  await saveValidationReport(report, skillsDir);
+  const skillPath = path3.join(skillsDir, toolId, "SKILL.md");
+  if (report.passed) {
+    console.log(`
+Pipeline complete — ${skillPath} (score: ${report.overallAverageScore.toFixed(1)})`);
+  } else {
+    console.log(`
+Validation failed (score: ${report.overallAverageScore.toFixed(1)}, threshold: ${threshold})`);
+    console.log(`Tip: re-run with --auto-redist to improve: tool-docs validate ${toolId} --auto-redist`);
     process.exit(1);
   }
 }
@@ -8959,6 +9006,7 @@ export {
   resolveBinary,
   parseFlags,
   lookupRegistryTool,
+  handleRun,
   handleRefresh,
   handleGenerate,
   handleDistill,

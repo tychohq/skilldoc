@@ -4,9 +4,9 @@ import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
-import { parseFlags, extractPositionalArgs, handleAutoRedist, handleGenerate, handleDistill, resolveBinary, lookupRegistryTool } from "../src/cli.js";
+import { parseFlags, extractPositionalArgs, handleAutoRedist, handleGenerate, handleDistill, handleRun, resolveBinary, lookupRegistryTool, type RunDeps } from "../src/cli.js";
 import { DEFAULT_MODEL, DEFAULT_SKILLS_DIR, DistillOptions, DistillResult } from "../src/distill.js";
-import { DEFAULT_VALIDATION_MODELS } from "../src/validate.js";
+import { DEFAULT_VALIDATION_MODELS, type MultiModelValidationReport } from "../src/validate.js";
 
 describe("parseFlags --out", () => {
   it("returns the specified path when --out is provided", () => {
@@ -957,5 +957,172 @@ describe("bin/tool-docs.js distill <tool-id> (integration)", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("tool-docs distill <tool>");
     expect(result.stdout).toContain("tool-docs distill [--registry");
+  });
+
+  it("help text shows the run command", () => {
+    const result = spawnSync("node", [binPath, "--help"], { encoding: "utf8" });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("tool-docs run <tool>");
+    expect(result.stdout).toContain("run        Run full pipeline");
+  });
+});
+
+describe("handleRun", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), `run-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function makePassingReport(toolId: string): MultiModelValidationReport {
+    return {
+      toolId,
+      skillPath: path.join(tmpDir, "skills", toolId, "SKILL.md"),
+      models: ["test-model"],
+      reports: [],
+      overallAverageScore: 9.5,
+      passed: true,
+      threshold: 9,
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  function makeFailingReport(toolId: string): MultiModelValidationReport {
+    return {
+      toolId,
+      skillPath: path.join(tmpDir, "skills", toolId, "SKILL.md"),
+      models: ["test-model"],
+      reports: [],
+      overallAverageScore: 6.0,
+      passed: false,
+      threshold: 9,
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  function makeDeps(overrides: Partial<RunDeps> = {}): RunDeps & { calls: string[] } {
+    const calls: string[] = [];
+    return {
+      calls,
+      generateFn: overrides.generateFn ?? (async () => { calls.push("generate"); }),
+      distillFn: overrides.distillFn ?? (async () => { calls.push("distill"); }),
+      validateFn: overrides.validateFn ?? (async ({ toolId }) => {
+        calls.push("validate");
+        return makePassingReport(toolId);
+      }),
+    };
+  }
+
+  it("calls generate, distill, validate in order", async () => {
+    const deps = makeDeps();
+    await handleRun("mytool", { skills: path.join(tmpDir, "skills") }, deps);
+    expect(deps.calls).toEqual(["generate", "distill", "validate"]);
+  });
+
+  it("passes toolId to generateFn as binaryName", async () => {
+    let capturedBinary: string | undefined;
+    const deps = makeDeps({
+      generateFn: async (_flags, binaryName) => { capturedBinary = binaryName; },
+    });
+    await handleRun("jq", { skills: path.join(tmpDir, "skills") }, deps);
+    expect(capturedBinary).toBe("jq");
+  });
+
+  it("passes toolId to distillFn", async () => {
+    let capturedToolId: string | undefined;
+    const deps = makeDeps({
+      distillFn: async (_flags, toolId) => { capturedToolId = toolId; },
+    });
+    await handleRun("jq", { skills: path.join(tmpDir, "skills") }, deps);
+    expect(capturedToolId).toBe("jq");
+  });
+
+  it("passes toolId to validateFn", async () => {
+    let capturedToolId: string | undefined;
+    const deps = makeDeps({
+      validateFn: async (opts) => { capturedToolId = opts.toolId; return makePassingReport(opts.toolId); },
+    });
+    await handleRun("jq", { skills: path.join(tmpDir, "skills") }, deps);
+    expect(capturedToolId).toBe("jq");
+  });
+
+  it("forwards flags to generateFn", async () => {
+    let capturedFlags: Record<string, string | boolean> = {};
+    const deps = makeDeps({
+      generateFn: async (flags) => { capturedFlags = flags; },
+    });
+    const flags = { out: "/tmp/out", model: "claude-opus-4-6", skills: path.join(tmpDir, "skills") };
+    await handleRun("jq", flags, deps);
+    expect(capturedFlags.out).toBe("/tmp/out");
+    expect(capturedFlags.model).toBe("claude-opus-4-6");
+  });
+
+  it("forwards flags to distillFn", async () => {
+    let capturedFlags: Record<string, string | boolean> = {};
+    const deps = makeDeps({
+      distillFn: async (flags) => { capturedFlags = flags; },
+    });
+    const flags = { docs: "/tmp/docs", model: "claude-opus-4-6", skills: path.join(tmpDir, "skills") };
+    await handleRun("jq", flags, deps);
+    expect(capturedFlags.docs).toBe("/tmp/docs");
+    expect(capturedFlags.model).toBe("claude-opus-4-6");
+  });
+
+  it("passes models and threshold to validateFn", async () => {
+    let capturedOpts: { models?: string[]; threshold?: number } = {};
+    const deps = makeDeps({
+      validateFn: async (opts) => { capturedOpts = opts; return makePassingReport(opts.toolId); },
+    });
+    await handleRun("jq", { models: "model-a,model-b", threshold: "7", skills: path.join(tmpDir, "skills") }, deps);
+    expect(capturedOpts.models).toEqual(["model-a", "model-b"]);
+    expect(capturedOpts.threshold).toBe(7);
+  });
+
+  it("exits with code 1 on validation failure", async () => {
+    const deps = makeDeps({
+      validateFn: async ({ toolId }) => makeFailingReport(toolId),
+    });
+
+    let exitCode: number | undefined;
+    const origExit = process.exit;
+    process.exit = ((code: number) => { exitCode = code; throw new Error("exit"); }) as never;
+
+    try {
+      await handleRun("mytool", { skills: path.join(tmpDir, "skills") }, deps);
+    } catch {
+      // expected
+    } finally {
+      process.exit = origExit;
+    }
+
+    expect(exitCode).toBe(1);
+  });
+
+  it("completes without exit on validation success", async () => {
+    const deps = makeDeps();
+    await expect(
+      handleRun("mytool", { skills: path.join(tmpDir, "skills") }, deps)
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe("bin/tool-docs.js run (integration)", () => {
+  const binPath = path.resolve(import.meta.dir, "../bin/tool-docs.js");
+
+  it("exits with code 1 when no tool argument is provided", () => {
+    const result = spawnSync("node", [binPath, "run"], { encoding: "utf8" });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("run requires a <tool> argument");
+  });
+
+  it("exits with code 1 for a nonexistent binary", () => {
+    const result = spawnSync("node", [binPath, "run", "nonexistent-binary-xyz", "--out", os.tmpdir()], { encoding: "utf8" });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('binary "nonexistent-binary-xyz" not found on PATH');
   });
 });
