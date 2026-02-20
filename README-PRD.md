@@ -53,12 +53,12 @@ The current README is bare-bones. We need it to sell the tool on first glance �
   - `gh` — popular with the target audience
   - `ffmpeg` — massive `--help`, impressive compression
   - `rg` (ripgrep) — developer favorite
-- [ ] Each example should include the full SKILL.md + docs/ subfolder as generated
-- [ ] Add a brief `examples/README.md` explaining these are real generated output
+- [x] Each example should include the full SKILL.md + docs/ subfolder as generated
+- [x] Add a brief `examples/README.md` explaining these are real generated output
 
 ### Phase 3: Package & Install Polish
 
-- [ ] Ensure `package.json` has proper fields: description, keywords, homepage, repository, license
+- [x] Ensure `package.json` has proper fields: description, keywords, homepage, repository, license
 - [ ] Add `keywords` to package.json: `["ai-agents", "cli", "documentation", "agents-md", "claude-code", "llm", "skill-generation"]`
 - [ ] Verify `bun install && bun run build` produces a working `bin/tool-docs.js`
 - [ ] Test that the CLI runs correctly from a fresh clone: `node bin/tool-docs.js --help`
