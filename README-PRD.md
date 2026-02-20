@@ -59,8 +59,8 @@ The current README is bare-bones. We need it to sell the tool on first glance â€
 ### Phase 3: Package & Install Polish
 
 - [x] Ensure `package.json` has proper fields: description, keywords, homepage, repository, license
-- [ ] Add `keywords` to package.json: `["ai-agents", "cli", "documentation", "agents-md", "claude-code", "llm", "skill-generation"]`
-- [ ] Verify `bun install && bun run build` produces a working `bin/tool-docs.js`
+- [x] Add `keywords` to package.json: `["ai-agents", "cli", "documentation", "agents-md", "claude-code", "llm", "skill-generation"]`
+- [x] Verify `bun install && bun run build` produces a working `bin/tool-docs.js`
 - [ ] Test that the CLI runs correctly from a fresh clone: `node bin/tool-docs.js --help`
 - [ ] Add GitHub repo description via `gh`: "Auto-generate agent-optimized CLI docs from --help output"
 - [ ] Add GitHub topics via `gh`: ai-agents, cli, documentation, agents-md, claude-code, llm-tools, skill-generation

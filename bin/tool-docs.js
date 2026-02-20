@@ -7619,6 +7619,7 @@ var DEFAULT_DOCS_DIR = "~/.agents/docs/tool-docs";
 var DEFAULT_MODEL = "claude-haiku-4-5-20251001";
 var DEFAULT_DISTILL_CONFIG_PATH = "~/.agents/tool-docs/distill-config.yaml";
 var GENERATED_MARKER = "generated-from: agent-tool-docs";
+var INSUFFICIENT_DOCS_SENTINEL = "Insufficient raw docs — re-run generate after fixing parser";
 var DEFAULT_PROMPT_CONFIG = {
   sizeLimits: {
     skill: 2000,
@@ -7649,6 +7650,9 @@ async function distillTool(options) {
     return { toolId, outDir, skipped: true, skipReason: `no raw docs found in ${docsDir}/${toolId}` };
   }
   const distilled = caller(rawContent, toolId, model, feedback);
+  if (distilled.skill.trim() === INSUFFICIENT_DOCS_SENTINEL) {
+    return { toolId, outDir, skipped: true, skipReason: INSUFFICIENT_DOCS_SENTINEL };
+  }
   await ensureDir(outDir);
   await ensureDir(path.join(outDir, "docs"));
   const now = new Date().toISOString();
@@ -7739,7 +7743,11 @@ Per-file size targets (strict — return less content rather than exceed these):
 - "recipes": ≤ ${sl["recipes.md"]} bytes — task-oriented examples
 - "troubleshooting": ≤ ${sl["troubleshooting.md"]} bytes — known gotchas and common LLM mistakes
 
-**IMPORTANT: Always return valid JSON, even if the raw docs are sparse or show warnings like "No commands detected."** If the raw docs are incomplete, use your general knowledge of the tool to produce useful documentation. Do not explain the issue in prose — just return the JSON.
+**CRITICAL — Anti-hallucination rule:** You MUST ONLY use information explicitly present in the raw docs provided above. Do NOT draw on your training knowledge about this tool. Do NOT add commands, flags, examples, or behavior from your training knowledge. Do NOT invent flags, subcommands, options, or behaviors that are not documented in the raw docs above. Only distill what appears in the provided documentation.
+
+If the input docs contain no useful content (e.g., empty, contain only parser warnings like "No commands detected", or lack sufficient content to produce meaningful documentation), output a stub skill that says 'raw docs incomplete'. To signal this, set ALL text fields ("description", "skill", "advanced", "recipes", "troubleshooting") to exactly this string: ${INSUFFICIENT_DOCS_SENTINEL}
+
+Otherwise, always return valid JSON using only the information present in the raw docs.
 
 Return ONLY a JSON object with exactly these keys:
 - "description": one-line description of the tool for the YAML frontmatter (no markdown, plain text only)
