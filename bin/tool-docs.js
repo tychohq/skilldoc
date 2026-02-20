@@ -7996,6 +7996,82 @@ Return ONLY valid JSON with exactly these keys:
   "reasoning": "<brief explanation of your score>"
 }`;
 }
+function buildGroundednessPrompt(skillContent, rawDocs) {
+  return `You are a documentation auditor checking whether a generated skill file is faithfully grounded in its source documentation.
+
+## Raw Documentation (Source of Truth)
+
+${rawDocs}
+
+---
+
+## Generated Skill File
+
+${skillContent}
+
+---
+
+## Your Task
+
+Compare the skill file against the raw documentation. Identify any specific commands, flags, options, or behaviors that appear in the skill file but are NOT present anywhere in the raw documentation above.
+
+Focus on:
+- Specific flags (e.g., "--foo", "-x") mentioned in the skill but absent from raw docs
+- Subcommands or commands mentioned in the skill but absent from raw docs
+- Specific behaviors, defaults, or option values described in the skill but not in raw docs
+
+Do NOT flag:
+- Minor wording differences or paraphrasing of documented behavior
+- Structural differences (headers, ordering, formatting)
+- Information that IS present in the raw docs, even if worded differently
+
+Rate the groundedness on a scale from 1-10 where:
+- 10 = fully grounded, every claim is directly supported by the raw docs
+- 5 = some hallucinations present that could mislead an agent
+- 1 = many hallucinations, skill is unreliable
+
+Return ONLY valid JSON with no markdown fences:
+{
+  "score": <1-10>,
+  "hallucinatedItems": ["<specific flag or command not in raw docs>", ...],
+  "reasoning": "<brief explanation of your score>"
+}`;
+}
+function parseGroundednessResult(output) {
+  const stripped = stripFences(output);
+  let parsed;
+  try {
+    parsed = JSON.parse(stripped);
+  } catch {
+    throw new Error(`Failed to parse groundedness result as JSON: ${stripped.slice(0, 200)}`);
+  }
+  if (typeof parsed !== "object" || parsed === null) {
+    throw new Error("Groundedness result is not a JSON object");
+  }
+  const obj = parsed;
+  for (const key of ["score", "hallucinatedItems", "reasoning"]) {
+    if (!(key in obj)) {
+      throw new Error(`Groundedness result missing required key: ${key}`);
+    }
+  }
+  if (!Array.isArray(obj.hallucinatedItems)) {
+    throw new Error("Groundedness hallucinatedItems must be an array");
+  }
+  const score = typeof obj.score === "number" ? obj.score : Number(obj.score);
+  if (isNaN(score) || score < 1 || score > 10) {
+    throw new Error(`Groundedness score must be between 1 and 10, got: ${obj.score}`);
+  }
+  return {
+    score,
+    hallucinatedItems: obj.hallucinatedItems.map(String),
+    reasoning: String(obj.reasoning ?? "")
+  };
+}
+function checkGroundedness(skillContent, rawDocs, model, exec = defaultExec2) {
+  const prompt = buildGroundednessPrompt(skillContent, rawDocs);
+  const output = callLLM2(prompt, model, exec);
+  return parseGroundednessResult(output);
+}
 function getModelCommand(model) {
   if (model === "gemini" || model.startsWith("gemini-")) {
     return { command: "gemini", args: ["-p"] };
@@ -8096,6 +8172,7 @@ async function validateSkillMultiModel(options) {
   const {
     toolId,
     skillsDir = expandHome(DEFAULT_SKILLS_DIR),
+    docsDir,
     models = DEFAULT_VALIDATION_MODELS,
     threshold = DEFAULT_THRESHOLD,
     exec = defaultExec2
@@ -8145,6 +8222,19 @@ async function validateSkillMultiModel(options) {
     throw new Error("No models were available to validate against");
   }
   const overallAverageScore = reports.reduce((sum, r) => sum + r.averageScore, 0) / reports.length;
+  let groundedness;
+  if (docsDir) {
+    const rawDocs = await gatherRawDocs(toolId, expandHome(docsDir));
+    if (rawDocs) {
+      try {
+        groundedness = checkGroundedness(skillContent, rawDocs, primaryModel, exec);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!msg.includes("ENOENT"))
+          throw err;
+      }
+    }
+  }
   return {
     toolId,
     skillPath,
@@ -8153,7 +8243,8 @@ async function validateSkillMultiModel(options) {
     overallAverageScore,
     passed: overallAverageScore >= threshold,
     threshold,
-    generatedAt: new Date().toISOString()
+    generatedAt: new Date().toISOString(),
+    ...groundedness !== undefined ? { groundedness } : {}
   };
 }
 function formatMultiModelReport(report) {
@@ -8191,6 +8282,13 @@ function formatMultiModelReport(report) {
     const allMissing = report.reports.flatMap((r) => r.scenarios.map((s) => s.missing)).filter((m) => m.length > 0).filter((m, i, arr) => arr.indexOf(m) === i);
     if (allMissing.length > 0) {
       lines.push(`Missing from skill: ${allMissing.join("; ")}`);
+    }
+  }
+  if (report.groundedness !== undefined) {
+    lines.push("");
+    lines.push(`Groundedness: ${report.groundedness.score.toFixed(1)}/10`);
+    if (report.groundedness.hallucinatedItems.length > 0) {
+      lines.push(`  Hallucinated: ${report.groundedness.hallucinatedItems.join(", ")}`);
     }
   }
   return lines.join(`
@@ -8240,14 +8338,18 @@ async function loadQualityReports(skillsDir) {
     try {
       const raw = await readFile3(reportPath, "utf8");
       const parsed = JSON.parse(raw);
-      entries.push({
+      const entry = {
         toolId: parsed.toolId,
         overallAverageScore: parsed.overallAverageScore,
         models: parsed.models,
         passed: parsed.passed,
         threshold: parsed.threshold,
         generatedAt: parsed.generatedAt
-      });
+      };
+      if (parsed.groundedness !== undefined) {
+        entry.groundednessScore = parsed.groundedness.score;
+      }
+      entries.push(entry);
     } catch {}
   }
   entries = entries.sort((a, b) => a.toolId.localeCompare(b.toolId));
@@ -8266,18 +8368,31 @@ function formatQualityReport(report) {
   lines.push(`Quality Report — ${report.entries.length} tool(s)`);
   lines.push("");
   const colTool = Math.max(4, ...report.entries.map((e) => e.toolId.length));
-  const header = `${"Tool".padEnd(colTool)}  ${"Score".padStart(6)}  ${"Status"}`;
+  const hasGroundedness = report.entries.some((e) => e.groundednessScore !== undefined);
+  const header = hasGroundedness ? `${"Tool".padEnd(colTool)}  ${"Score".padStart(6)}  ${"Ground".padStart(7)}  ${"Status"}` : `${"Tool".padEnd(colTool)}  ${"Score".padStart(6)}  ${"Status"}`;
   lines.push(header);
   lines.push("-".repeat(header.length));
   for (const entry of report.entries) {
     const score = `${entry.overallAverageScore.toFixed(1)}/10`.padStart(6);
     const status = entry.passed ? "PASS" : "FAIL";
-    lines.push(`${entry.toolId.padEnd(colTool)}  ${score}  ${status}`);
+    if (hasGroundedness) {
+      const ground = entry.groundednessScore !== undefined ? `${entry.groundednessScore.toFixed(1)}/10`.padStart(7) : "    N/A";
+      lines.push(`${entry.toolId.padEnd(colTool)}  ${score}  ${ground}  ${status}`);
+    } else {
+      lines.push(`${entry.toolId.padEnd(colTool)}  ${score}  ${status}`);
+    }
   }
   lines.push("-".repeat(header.length));
   const overallAvg = report.entries.reduce((sum, e) => sum + e.overallAverageScore, 0) / report.entries.length;
   const summaryScore = `${overallAvg.toFixed(1)}/10`.padStart(6);
-  lines.push(`${"Total".padEnd(colTool)}  ${summaryScore}  ${passing}/${report.entries.length} PASS`);
+  if (hasGroundedness) {
+    const groundEntries = report.entries.filter((e) => e.groundednessScore !== undefined);
+    const avgGround = groundEntries.reduce((sum, e) => sum + e.groundednessScore, 0) / groundEntries.length;
+    const groundSummary = `${avgGround.toFixed(1)}/10`.padStart(7);
+    lines.push(`${"Total".padEnd(colTool)}  ${summaryScore}  ${groundSummary}  ${passing}/${report.entries.length} PASS`);
+  } else {
+    lines.push(`${"Total".padEnd(colTool)}  ${summaryScore}  ${passing}/${report.entries.length} PASS`);
+  }
   if (failing > 0) {
     lines.push("");
     lines.push(`${failing} tool(s) below threshold — run 'tool-docs validate <tool-id> --auto-redist' to improve.`);
@@ -8293,7 +8408,7 @@ var DEFAULT_SKILLS_OUT_DIR = DEFAULT_SKILLS_DIR;
 var HELP_TEXT = `tool-docs
 
 Usage:
-  tool-docs generate [--registry <path>] [--out <path>] [--only <id1,id2>]
+  tool-docs generate [<binary>] [--registry <path>] [--out <path>] [--only <id1,id2>]
   tool-docs distill [--registry <path>] [--docs <path>] [--out <path>] [--only <id1,id2>] [--model <model>] [--distill-config <path>]
   tool-docs refresh [--registry <path>] [--out <path>] [--only <id1,id2>] [--model <model>] [--diff]
   tool-docs validate <tool-id> [--skills <path>] [--models <m1,m2>] [--threshold <n>] [--auto-redist]
@@ -8302,7 +8417,7 @@ Usage:
   tool-docs --help
 
 Commands:
-  generate   Generate markdown + JSON docs for tools in the registry
+  generate   Generate docs for a single binary or all tools in the registry
   distill    Distill raw docs into agent-optimized skills (SKILL.md + docs/)
   refresh    Re-run generate + distill for tools whose --help output has changed
   validate   Test skill quality using LLM-based scenario evaluation
@@ -8338,7 +8453,8 @@ async function main() {
     return;
   }
   if (command === "generate") {
-    await handleGenerate(flags);
+    const positional = extractPositionalArgs(args.slice(1));
+    await handleGenerate(flags, positional[0]);
     return;
   }
   if (command === "distill") {
@@ -8369,6 +8485,30 @@ async function main() {
   }
   console.error(`Unknown command: ${command}`);
   process.exit(1);
+}
+var VALUE_FLAGS = new Set([
+  "--registry",
+  "--out",
+  "--only",
+  "--docs",
+  "--model",
+  "--models",
+  "--skills",
+  "--threshold",
+  "--distill-config"
+]);
+function extractPositionalArgs(args) {
+  const positional = [];
+  for (let i = 0;i < args.length; i++) {
+    const arg = args[i];
+    if (arg.startsWith("-")) {
+      if (VALUE_FLAGS.has(arg))
+        i++;
+      continue;
+    }
+    positional.push(arg);
+  }
+  return positional;
 }
 function parseFlags(args) {
   const flags = {};
@@ -8527,12 +8667,22 @@ auto-redist: re-distilling ${toolId} with validation feedback...
     console.error(`auto-redist failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
-async function handleGenerate(flags) {
-  const registryPath = expandHome(typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY);
+async function handleGenerate(flags, binaryName) {
   const outDir = expandHome(typeof flags.out === "string" ? flags.out : DEFAULT_OUT_DIR);
-  const only = typeof flags.only === "string" ? new Set(flags.only.split(",").map((v) => v.trim())) : null;
-  const registry = await loadRegistry(registryPath);
-  const tools = registry.tools.filter((tool) => tool.enabled !== false).filter((tool) => only ? only.has(tool.id) : true).sort((a, b) => a.id.localeCompare(b.id));
+  let tools;
+  if (binaryName) {
+    tools = [{
+      id: binaryName,
+      binary: binaryName,
+      enabled: true,
+      helpArgs: ["--help"]
+    }];
+  } else {
+    const registryPath = expandHome(typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY);
+    const only = typeof flags.only === "string" ? new Set(flags.only.split(",").map((v) => v.trim())) : null;
+    const registry = await loadRegistry(registryPath);
+    tools = registry.tools.filter((tool) => tool.enabled !== false).filter((tool) => only ? only.has(tool.id) : true).sort((a, b) => a.id.localeCompare(b.id));
+  }
   await ensureDir(outDir);
   const indexLines = [];
   indexLines.push("# Tool Docs", "", `Generated: ${new Date().toISOString()}`, "");
@@ -8771,8 +8921,10 @@ if (__require.main == __require.module) {
 export {
   parseFlags,
   handleRefresh,
+  handleGenerate,
   handleAutoRedist,
   getChangedTools,
+  extractPositionalArgs,
   computeSkillDiff,
   computeHash
 };

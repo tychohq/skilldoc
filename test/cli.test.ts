@@ -3,7 +3,8 @@ import path from "node:path";
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
-import { parseFlags, handleAutoRedist } from "../src/cli.js";
+import { readFileSync, existsSync } from "node:fs";
+import { parseFlags, extractPositionalArgs, handleAutoRedist, handleGenerate } from "../src/cli.js";
 import { DEFAULT_MODEL, DEFAULT_SKILLS_DIR, DistillOptions, DistillResult } from "../src/distill.js";
 import { DEFAULT_VALIDATION_MODELS } from "../src/validate.js";
 
@@ -251,6 +252,126 @@ describe("parseFlags --distill-config", () => {
     expect(flags["distill-config"]).toBe("/tmp/cfg.yaml");
     expect(flags.model).toBe("claude-haiku-4-5-20251001");
     expect(flags.only).toBe("rg");
+  });
+});
+
+describe("extractPositionalArgs", () => {
+  it("returns empty array when no positional args", () => {
+    expect(extractPositionalArgs(["--out", "/tmp"])).toEqual([]);
+  });
+
+  it("extracts a single positional arg", () => {
+    expect(extractPositionalArgs(["jq"])).toEqual(["jq"]);
+  });
+
+  it("extracts positional arg before flags", () => {
+    expect(extractPositionalArgs(["jq", "--out", "/tmp"])).toEqual(["jq"]);
+  });
+
+  it("extracts positional arg after flags", () => {
+    expect(extractPositionalArgs(["--out", "/tmp", "jq"])).toEqual(["jq"]);
+  });
+
+  it("skips value-flag arguments (does not treat flag value as positional)", () => {
+    expect(extractPositionalArgs(["--registry", "/some/path", "jq"])).toEqual(["jq"]);
+  });
+
+  it("handles boolean flags correctly", () => {
+    expect(extractPositionalArgs(["--force", "jq"])).toEqual(["jq"]);
+  });
+
+  it("handles multiple value flags interleaved with positional", () => {
+    expect(extractPositionalArgs(["--out", "/tmp", "jq", "--only", "rg"])).toEqual(["jq"]);
+  });
+
+  it("returns empty array for flags only", () => {
+    expect(extractPositionalArgs(["--registry", "/path", "--only", "rg,git"])).toEqual([]);
+  });
+});
+
+describe("handleGenerate with binary name", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), `generate-binary-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("generates docs for a single binary without a registry", async () => {
+    await handleGenerate({ out: tmpDir }, "echo");
+    const toolJson = path.join(tmpDir, "echo", "tool.json");
+    expect(existsSync(toolJson)).toBe(true);
+    const doc = JSON.parse(readFileSync(toolJson, "utf8"));
+    expect(doc.kind).toBe("tool");
+    expect(doc.id).toBe("echo");
+    expect(doc.binary).toBe("echo");
+  });
+
+  it("creates tool.md for an ad-hoc binary", async () => {
+    await handleGenerate({ out: tmpDir }, "echo");
+    const toolMd = path.join(tmpDir, "echo", "tool.md");
+    expect(existsSync(toolMd)).toBe(true);
+  });
+
+  it("creates tool.yaml for an ad-hoc binary", async () => {
+    await handleGenerate({ out: tmpDir }, "echo");
+    const toolYaml = path.join(tmpDir, "echo", "tool.yaml");
+    expect(existsSync(toolYaml)).toBe(true);
+  });
+
+  it("creates index.md listing the ad-hoc binary", async () => {
+    await handleGenerate({ out: tmpDir }, "echo");
+    const indexMd = path.join(tmpDir, "index.md");
+    expect(existsSync(indexMd)).toBe(true);
+    const content = readFileSync(indexMd, "utf8");
+    expect(content).toContain("echo");
+  });
+
+  it("uses --help as default helpArgs for ad-hoc binary", async () => {
+    await handleGenerate({ out: tmpDir }, "jq");
+    const toolJson = path.join(tmpDir, "jq", "tool.json");
+    const doc = JSON.parse(readFileSync(toolJson, "utf8"));
+    expect(doc.helpArgs).toEqual(["--help"]);
+  });
+
+  it("adds warning for binary not found on PATH", async () => {
+    await handleGenerate({ out: tmpDir }, "nonexistent-binary-xyz");
+    const toolJson = path.join(tmpDir, "nonexistent-binary-xyz", "tool.json");
+    const doc = JSON.parse(readFileSync(toolJson, "utf8"));
+    expect(doc.warnings.length).toBeGreaterThan(0);
+  });
+});
+
+describe("bin/tool-docs.js generate <binary> (integration)", () => {
+  const binPath = path.resolve(import.meta.dir, "../bin/tool-docs.js");
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), `generate-int-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("generates docs for a positional binary arg via CLI", () => {
+    const result = spawnSync("node", [binPath, "generate", "jq", "--out", tmpDir], { encoding: "utf8" });
+    expect(result.status).toBe(0);
+    expect(existsSync(path.join(tmpDir, "jq", "tool.json"))).toBe(true);
+    const doc = JSON.parse(readFileSync(path.join(tmpDir, "jq", "tool.json"), "utf8"));
+    expect(doc.id).toBe("jq");
+    expect(doc.binary).toBe("jq");
+  });
+
+  it("binary arg works when placed after flags", () => {
+    const result = spawnSync("node", [binPath, "generate", "--out", tmpDir, "jq"], { encoding: "utf8" });
+    expect(result.status).toBe(0);
+    expect(existsSync(path.join(tmpDir, "jq", "tool.json"))).toBe(true);
   });
 });
 
