@@ -8566,6 +8566,7 @@ function parseFlags(args) {
 }
 async function handleInit(flags) {
   const registryPath = expandHome(typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY);
+  const displayPath = typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY;
   const force = flags.force === true;
   const sample = `version: 1
 tools:
@@ -8598,7 +8599,17 @@ tools:
     } catch {}
   }
   await writeFileEnsured(registryPath, sample);
-  console.log(`Wrote registry: ${registryPath}`);
+  const lines = [
+    `Created: ${displayPath}`,
+    `  Tools: git, rg (2 example entries)`,
+    ``,
+    `Next steps:`,
+    `  1. Edit the registry to add your tools`,
+    `  2. Run the pipeline:`,
+    `     tool-docs run --registry ${displayPath}`
+  ];
+  console.log(lines.join(`
+`));
 }
 async function handleDistill(flags, toolId, distillFn = distillTool) {
   const docsDir = expandHome(typeof flags.docs === "string" ? flags.docs : DEFAULT_DOCS_DIR);
@@ -9085,6 +9096,7 @@ export {
   handleRunBatch,
   handleRun,
   handleRefresh,
+  handleInit,
   handleGenerate,
   handleDistill,
   handleAutoRedist,

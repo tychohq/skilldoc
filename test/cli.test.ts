@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
-import { parseFlags, extractPositionalArgs, handleAutoRedist, handleGenerate, handleDistill, handleRun, handleRunBatch, resolveBinary, lookupRegistryTool, type RunDeps, type RunBatchDeps, type RunResult } from "../src/cli.js";
+import { parseFlags, extractPositionalArgs, handleAutoRedist, handleGenerate, handleDistill, handleInit, handleRun, handleRunBatch, resolveBinary, lookupRegistryTool, type RunDeps, type RunBatchDeps, type RunResult } from "../src/cli.js";
 import { DEFAULT_MODEL, DEFAULT_SKILLS_DIR, DistillOptions, DistillResult } from "../src/distill.js";
 import { DEFAULT_VALIDATION_MODELS, type MultiModelValidationReport } from "../src/validate.js";
 
@@ -980,6 +980,73 @@ describe("bin/tool-docs.js distill <tool-id> (integration)", () => {
     expect(result.stdout).toContain("~/.agents/tool-docs/registry.yaml");
     expect(result.stdout).toContain("git, ripgrep");
     expect(result.stdout).toContain("batch generation for multiple tools");
+  });
+});
+
+describe("handleInit", () => {
+  const binPath = path.resolve(import.meta.dir, "../bin/tool-docs.js");
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), `init-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("prints what was created and next steps", () => {
+    const registryPath = path.join(tmpDir, "registry.yaml");
+    const result = spawnSync("node", [binPath, "init", "--registry", registryPath], { encoding: "utf8" });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(`Created: ${registryPath}`);
+    expect(result.stdout).toContain("git, rg (2 example entries)");
+    expect(result.stdout).toContain("Next steps:");
+    expect(result.stdout).toContain("Edit the registry to add your tools");
+    expect(result.stdout).toContain(`tool-docs run --registry ${registryPath}`);
+  });
+
+  it("creates the registry file on disk", () => {
+    const registryPath = path.join(tmpDir, "registry.yaml");
+    spawnSync("node", [binPath, "init", "--registry", registryPath], { encoding: "utf8" });
+    expect(existsSync(registryPath)).toBe(true);
+    const content = readFileSync(registryPath, "utf8");
+    expect(content).toContain("id: git");
+    expect(content).toContain("id: rg");
+  });
+
+  it("uses default path in output when --registry is not specified", async () => {
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: unknown[]) => logs.push(args.join(" "));
+    try {
+      await handleInit({ registry: path.join(tmpDir, "default.yaml") });
+      const output = logs.join("\n");
+      expect(output).toContain("Created:");
+      expect(output).toContain("Next steps:");
+      expect(output).toContain("tool-docs run --registry");
+    } finally {
+      console.log = origLog;
+    }
+  });
+
+  it("exits with error if registry already exists", () => {
+    const registryPath = path.join(tmpDir, "registry.yaml");
+    writeFileSync(registryPath, "existing");
+    const result = spawnSync("node", [binPath, "init", "--registry", registryPath], { encoding: "utf8" });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("Registry already exists:");
+  });
+
+  it("overwrites existing registry with --force", () => {
+    const registryPath = path.join(tmpDir, "registry.yaml");
+    writeFileSync(registryPath, "old content");
+    const result = spawnSync("node", [binPath, "init", "--registry", registryPath, "--force"], { encoding: "utf8" });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(`Created: ${registryPath}`);
+    const content = readFileSync(registryPath, "utf8");
+    expect(content).toContain("id: git");
   });
 });
 
