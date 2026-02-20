@@ -945,9 +945,17 @@ describe("bin/tool-docs.js distill <tool-id> (integration)", () => {
     expect(result.stderr).toContain('no raw docs found for "nonexistent-tool"');
   });
 
-  it("help text shows positional arg for distill command", () => {
+  it("help text shows ad-hoc and registry modes for generate", () => {
     const result = spawnSync("node", [binPath, "--help"], { encoding: "utf8" });
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain("tool-docs distill [<tool-id>]");
+    expect(result.stdout).toContain("tool-docs generate <tool>");
+    expect(result.stdout).toContain("tool-docs generate [--registry");
+  });
+
+  it("help text shows ad-hoc and registry modes for distill", () => {
+    const result = spawnSync("node", [binPath, "--help"], { encoding: "utf8" });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("tool-docs distill <tool>");
+    expect(result.stdout).toContain("tool-docs distill [--registry");
   });
 });

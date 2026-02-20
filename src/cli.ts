@@ -31,16 +31,18 @@ const DEFAULT_SKILLS_OUT_DIR = DEFAULT_SKILLS_DIR;
 const HELP_TEXT = `tool-docs
 
 Usage:
-  tool-docs generate [<binary>] [--registry <path>] [--out <path>] [--only <id1,id2>]
-  tool-docs distill [<tool-id>] [--registry <path>] [--docs <path>] [--out <path>] [--only <id1,id2>] [--model <model>] [--distill-config <path>]
-  tool-docs refresh [--registry <path>] [--out <path>] [--only <id1,id2>] [--model <model>] [--diff]
+  tool-docs generate <tool>                    # generate docs for a single tool
+  tool-docs generate [--registry <path>] ...   # generate from registry
+  tool-docs distill <tool>                     # distill a single tool
+  tool-docs distill [--registry <path>] ...    # distill from registry
+  tool-docs refresh [--registry <path>] [--only <id1,id2>] [--diff]
   tool-docs validate <tool-id> [--skills <path>] [--models <m1,m2>] [--threshold <n>] [--auto-redist]
   tool-docs report [--skills <path>]
   tool-docs init [--registry <path>] [--force]
   tool-docs --help
 
 Commands:
-  generate   Generate docs for a single binary or all tools in the registry
+  generate   Generate docs for a single tool (ad-hoc) or all tools in the registry
   distill    Distill raw docs into agent-optimized skills (SKILL.md + docs/)
   refresh    Re-run generate + distill for tools whose --help output has changed
   validate   Test skill quality using LLM-based scenario evaluation
