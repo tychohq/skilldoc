@@ -17,18 +17,29 @@
     "url": "git+https://github.com/BrennerSpear/agent-tool-docs.git"
   },
   "license": "MIT",
-  "private": true,
   "type": "module",
   "bin": {
+    "agent-tool-docs": "bin/tool-docs.js",
     "tool-docs": "bin/tool-docs.js"
+  },
+  "files": [
+    "bin/tool-docs.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
   },
   "scripts": {
     "build": "bun build src/cli.ts --outfile bin/tool-docs.js --target node --banner '#!/usr/bin/env node'",
     "postbuild": "chmod +x bin/tool-docs.js",
-    "test": "bun test"
+    "prepublishOnly": "bun run build",
+    "test": "bun test",
+    "check": "bun run build",
+    "typecheck": "bunx tsc --noEmit"
   },
-  "dependencies": {
+  "dependencies": {},
+  "devDependencies": {
     "yaml": "^2.8.1"
-  },
-  "devDependencies": {}
+  }
 }

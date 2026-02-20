@@ -83,7 +83,7 @@ Pass a tool name, get a skill. No registry, no config, no init.
 ### Phase 6: Clarify `init`
 
 - [x] Update `tool-docs init` help text to explain what it creates: "Creates a starter registry file at ~/.agents/tool-docs/registry.yaml with example tool entries (git, ripgrep). Use this to configure batch generation for multiple tools."
-- [ ] When `init` runs, print a clear message showing what was created AND what to do next:
+- [x] When `init` runs, print a clear message showing what was created AND what to do next:
   ```
   Created registry: ~/.agents/tool-docs/registry.yaml
 
@@ -94,7 +94,7 @@ Pass a tool name, get a skill. No registry, no config, no init.
   Or skip the registry and generate skills for individual tools:
     tool-docs run jq      # full pipeline for a single tool
   ```
-- [ ] Update README to move `init` out of the Quick Start — it's for power users doing batch ops, not the first thing you run
+- [x] Update README to move `init` out of the Quick Start — it's for power users doing batch ops, not the first thing you run
 
 ---
 

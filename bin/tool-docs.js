@@ -6978,6 +6978,52 @@ import { spawnSync as spawnSync3 } from "node:child_process";
 import { rm } from "node:fs/promises";
 import { writeFileSync, unlinkSync, existsSync as existsSync3 } from "node:fs";
 import { createHash } from "node:crypto";
+// package.json
+var package_default = {
+  name: "agent-tool-docs",
+  version: "0.2.0",
+  description: "Auto-generate agent-optimized CLI docs from --help output — verified, compressed, ready for AGENTS.md",
+  keywords: [
+    "ai-agents",
+    "cli",
+    "documentation",
+    "agents-md",
+    "claude-code",
+    "llm",
+    "skill-generation"
+  ],
+  homepage: "https://github.com/BrennerSpear/agent-tool-docs",
+  repository: {
+    type: "git",
+    url: "git+https://github.com/BrennerSpear/agent-tool-docs.git"
+  },
+  license: "MIT",
+  type: "module",
+  bin: {
+    "agent-tool-docs": "bin/tool-docs.js",
+    "tool-docs": "bin/tool-docs.js"
+  },
+  files: [
+    "bin/tool-docs.js",
+    "README.md",
+    "LICENSE"
+  ],
+  engines: {
+    node: ">=18"
+  },
+  scripts: {
+    build: "bun build src/cli.ts --outfile bin/tool-docs.js --target node --banner '#!/usr/bin/env node'",
+    postbuild: "chmod +x bin/tool-docs.js",
+    prepublishOnly: "bun run build",
+    test: "bun test",
+    check: "bun run build",
+    typecheck: "bunx tsc --noEmit"
+  },
+  dependencies: {},
+  devDependencies: {
+    yaml: "^2.8.1"
+  }
+};
 
 // src/config.ts
 var import_yaml = __toESM(require_dist(), 1);
@@ -8454,7 +8500,7 @@ Options:
   --diff                  Show diff of skill output after refresh
   -h, --help              Show this help
 `;
-var VERSION = "0.2.0";
+var VERSION = package_default.version;
 async function main() {
   const args = process.argv.slice(2);
   if (args.includes("-h") || args.includes("--help") || args.length === 0) {

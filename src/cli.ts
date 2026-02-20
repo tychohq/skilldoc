@@ -5,6 +5,7 @@ import { rm } from "node:fs/promises";
 import { writeFileSync, unlinkSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import YAML from "yaml";
+import pkg from "../package.json";
 import { createToolEntry, loadRegistry } from "./config.js";
 import { parseHelp } from "./parser.js";
 import { renderCommandMarkdown, renderToolMarkdown } from "./render.js";
@@ -70,7 +71,7 @@ Options:
   -h, --help              Show this help
 `;
 
-const VERSION = "0.2.0";
+const VERSION = pkg.version;
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
