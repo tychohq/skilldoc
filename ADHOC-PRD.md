@@ -34,13 +34,13 @@ Pass a tool name, get a skill. No registry, no config, no init.
 
 ### Phase 2: Ad-Hoc Mode for `distill`
 
-- [ ] Accept a positional argument: `tool-docs distill <tool-id>`
+- [x] Accept a positional argument: `tool-docs distill <tool-id>`
 - [x] When given, distill just that one tool (looks for raw docs in the standard location)
-- [ ] If raw docs don't exist yet, print: `Error: no raw docs found for "jq". Run "tool-docs generate jq" first.`
+- [x] If raw docs don't exist yet, print: `Error: no raw docs found for "jq". Run "tool-docs generate jq" first.`
 
 ### Phase 3: Update Quick Start
 
-- [ ] Rewrite README Quick Start to use the simple ad-hoc flow:
+- [x] Rewrite README Quick Start to use the simple ad-hoc flow:
   ```bash
   # Install
   git clone https://github.com/BrennerSpear/agent-tool-docs && cd agent-tool-docs
@@ -54,7 +54,7 @@ Pass a tool name, get a skill. No registry, no config, no init.
   # Your agent-optimized skill is at ~/.agents/skills/jq/SKILL.md
   ```
 - [x] Keep the registry explanation further down in the README for batch/custom use cases
-- [ ] Update the --help output to show the positional arg usage
+- [x] Update the --help output to show the positional arg usage
 
 ### Phase 4: Update Help Text
 
