@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { expandHome, writeFileEnsured } from "./utils.js";
-import { DEFAULT_SKILLS_DIR, DEFAULT_MODEL } from "./distill.js";
+import { DEFAULT_SKILLS_DIR, DEFAULT_DOCS_DIR, DEFAULT_MODEL, gatherRawDocs } from "./distill.js";
 
 export const DEFAULT_THRESHOLD = 9;
 export const DEFAULT_VALIDATION_MODELS = ["claude-sonnet-4-6", "claude-opus-4-6"];
@@ -17,6 +17,12 @@ export type ExecFn = (
 
 const defaultExec: ExecFn = (command, args, options) =>
   spawnSync(command, [...args], options) as ReturnType<typeof spawnSync>;
+
+export type GroundednessResult = {
+  score: number;
+  hallucinatedItems: string[];
+  reasoning: string;
+};
 
 export type ValidationScenario = {
   task: string;
@@ -43,11 +49,13 @@ export type ValidationReport = {
   passed: boolean;
   threshold: number;
   generatedAt: string;
+  groundedness?: GroundednessResult;
 };
 
 export type ValidateOptions = {
   toolId: string;
   skillsDir?: string;
+  docsDir?: string;
   model?: string;
   threshold?: number;
   exec?: ExecFn;
@@ -102,6 +110,96 @@ Return ONLY valid JSON with exactly these keys:
   "score": 9,
   "reasoning": "<brief explanation of your score>"
 }`;
+}
+
+export function buildGroundednessPrompt(skillContent: string, rawDocs: string): string {
+  return `You are a documentation auditor checking whether a generated skill file is faithfully grounded in its source documentation.
+
+## Raw Documentation (Source of Truth)
+
+${rawDocs}
+
+---
+
+## Generated Skill File
+
+${skillContent}
+
+---
+
+## Your Task
+
+Compare the skill file against the raw documentation. Identify any specific commands, flags, options, or behaviors that appear in the skill file but are NOT present anywhere in the raw documentation above.
+
+Focus on:
+- Specific flags (e.g., "--foo", "-x") mentioned in the skill but absent from raw docs
+- Subcommands or commands mentioned in the skill but absent from raw docs
+- Specific behaviors, defaults, or option values described in the skill but not in raw docs
+
+Do NOT flag:
+- Minor wording differences or paraphrasing of documented behavior
+- Structural differences (headers, ordering, formatting)
+- Information that IS present in the raw docs, even if worded differently
+
+Rate the groundedness on a scale from 1-10 where:
+- 10 = fully grounded, every claim is directly supported by the raw docs
+- 5 = some hallucinations present that could mislead an agent
+- 1 = many hallucinations, skill is unreliable
+
+Return ONLY valid JSON with no markdown fences:
+{
+  "score": <1-10>,
+  "hallucinatedItems": ["<specific flag or command not in raw docs>", ...],
+  "reasoning": "<brief explanation of your score>"
+}`;
+}
+
+export function parseGroundednessResult(output: string): GroundednessResult {
+  const stripped = stripFences(output);
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stripped);
+  } catch {
+    throw new Error(`Failed to parse groundedness result as JSON: ${stripped.slice(0, 200)}`);
+  }
+
+  if (typeof parsed !== "object" || parsed === null) {
+    throw new Error("Groundedness result is not a JSON object");
+  }
+
+  const obj = parsed as Record<string, unknown>;
+  for (const key of ["score", "hallucinatedItems", "reasoning"]) {
+    if (!(key in obj)) {
+      throw new Error(`Groundedness result missing required key: ${key}`);
+    }
+  }
+
+  if (!Array.isArray(obj.hallucinatedItems)) {
+    throw new Error("Groundedness hallucinatedItems must be an array");
+  }
+
+  const score = typeof obj.score === "number" ? obj.score : Number(obj.score);
+  if (isNaN(score) || score < 1 || score > 10) {
+    throw new Error(`Groundedness score must be between 1 and 10, got: ${obj.score}`);
+  }
+
+  return {
+    score,
+    hallucinatedItems: (obj.hallucinatedItems as unknown[]).map(String),
+    reasoning: String(obj.reasoning ?? ""),
+  };
+}
+
+export function checkGroundedness(
+  skillContent: string,
+  rawDocs: string,
+  model: string,
+  exec: ExecFn = defaultExec
+): GroundednessResult {
+  const prompt = buildGroundednessPrompt(skillContent, rawDocs);
+  const output = callLLM(prompt, model, exec);
+  return parseGroundednessResult(output);
 }
 
 function getModelCommand(model: string): { command: string; args: string[] } {
@@ -233,6 +331,7 @@ export async function validateSkill(options: ValidateOptions): Promise<Validatio
   const {
     toolId,
     skillsDir = expandHome(DEFAULT_SKILLS_DIR),
+    docsDir,
     model = DEFAULT_MODEL,
     threshold = DEFAULT_THRESHOLD,
     exec = defaultExec,
@@ -255,6 +354,14 @@ export async function validateSkill(options: ValidateOptions): Promise<Validatio
 
   const averageScore = scorecards.reduce((sum, s) => sum + s.score, 0) / scorecards.length;
 
+  let groundedness: GroundednessResult | undefined;
+  if (docsDir) {
+    const rawDocs = await gatherRawDocs(toolId, expandHome(docsDir));
+    if (rawDocs) {
+      groundedness = checkGroundedness(skillContent, rawDocs, model, exec);
+    }
+  }
+
   return {
     toolId,
     skillPath,
@@ -264,6 +371,7 @@ export async function validateSkill(options: ValidateOptions): Promise<Validatio
     passed: averageScore >= threshold,
     threshold,
     generatedAt: new Date().toISOString(),
+    ...(groundedness !== undefined ? { groundedness } : {}),
   };
 }
 
@@ -276,11 +384,13 @@ export type MultiModelValidationReport = {
   passed: boolean;
   threshold: number;
   generatedAt: string;
+  groundedness?: GroundednessResult;
 };
 
 export type ValidateMultiModelOptions = {
   toolId: string;
   skillsDir?: string;
+  docsDir?: string;
   models?: string[];
   threshold?: number;
   exec?: ExecFn;
@@ -290,6 +400,7 @@ export async function validateSkillMultiModel(options: ValidateMultiModelOptions
   const {
     toolId,
     skillsDir = expandHome(DEFAULT_SKILLS_DIR),
+    docsDir,
     models = DEFAULT_VALIDATION_MODELS,
     threshold = DEFAULT_THRESHOLD,
     exec = defaultExec,
@@ -350,6 +461,21 @@ export async function validateSkillMultiModel(options: ValidateMultiModelOptions
 
   const overallAverageScore = reports.reduce((sum, r) => sum + r.averageScore, 0) / reports.length;
 
+  // Run groundedness check once using the primary model
+  let groundedness: GroundednessResult | undefined;
+  if (docsDir) {
+    const rawDocs = await gatherRawDocs(toolId, expandHome(docsDir));
+    if (rawDocs) {
+      try {
+        groundedness = checkGroundedness(skillContent, rawDocs, primaryModel, exec);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!msg.includes("ENOENT")) throw err;
+        // Primary model unavailable — skip groundedness silently
+      }
+    }
+  }
+
   return {
     toolId,
     skillPath,
@@ -359,6 +485,7 @@ export async function validateSkillMultiModel(options: ValidateMultiModelOptions
     passed: overallAverageScore >= threshold,
     threshold,
     generatedAt: new Date().toISOString(),
+    ...(groundedness !== undefined ? { groundedness } : {}),
   };
 }
 
@@ -398,6 +525,14 @@ export function formatMultiModelReport(report: MultiModelValidationReport): stri
       .filter((m, i, arr) => arr.indexOf(m) === i);
     if (allMissing.length > 0) {
       lines.push(`Missing from skill: ${allMissing.join("; ")}`);
+    }
+  }
+
+  if (report.groundedness !== undefined) {
+    lines.push("");
+    lines.push(`Groundedness: ${report.groundedness.score.toFixed(1)}/10`);
+    if (report.groundedness.hallucinatedItems.length > 0) {
+      lines.push(`  Hallucinated: ${report.groundedness.hallucinatedItems.join(", ")}`);
     }
   }
 
@@ -464,6 +599,14 @@ export function formatReport(report: ValidationReport): string {
       .filter((m, i, arr) => arr.indexOf(m) === i);
     if (allMissing.length > 0) {
       lines.push(`Missing from skill: ${allMissing.join("; ")}`);
+    }
+  }
+
+  if (report.groundedness !== undefined) {
+    lines.push("");
+    lines.push(`Groundedness: ${report.groundedness.score.toFixed(1)}/10`);
+    if (report.groundedness.hallucinatedItems.length > 0) {
+      lines.push(`  Hallucinated: ${report.groundedness.hallucinatedItems.join(", ")}`);
     }
   }
 

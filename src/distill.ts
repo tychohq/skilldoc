@@ -162,7 +162,7 @@ export async function distillTool(options: DistillOptions): Promise<DistillResul
   return { toolId, outDir, ...(sizeWarnings.length > 0 ? { sizeWarnings } : {}) };
 }
 
-async function gatherRawDocs(toolId: string, docsDir: string): Promise<string | null> {
+export async function gatherRawDocs(toolId: string, docsDir: string): Promise<string | null> {
   const toolMdPath = path.join(docsDir, toolId, "tool.md");
   if (!existsSync(toolMdPath)) return null;
 

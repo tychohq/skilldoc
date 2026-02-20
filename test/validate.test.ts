@@ -14,6 +14,9 @@ import {
   buildValidationFeedback,
   buildScenariosPrompt,
   buildEvaluationPrompt,
+  buildGroundednessPrompt,
+  parseGroundednessResult,
+  checkGroundedness,
   saveValidationReport,
   loadQualityReports,
   formatQualityReport,
@@ -24,6 +27,7 @@ import {
   ValidationReport,
   MultiModelValidationReport,
   QualityReport,
+  GroundednessResult,
 } from "../src/validate.js";
 
 const validScenariosJson = JSON.stringify([
@@ -1360,5 +1364,505 @@ describe("formatQualityReport", () => {
     };
     const output = formatQualityReport(single);
     expect(output).toContain("1 tool");
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// Groundedness check
+// ────────────────────────────────────────────────────────────────────────────
+
+const validGroundednessJson = JSON.stringify({
+  score: 9,
+  hallucinatedItems: [],
+  reasoning: "All flags present in raw docs",
+});
+
+const validGroundednessWithItemsJson = JSON.stringify({
+  score: 4,
+  hallucinatedItems: ["--nonexistent-flag", "--made-up"],
+  reasoning: "Two flags not found in raw docs",
+});
+
+const mockGroundednessOk: ExecFn = () => ({
+  stdout: validGroundednessJson,
+  stderr: "",
+  status: 0,
+});
+
+describe("buildGroundednessPrompt", () => {
+  it("includes the raw docs in the prompt", () => {
+    const prompt = buildGroundednessPrompt("# mytool\n\nSkill content", "raw --help output here");
+    expect(prompt).toContain("raw --help output here");
+  });
+
+  it("includes the skill content in the prompt", () => {
+    const prompt = buildGroundednessPrompt("# mytool\n\nSkill content", "raw docs");
+    expect(prompt).toContain("# mytool");
+    expect(prompt).toContain("Skill content");
+  });
+
+  it("asks to identify items not in raw docs", () => {
+    const prompt = buildGroundednessPrompt("skill", "raw");
+    expect(prompt).toContain("NOT present");
+  });
+
+  it("instructs to return JSON with score, hallucinatedItems, reasoning", () => {
+    const prompt = buildGroundednessPrompt("skill", "raw");
+    expect(prompt).toContain('"score"');
+    expect(prompt).toContain('"hallucinatedItems"');
+    expect(prompt).toContain('"reasoning"');
+  });
+
+  it("instructs to return valid JSON without markdown fences", () => {
+    const prompt = buildGroundednessPrompt("skill", "raw");
+    expect(prompt).toContain("no markdown fences");
+  });
+
+  it("labels raw docs as source of truth", () => {
+    const prompt = buildGroundednessPrompt("skill", "raw");
+    expect(prompt).toContain("Source of Truth");
+  });
+});
+
+describe("parseGroundednessResult", () => {
+  it("parses a valid groundedness result", () => {
+    const result = parseGroundednessResult(validGroundednessJson);
+    expect(result.score).toBe(9);
+    expect(result.hallucinatedItems).toEqual([]);
+    expect(result.reasoning).toBe("All flags present in raw docs");
+  });
+
+  it("parses result with hallucinated items", () => {
+    const result = parseGroundednessResult(validGroundednessWithItemsJson);
+    expect(result.score).toBe(4);
+    expect(result.hallucinatedItems).toEqual(["--nonexistent-flag", "--made-up"]);
+  });
+
+  it("strips markdown fences before parsing", () => {
+    const fenced = `\`\`\`json\n${validGroundednessJson}\n\`\`\``;
+    const result = parseGroundednessResult(fenced);
+    expect(result.score).toBe(9);
+  });
+
+  it("strips plain fences before parsing", () => {
+    const fenced = `\`\`\`\n${validGroundednessJson}\n\`\`\``;
+    const result = parseGroundednessResult(fenced);
+    expect(result.score).toBe(9);
+  });
+
+  it("throws on invalid JSON", () => {
+    expect(() => parseGroundednessResult("not json")).toThrow("Failed to parse groundedness result as JSON");
+  });
+
+  it("throws when output is not an object", () => {
+    expect(() => parseGroundednessResult('"just a string"')).toThrow(
+      "Groundedness result is not a JSON object"
+    );
+  });
+
+  it("throws when output is null", () => {
+    expect(() => parseGroundednessResult("null")).toThrow("Groundedness result is not a JSON object");
+  });
+
+  it("throws when score is missing", () => {
+    const noScore = JSON.stringify({ hallucinatedItems: [], reasoning: "ok" });
+    expect(() => parseGroundednessResult(noScore)).toThrow("Groundedness result missing required key: score");
+  });
+
+  it("throws when hallucinatedItems is missing", () => {
+    const noItems = JSON.stringify({ score: 9, reasoning: "ok" });
+    expect(() => parseGroundednessResult(noItems)).toThrow(
+      "Groundedness result missing required key: hallucinatedItems"
+    );
+  });
+
+  it("throws when reasoning is missing", () => {
+    const noReasoning = JSON.stringify({ score: 9, hallucinatedItems: [] });
+    expect(() => parseGroundednessResult(noReasoning)).toThrow(
+      "Groundedness result missing required key: reasoning"
+    );
+  });
+
+  it("throws when hallucinatedItems is not an array", () => {
+    const notArray = JSON.stringify({ score: 9, hallucinatedItems: "not an array", reasoning: "ok" });
+    expect(() => parseGroundednessResult(notArray)).toThrow("hallucinatedItems must be an array");
+  });
+
+  it("throws when score is above 10", () => {
+    const badScore = JSON.stringify({ score: 11, hallucinatedItems: [], reasoning: "ok" });
+    expect(() => parseGroundednessResult(badScore)).toThrow("Groundedness score must be between 1 and 10");
+  });
+
+  it("throws when score is below 1", () => {
+    const badScore = JSON.stringify({ score: 0, hallucinatedItems: [], reasoning: "ok" });
+    expect(() => parseGroundednessResult(badScore)).toThrow("Groundedness score must be between 1 and 10");
+  });
+
+  it("accepts a numeric string score", () => {
+    const strScore = JSON.stringify({ score: "8", hallucinatedItems: [], reasoning: "ok" });
+    const result = parseGroundednessResult(strScore);
+    expect(result.score).toBe(8);
+  });
+});
+
+describe("checkGroundedness", () => {
+  it("returns a parsed groundedness result on success", () => {
+    const result = checkGroundedness("# mytool\n\nSkill", "raw docs", "model", mockGroundednessOk);
+    expect(result.score).toBe(9);
+    expect(result.hallucinatedItems).toEqual([]);
+  });
+
+  it("passes skill content and raw docs in the prompt", () => {
+    let capturedInput = "";
+    const exec: ExecFn = (_cmd, _args, opts) => {
+      capturedInput = opts.input;
+      return { stdout: validGroundednessJson, stderr: "", status: 0 };
+    };
+    checkGroundedness("# mytool\n\nThe skill", "raw --help output", "model", exec);
+    expect(capturedInput).toContain("# mytool");
+    expect(capturedInput).toContain("The skill");
+    expect(capturedInput).toContain("raw --help output");
+  });
+
+  it("passes model to claude args", () => {
+    let capturedArgs: ReadonlyArray<string> = [];
+    const exec: ExecFn = (_cmd, args) => {
+      capturedArgs = args;
+      return { stdout: validGroundednessJson, stderr: "", status: 0 };
+    };
+    checkGroundedness("skill", "raw", "my-test-model", exec);
+    expect(capturedArgs).toContain("--model");
+    expect(capturedArgs).toContain("my-test-model");
+  });
+
+  it("throws when claude binary fails", () => {
+    const exec: ExecFn = () => ({ error: new Error("spawn ENOENT"), stdout: null, stderr: null, status: null });
+    expect(() => checkGroundedness("skill", "raw", "model", exec)).toThrow("Failed to run claude");
+  });
+
+  it("throws when claude exits non-zero", () => {
+    const exec: ExecFn = () => ({ stdout: "", stderr: "timeout", status: 2 });
+    expect(() => checkGroundedness("skill", "raw", "model", exec)).toThrow("claude exited with code 2");
+  });
+});
+
+describe("validateSkill with groundedness", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), `validate-ground-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function writeSkill(toolId: string, content: string): string {
+    const skillDir = path.join(tmpDir, "skills", toolId);
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(path.join(skillDir, "SKILL.md"), content);
+    return path.join(tmpDir, "skills");
+  }
+
+  function writeRawDocs(toolId: string, content: string): string {
+    const docsDir = path.join(tmpDir, "docs", toolId);
+    mkdirSync(docsDir, { recursive: true });
+    writeFileSync(path.join(docsDir, "tool.md"), content);
+    return path.join(tmpDir, "docs");
+  }
+
+  // Exec: call 1 = scenarios, calls 2..N+1 = scorecards, last = groundedness
+  function makeGroundednessExec(groundednessJson: string = validGroundednessJson): ExecFn {
+    let calls = 0;
+    return () => {
+      calls += 1;
+      if (calls === 1) return { stdout: validScenariosJson, stderr: "", status: 0 };
+      // 4 scenarios → calls 2-5 = scorecards, call 6 = groundedness
+      if (calls <= 5) return { stdout: validScorecardJson, stderr: "", status: 0 };
+      return { stdout: groundednessJson, stderr: "", status: 0 };
+    };
+  }
+
+  it("includes groundedness in report when docsDir has raw docs", async () => {
+    const skillsDir = writeSkill("mytool", "# mytool\n\nDoes stuff");
+    const docsDir = writeRawDocs("mytool", "raw help output");
+    const report = await validateSkill({
+      toolId: "mytool",
+      skillsDir,
+      docsDir,
+      exec: makeGroundednessExec(),
+    });
+    expect(report.groundedness).toBeDefined();
+    expect(report.groundedness!.score).toBe(9);
+    expect(report.groundedness!.hallucinatedItems).toEqual([]);
+  });
+
+  it("groundedness report includes hallucinated items when present", async () => {
+    const skillsDir = writeSkill("mytool", "# mytool\n\nDoes stuff");
+    const docsDir = writeRawDocs("mytool", "raw help output");
+    const report = await validateSkill({
+      toolId: "mytool",
+      skillsDir,
+      docsDir,
+      exec: makeGroundednessExec(validGroundednessWithItemsJson),
+    });
+    expect(report.groundedness!.score).toBe(4);
+    expect(report.groundedness!.hallucinatedItems).toEqual(["--nonexistent-flag", "--made-up"]);
+  });
+
+  it("omits groundedness when docsDir is not provided", async () => {
+    const skillsDir = writeSkill("mytool", "# mytool\n\nDoes stuff");
+    let calls = 0;
+    const exec: ExecFn = () => {
+      calls += 1;
+      if (calls === 1) return { stdout: validScenariosJson, stderr: "", status: 0 };
+      return { stdout: validScorecardJson, stderr: "", status: 0 };
+    };
+    const report = await validateSkill({ toolId: "mytool", skillsDir, exec });
+    expect(report.groundedness).toBeUndefined();
+  });
+
+  it("omits groundedness when raw docs do not exist in docsDir", async () => {
+    const skillsDir = writeSkill("mytool", "# mytool\n\nDoes stuff");
+    const emptyDocsDir = path.join(tmpDir, "empty-docs");
+    mkdirSync(emptyDocsDir, { recursive: true });
+    let calls = 0;
+    const exec: ExecFn = () => {
+      calls += 1;
+      if (calls === 1) return { stdout: validScenariosJson, stderr: "", status: 0 };
+      return { stdout: validScorecardJson, stderr: "", status: 0 };
+    };
+    const report = await validateSkill({ toolId: "mytool", skillsDir, docsDir: emptyDocsDir, exec });
+    expect(report.groundedness).toBeUndefined();
+  });
+
+  it("passes the skill content to checkGroundedness", async () => {
+    const skillsDir = writeSkill("mytool", "# mytool\n\nSpecial skill content");
+    const docsDir = writeRawDocs("mytool", "Special raw content");
+    let groundednessInput = "";
+    let calls = 0;
+    const exec: ExecFn = (_cmd, _args, opts) => {
+      calls += 1;
+      if (calls === 1) return { stdout: validScenariosJson, stderr: "", status: 0 };
+      if (calls <= 5) return { stdout: validScorecardJson, stderr: "", status: 0 };
+      groundednessInput = opts.input;
+      return { stdout: validGroundednessJson, stderr: "", status: 0 };
+    };
+    await validateSkill({ toolId: "mytool", skillsDir, docsDir, exec });
+    expect(groundednessInput).toContain("Special skill content");
+    expect(groundednessInput).toContain("Special raw content");
+  });
+});
+
+describe("validateSkillMultiModel with groundedness", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), `validate-multi-ground-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function writeSkill(toolId: string, content: string): string {
+    const skillDir = path.join(tmpDir, "skills", toolId);
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(path.join(skillDir, "SKILL.md"), content);
+    return path.join(tmpDir, "skills");
+  }
+
+  function writeRawDocs(toolId: string, content: string): string {
+    const docsDir = path.join(tmpDir, "docs", toolId);
+    mkdirSync(docsDir, { recursive: true });
+    writeFileSync(path.join(docsDir, "tool.md"), content);
+    return path.join(tmpDir, "docs");
+  }
+
+  // For 2 models with 4 scenarios each: call 1 = scenarios, calls 2-5 = model-a, calls 6-9 = model-b, call 10 = groundedness
+  function makeMultiGroundednessExec(groundednessJson: string = validGroundednessJson): ExecFn {
+    let calls = 0;
+    return () => {
+      calls += 1;
+      if (calls === 1) return { stdout: validScenariosJson, stderr: "", status: 0 };
+      if (calls <= 9) return { stdout: validScorecardJson, stderr: "", status: 0 };
+      return { stdout: groundednessJson, stderr: "", status: 0 };
+    };
+  }
+
+  it("includes groundedness in multi-model report when docsDir has raw docs", async () => {
+    const skillsDir = writeSkill("mytool", "# mytool");
+    const docsDir = writeRawDocs("mytool", "raw docs");
+    const report = await validateSkillMultiModel({
+      toolId: "mytool",
+      skillsDir,
+      docsDir,
+      models: ["model-a", "model-b"],
+      exec: makeMultiGroundednessExec(),
+    });
+    expect(report.groundedness).toBeDefined();
+    expect(report.groundedness!.score).toBe(9);
+  });
+
+  it("omits groundedness when docsDir is not provided", async () => {
+    const skillsDir = writeSkill("mytool", "# mytool");
+    let calls = 0;
+    const exec: ExecFn = () => {
+      calls += 1;
+      if (calls === 1) return { stdout: validScenariosJson, stderr: "", status: 0 };
+      return { stdout: validScorecardJson, stderr: "", status: 0 };
+    };
+    const report = await validateSkillMultiModel({
+      toolId: "mytool",
+      skillsDir,
+      models: ["model-a"],
+      exec,
+    });
+    expect(report.groundedness).toBeUndefined();
+  });
+
+  it("runs groundedness check using primary model", async () => {
+    const skillsDir = writeSkill("mytool", "# mytool");
+    const docsDir = writeRawDocs("mytool", "raw docs");
+    const groundednessModels: string[] = [];
+    let calls = 0;
+    const exec: ExecFn = (_cmd, args) => {
+      calls += 1;
+      const modelIdx = [...args].indexOf("--model");
+      const model = modelIdx !== -1 ? (args[modelIdx + 1] as string) : "";
+      if (calls === 1) return { stdout: validScenariosJson, stderr: "", status: 0 };
+      if (calls <= 5) return { stdout: validScorecardJson, stderr: "", status: 0 };
+      groundednessModels.push(model);
+      return { stdout: validGroundednessJson, stderr: "", status: 0 };
+    };
+    await validateSkillMultiModel({
+      toolId: "mytool",
+      skillsDir,
+      docsDir,
+      models: ["primary-model"],
+      exec,
+    });
+    expect(groundednessModels).toHaveLength(1);
+    expect(groundednessModels[0]).toBe("primary-model");
+  });
+});
+
+describe("formatReport with groundedness", () => {
+  const baseReport: ValidationReport = {
+    toolId: "rg",
+    skillPath: "/skills/rg/SKILL.md",
+    model: "claude-haiku-4-5-20251001",
+    scenarios: [
+      {
+        task: "search files",
+        command: "rg pattern",
+        completed: true,
+        correct: true,
+        hallucinated: false,
+        missing: "",
+        score: 9,
+        reasoning: "Good docs",
+      },
+    ],
+    averageScore: 9,
+    passed: true,
+    threshold: 9,
+    generatedAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  it("shows groundedness score when present", () => {
+    const report: ValidationReport = {
+      ...baseReport,
+      groundedness: { score: 9, hallucinatedItems: [], reasoning: "All grounded" },
+    };
+    expect(formatReport(report)).toContain("Groundedness: 9.0/10");
+  });
+
+  it("shows hallucinated items when present", () => {
+    const report: ValidationReport = {
+      ...baseReport,
+      groundedness: { score: 4, hallucinatedItems: ["--fake-flag", "--other"], reasoning: "issues" },
+    };
+    const output = formatReport(report);
+    expect(output).toContain("Hallucinated: --fake-flag, --other");
+  });
+
+  it("omits groundedness section when absent", () => {
+    const output = formatReport(baseReport);
+    expect(output).not.toContain("Groundedness:");
+  });
+
+  it("does not show Hallucinated line when hallucinatedItems is empty", () => {
+    const report: ValidationReport = {
+      ...baseReport,
+      groundedness: { score: 10, hallucinatedItems: [], reasoning: "Perfect" },
+    };
+    const output = formatReport(report);
+    expect(output).not.toContain("Hallucinated:");
+  });
+});
+
+describe("formatMultiModelReport with groundedness", () => {
+  const baseMultiReport: MultiModelValidationReport = {
+    toolId: "rg",
+    skillPath: "/skills/rg/SKILL.md",
+    models: ["claude-sonnet-4-6"],
+    reports: [
+      {
+        toolId: "rg",
+        skillPath: "/skills/rg/SKILL.md",
+        model: "claude-sonnet-4-6",
+        scenarios: [
+          {
+            task: "search files",
+            command: "rg pattern",
+            completed: true,
+            correct: true,
+            hallucinated: false,
+            missing: "",
+            score: 9,
+            reasoning: "Good",
+          },
+        ],
+        averageScore: 9,
+        passed: true,
+        threshold: 9,
+        generatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ],
+    overallAverageScore: 9,
+    passed: true,
+    threshold: 9,
+    generatedAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  it("shows groundedness score when present", () => {
+    const report: MultiModelValidationReport = {
+      ...baseMultiReport,
+      groundedness: { score: 8, hallucinatedItems: [], reasoning: "Mostly grounded" },
+    };
+    expect(formatMultiModelReport(report)).toContain("Groundedness: 8.0/10");
+  });
+
+  it("shows hallucinated items when present", () => {
+    const report: MultiModelValidationReport = {
+      ...baseMultiReport,
+      groundedness: { score: 3, hallucinatedItems: ["--ghost-flag"], reasoning: "issues" },
+    };
+    expect(formatMultiModelReport(report)).toContain("Hallucinated: --ghost-flag");
+  });
+
+  it("omits groundedness section when absent", () => {
+    expect(formatMultiModelReport(baseMultiReport)).not.toContain("Groundedness:");
+  });
+
+  it("does not show Hallucinated line when hallucinatedItems is empty", () => {
+    const report: MultiModelValidationReport = {
+      ...baseMultiReport,
+      groundedness: { score: 10, hallucinatedItems: [], reasoning: "Perfect" },
+    };
+    expect(formatMultiModelReport(report)).not.toContain("Hallucinated:");
   });
 });
