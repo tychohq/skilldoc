@@ -13,6 +13,9 @@ import {
   validateSkillMultiModel,
   formatMultiModelReport,
   buildValidationFeedback,
+  saveValidationReport,
+  loadQualityReports,
+  formatQualityReport,
   DEFAULT_THRESHOLD,
   DEFAULT_VALIDATION_MODELS,
 } from "./validate.js";
@@ -28,6 +31,7 @@ Usage:
   tool-docs generate [--registry <path>] [--out <path>] [--only <id1,id2>]
   tool-docs distill [--registry <path>] [--docs <path>] [--out <path>] [--only <id1,id2>] [--model <model>]
   tool-docs validate <tool-id> [--skills <path>] [--models <m1,m2>] [--threshold <n>] [--auto-redist]
+  tool-docs report [--skills <path>]
   tool-docs init [--registry <path>] [--force]
   tool-docs --help
 
@@ -35,6 +39,7 @@ Commands:
   generate   Generate markdown + JSON docs for tools in the registry
   distill    Distill raw docs into agent-optimized skills (SKILL.md + docs/)
   validate   Test skill quality using LLM-based scenario evaluation
+  report     Show aggregate quality report across all validated tools
   init       Create a starter registry file
 
 Options:
@@ -86,6 +91,11 @@ async function main(): Promise<void> {
       process.exit(1);
     }
     await handleValidate(toolId, flags);
+    return;
+  }
+
+  if (command === "report") {
+    await handleReport(flags);
     return;
   }
 
@@ -213,6 +223,8 @@ async function handleValidate(toolId: string, flags: Record<string, string | boo
     const report = await validateSkillMultiModel({ toolId, skillsDir, models, threshold });
     console.log(formatMultiModelReport(report));
 
+    await saveValidationReport(report, skillsDir);
+
     if (!report.passed && autoRedist) {
       await handleAutoRedist(toolId, buildValidationFeedback(report), flags);
     }
@@ -220,6 +232,20 @@ async function handleValidate(toolId: string, flags: Record<string, string | boo
     if (!report.passed) {
       process.exit(1);
     }
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+}
+
+async function handleReport(flags: Record<string, string | boolean>): Promise<void> {
+  const skillsDir = expandHome(
+    typeof flags.skills === "string" ? flags.skills : DEFAULT_SKILLS_OUT_DIR
+  );
+
+  try {
+    const report = await loadQualityReports(skillsDir);
+    console.log(formatQualityReport(report));
   } catch (err) {
     console.error(err instanceof Error ? err.message : String(err));
     process.exit(1);

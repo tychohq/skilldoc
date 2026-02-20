@@ -14,11 +14,16 @@ import {
   buildValidationFeedback,
   buildScenariosPrompt,
   buildEvaluationPrompt,
+  saveValidationReport,
+  loadQualityReports,
+  formatQualityReport,
+  VALIDATION_REPORT_FILE,
   DEFAULT_THRESHOLD,
   DEFAULT_VALIDATION_MODELS,
   ExecFn,
   ValidationReport,
   MultiModelValidationReport,
+  QualityReport,
 } from "../src/validate.js";
 
 const validScenariosJson = JSON.stringify([
@@ -1098,5 +1103,262 @@ describe("buildValidationFeedback", () => {
   it("ends with a call to improve the skill", () => {
     const feedback = buildValidationFeedback(passingReport);
     expect(feedback).toContain("improve the skill");
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// saveValidationReport + loadQualityReports + formatQualityReport
+// ────────────────────────────────────────────────────────────────────────────
+
+const sampleMultiReport: MultiModelValidationReport = {
+  toolId: "rg",
+  skillPath: "/skills/rg/SKILL.md",
+  models: ["claude-sonnet-4-6", "claude-opus-4-6"],
+  reports: [
+    {
+      toolId: "rg",
+      skillPath: "/skills/rg/SKILL.md",
+      model: "claude-sonnet-4-6",
+      scenarios: [
+        {
+          task: "search Python files",
+          command: "rg pattern --type py",
+          completed: true,
+          correct: true,
+          hallucinated: false,
+          missing: "",
+          score: 9,
+          reasoning: "Clear docs",
+        },
+      ],
+      averageScore: 9,
+      passed: true,
+      threshold: 9,
+      generatedAt: "2026-01-01T00:00:00.000Z",
+    },
+    {
+      toolId: "rg",
+      skillPath: "/skills/rg/SKILL.md",
+      model: "claude-opus-4-6",
+      scenarios: [
+        {
+          task: "search Python files",
+          command: "rg pattern --type py",
+          completed: true,
+          correct: true,
+          hallucinated: false,
+          missing: "",
+          score: 9,
+          reasoning: "Clear docs",
+        },
+      ],
+      averageScore: 9,
+      passed: true,
+      threshold: 9,
+      generatedAt: "2026-01-01T00:00:00.000Z",
+    },
+  ],
+  overallAverageScore: 9,
+  passed: true,
+  threshold: 9,
+  generatedAt: "2026-01-01T00:00:00.000Z",
+};
+
+describe("VALIDATION_REPORT_FILE", () => {
+  it("is a non-empty string ending in .json", () => {
+    expect(typeof VALIDATION_REPORT_FILE).toBe("string");
+    expect(VALIDATION_REPORT_FILE.length).toBeGreaterThan(0);
+    expect(VALIDATION_REPORT_FILE).toMatch(/\.json$/);
+  });
+});
+
+describe("saveValidationReport", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), `report-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("writes validation-report.json under <skillsDir>/<toolId>/", async () => {
+    const reportPath = await saveValidationReport(sampleMultiReport, tmpDir);
+    expect(reportPath).toContain("rg");
+    expect(reportPath).toContain(VALIDATION_REPORT_FILE);
+    const { existsSync } = await import("node:fs");
+    expect(existsSync(reportPath)).toBe(true);
+  });
+
+  it("writes valid JSON that round-trips the report", async () => {
+    const reportPath = await saveValidationReport(sampleMultiReport, tmpDir);
+    const { readFileSync } = await import("node:fs");
+    const raw = readFileSync(reportPath, "utf8");
+    const parsed = JSON.parse(raw) as MultiModelValidationReport;
+    expect(parsed.toolId).toBe("rg");
+    expect(parsed.overallAverageScore).toBe(9);
+    expect(parsed.models).toEqual(["claude-sonnet-4-6", "claude-opus-4-6"]);
+  });
+
+  it("creates parent directories if they do not exist", async () => {
+    const deepDir = path.join(tmpDir, "nested", "skills");
+    const reportPath = await saveValidationReport(sampleMultiReport, deepDir);
+    const { existsSync } = await import("node:fs");
+    expect(existsSync(reportPath)).toBe(true);
+  });
+});
+
+describe("loadQualityReports", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), `quality-report-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("returns empty entries when skillsDir does not exist", async () => {
+    const report = await loadQualityReports(path.join(tmpDir, "nonexistent"));
+    expect(report.entries).toHaveLength(0);
+  });
+
+  it("returns empty entries when no validation reports exist", async () => {
+    mkdirSync(path.join(tmpDir, "rg"), { recursive: true });
+    const report = await loadQualityReports(tmpDir);
+    expect(report.entries).toHaveLength(0);
+  });
+
+  it("loads a saved validation report", async () => {
+    await saveValidationReport(sampleMultiReport, tmpDir);
+    const report = await loadQualityReports(tmpDir);
+    expect(report.entries).toHaveLength(1);
+    expect(report.entries[0].toolId).toBe("rg");
+    expect(report.entries[0].overallAverageScore).toBe(9);
+  });
+
+  it("loads multiple tools sorted alphabetically", async () => {
+    const ghReport: MultiModelValidationReport = { ...sampleMultiReport, toolId: "gh", skillPath: "/skills/gh/SKILL.md", overallAverageScore: 8 };
+    const jqReport: MultiModelValidationReport = { ...sampleMultiReport, toolId: "jq", skillPath: "/skills/jq/SKILL.md", overallAverageScore: 9.5 };
+    await saveValidationReport(sampleMultiReport, tmpDir); // rg
+    await saveValidationReport(ghReport, tmpDir);
+    await saveValidationReport(jqReport, tmpDir);
+    const report = await loadQualityReports(tmpDir);
+    expect(report.entries).toHaveLength(3);
+    expect(report.entries.map((e) => e.toolId)).toEqual(["gh", "jq", "rg"]);
+  });
+
+  it("skips directories without a report file", async () => {
+    mkdirSync(path.join(tmpDir, "notool"), { recursive: true });
+    await saveValidationReport(sampleMultiReport, tmpDir);
+    const report = await loadQualityReports(tmpDir);
+    expect(report.entries).toHaveLength(1);
+    expect(report.entries[0].toolId).toBe("rg");
+  });
+
+  it("skips malformed report files without throwing", async () => {
+    const badDir = path.join(tmpDir, "badtool");
+    mkdirSync(badDir, { recursive: true });
+    writeFileSync(path.join(badDir, VALIDATION_REPORT_FILE), "not json");
+    await saveValidationReport(sampleMultiReport, tmpDir);
+    const report = await loadQualityReports(tmpDir);
+    expect(report.entries).toHaveLength(1);
+    expect(report.entries[0].toolId).toBe("rg");
+  });
+
+  it("includes passed/threshold/models in entries", async () => {
+    await saveValidationReport(sampleMultiReport, tmpDir);
+    const report = await loadQualityReports(tmpDir);
+    const entry = report.entries[0];
+    expect(entry.passed).toBe(true);
+    expect(entry.threshold).toBe(9);
+    expect(entry.models).toEqual(["claude-sonnet-4-6", "claude-opus-4-6"]);
+  });
+});
+
+describe("formatQualityReport", () => {
+  const emptyReport: QualityReport = { entries: [], skillsDir: "/skills", generatedAt: "2026-01-01T00:00:00.000Z" };
+
+  const reportWithTools: QualityReport = {
+    skillsDir: "/skills",
+    generatedAt: "2026-01-01T00:00:00.000Z",
+    entries: [
+      { toolId: "gh", overallAverageScore: 9.2, models: ["sonnet", "opus"], passed: true, threshold: 9, generatedAt: "2026-01-01T00:00:00.000Z" },
+      { toolId: "rg", overallAverageScore: 7.5, models: ["sonnet", "opus"], passed: false, threshold: 9, generatedAt: "2026-01-01T00:00:00.000Z" },
+      { toolId: "jq", overallAverageScore: 9.8, models: ["sonnet", "opus"], passed: true, threshold: 9, generatedAt: "2026-01-01T00:00:00.000Z" },
+    ],
+  };
+
+  it("returns a message when no reports exist", () => {
+    const output = formatQualityReport(emptyReport);
+    expect(output).toContain("No validation reports found");
+  });
+
+  it("includes a hint to run validate when empty", () => {
+    const output = formatQualityReport(emptyReport);
+    expect(output).toContain("tool-docs validate");
+  });
+
+  it("shows tool count in header", () => {
+    const output = formatQualityReport(reportWithTools);
+    expect(output).toContain("3 tool");
+  });
+
+  it("shows each tool name", () => {
+    const output = formatQualityReport(reportWithTools);
+    expect(output).toContain("gh");
+    expect(output).toContain("rg");
+    expect(output).toContain("jq");
+  });
+
+  it("shows each tool score formatted to 1 decimal", () => {
+    const output = formatQualityReport(reportWithTools);
+    expect(output).toContain("9.2/10");
+    expect(output).toContain("7.5/10");
+    expect(output).toContain("9.8/10");
+  });
+
+  it("shows PASS for passing tools and FAIL for failing tools", () => {
+    const output = formatQualityReport(reportWithTools);
+    expect(output).toContain("PASS");
+    expect(output).toContain("FAIL");
+  });
+
+  it("shows the overall average score", () => {
+    const output = formatQualityReport(reportWithTools);
+    const expected = ((9.2 + 7.5 + 9.8) / 3).toFixed(1);
+    expect(output).toContain(`${expected}/10`);
+  });
+
+  it("shows passing count out of total", () => {
+    const output = formatQualityReport(reportWithTools);
+    expect(output).toContain("2/3 PASS");
+  });
+
+  it("shows a tip to re-run with --auto-redist when tools fail", () => {
+    const output = formatQualityReport(reportWithTools);
+    expect(output).toContain("--auto-redist");
+  });
+
+  it("does not show auto-redist tip when all tools pass", () => {
+    const allPass: QualityReport = {
+      ...reportWithTools,
+      entries: reportWithTools.entries.map((e) => ({ ...e, passed: true })),
+    };
+    const output = formatQualityReport(allPass);
+    expect(output).not.toContain("--auto-redist");
+  });
+
+  it("shows 1 tool when only one entry", () => {
+    const single: QualityReport = {
+      ...reportWithTools,
+      entries: [reportWithTools.entries[0]],
+    };
+    const output = formatQualityReport(single);
+    expect(output).toContain("1 tool");
   });
 });

@@ -1,8 +1,8 @@
 import path from "node:path";
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
-import { expandHome } from "./utils.js";
+import { expandHome, writeFileEnsured } from "./utils.js";
 import { DEFAULT_SKILLS_DIR, DEFAULT_MODEL } from "./distill.js";
 
 export const DEFAULT_THRESHOLD = 9;
@@ -465,6 +465,105 @@ export function formatReport(report: ValidationReport): string {
     if (allMissing.length > 0) {
       lines.push(`Missing from skill: ${allMissing.join("; ")}`);
     }
+  }
+
+  return lines.join("\n");
+}
+
+export const VALIDATION_REPORT_FILE = "validation-report.json";
+
+export type QualityReportEntry = {
+  toolId: string;
+  overallAverageScore: number;
+  models: string[];
+  passed: boolean;
+  threshold: number;
+  generatedAt: string;
+};
+
+export type QualityReport = {
+  entries: QualityReportEntry[];
+  skillsDir: string;
+  generatedAt: string;
+};
+
+export async function saveValidationReport(report: MultiModelValidationReport, skillsDir: string): Promise<string> {
+  const reportPath = path.join(skillsDir, report.toolId, VALIDATION_REPORT_FILE);
+  await writeFileEnsured(reportPath, JSON.stringify(report, null, 2));
+  return reportPath;
+}
+
+export async function loadQualityReports(skillsDir: string): Promise<QualityReport> {
+  let entries: QualityReportEntry[] = [];
+
+  let toolDirs: string[] = [];
+  try {
+    const dirents = await readdir(skillsDir, { withFileTypes: true });
+    toolDirs = dirents.filter((d: { isDirectory(): boolean; name: string }) => d.isDirectory()).map((d: { name: string }) => d.name);
+  } catch {
+    // skillsDir doesn't exist yet — return empty report
+    return { entries: [], skillsDir, generatedAt: new Date().toISOString() };
+  }
+
+  for (const toolId of toolDirs) {
+    const reportPath = path.join(skillsDir, toolId, VALIDATION_REPORT_FILE);
+    if (!existsSync(reportPath)) continue;
+
+    try {
+      const raw = await readFile(reportPath, "utf8");
+      const parsed = JSON.parse(raw) as MultiModelValidationReport;
+      entries.push({
+        toolId: parsed.toolId,
+        overallAverageScore: parsed.overallAverageScore,
+        models: parsed.models,
+        passed: parsed.passed,
+        threshold: parsed.threshold,
+        generatedAt: parsed.generatedAt,
+      });
+    } catch {
+      // skip malformed report files
+    }
+  }
+
+  entries = entries.sort((a, b) => a.toolId.localeCompare(b.toolId));
+
+  return { entries, skillsDir, generatedAt: new Date().toISOString() };
+}
+
+export function formatQualityReport(report: QualityReport): string {
+  const lines: string[] = [];
+
+  if (report.entries.length === 0) {
+    lines.push("No validation reports found.");
+    lines.push(`Run 'tool-docs validate <tool-id>' to generate reports.`);
+    return lines.join("\n");
+  }
+
+  const passing = report.entries.filter((e) => e.passed).length;
+  const failing = report.entries.length - passing;
+  lines.push(`Quality Report — ${report.entries.length} tool(s)`);
+  lines.push("");
+
+  const colTool = Math.max(4, ...report.entries.map((e) => e.toolId.length));
+  const header = `${"Tool".padEnd(colTool)}  ${"Score".padStart(6)}  ${"Status"}`;
+  lines.push(header);
+  lines.push("-".repeat(header.length));
+
+  for (const entry of report.entries) {
+    const score = `${entry.overallAverageScore.toFixed(1)}/10`.padStart(6);
+    const status = entry.passed ? "PASS" : "FAIL";
+    lines.push(`${entry.toolId.padEnd(colTool)}  ${score}  ${status}`);
+  }
+
+  lines.push("-".repeat(header.length));
+  const overallAvg =
+    report.entries.reduce((sum, e) => sum + e.overallAverageScore, 0) / report.entries.length;
+  const summaryScore = `${overallAvg.toFixed(1)}/10`.padStart(6);
+  lines.push(`${"Total".padEnd(colTool)}  ${summaryScore}  ${passing}/${report.entries.length} PASS`);
+
+  if (failing > 0) {
+    lines.push("");
+    lines.push(`${failing} tool(s) below threshold — run 'tool-docs validate <tool-id> --auto-redist' to improve.`);
   }
 
   return lines.join("\n");
