@@ -1,6 +1,42 @@
 import { describe, expect, it } from "bun:test";
 import { parseFlags } from "../src/cli.js";
-import { DEFAULT_MODEL } from "../src/distill.js";
+import { DEFAULT_MODEL, DEFAULT_SKILLS_DIR } from "../src/distill.js";
+
+describe("parseFlags --out", () => {
+  it("returns the specified path when --out is provided", () => {
+    const flags = parseFlags(["--out", "/tmp/my-skills"]);
+    expect(flags.out).toBe("/tmp/my-skills");
+  });
+
+  it("returns undefined for out when --out is not provided", () => {
+    const flags = parseFlags(["--registry", "/some/path"]);
+    expect(flags.out).toBeUndefined();
+  });
+
+  it("accepts any path string value", () => {
+    const flags = parseFlags(["--out", "~/.agents/skills"]);
+    expect(flags.out).toBe("~/.agents/skills");
+  });
+
+  it("throws when --out flag has no value", () => {
+    expect(() => parseFlags(["--out"])).toThrow("Missing value for --out");
+  });
+
+  it("throws when --out value looks like another flag", () => {
+    expect(() => parseFlags(["--out", "--registry"])).toThrow("Missing value for --out");
+  });
+
+  it("parses --out alongside other flags", () => {
+    const flags = parseFlags(["--out", "/tmp/out", "--only", "rg,git", "--model", "claude-sonnet-4-6"]);
+    expect(flags.out).toBe("/tmp/out");
+    expect(flags.only).toBe("rg,git");
+    expect(flags.model).toBe("claude-sonnet-4-6");
+  });
+
+  it("DEFAULT_SKILLS_DIR is ~/.agents/skills", () => {
+    expect(DEFAULT_SKILLS_DIR).toBe("~/.agents/skills");
+  });
+});
 
 describe("parseFlags --model", () => {
   it("returns the specified model when --model is provided", () => {
