@@ -7681,7 +7681,7 @@ Produce 4 documentation files in JSON format. **SKILL.md is the most important f
 Prioritize across all files:
 1. **Most-used flags/commands first** — the 20% of flags that cover 80% of real-world use
 2. **Real-world usage patterns** over exhaustive flag lists — show how to accomplish tasks, not just what flags exist
-3. **Agent-specific gotchas** — quoting pitfalls, escaping issues, flags LLMs commonly misuse, output format surprises
+3. **Agent-specific gotchas** — quoting pitfalls, escaping issues, common errors, flags LLMs commonly misuse, output format surprises
 4. **Concrete runnable examples** over abstract descriptions
 
 Per-file size targets (strict — return less content rather than exceed these):

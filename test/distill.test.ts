@@ -175,7 +175,18 @@ describe("callLLM", () => {
     expect(capturedInput).toContain("80%");
   });
 
-  it("prompt instructs to include agent-specific gotchas", () => {
+  it("prompt instructs to show real-world usage patterns over exhaustive flag lists", () => {
+    let capturedInput = "";
+    const exec = (_cmd: string, _args: ReadonlyArray<string>, opts: { input: string }) => {
+      capturedInput = opts.input;
+      return { stdout: validJson, stderr: "", status: 0 };
+    };
+    callLLM("docs", "tool", "model", exec);
+    expect(capturedInput).toContain("Real-world usage patterns");
+    expect(capturedInput).toContain("exhaustive");
+  });
+
+  it("prompt instructs to include agent-specific gotchas with quoting, escaping, and common errors", () => {
     let capturedInput = "";
     const exec = (_cmd: string, _args: ReadonlyArray<string>, opts: { input: string }) => {
       capturedInput = opts.input;
@@ -184,6 +195,8 @@ describe("callLLM", () => {
     callLLM("docs", "tool", "model", exec);
     expect(capturedInput).toContain("Agent-specific gotchas");
     expect(capturedInput).toContain("quoting");
+    expect(capturedInput).toContain("escaping");
+    expect(capturedInput).toContain("common errors");
   });
 
   it("uses -p and --output-format text flags", () => {
