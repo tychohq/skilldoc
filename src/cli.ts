@@ -2,7 +2,7 @@ import path from "node:path";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { rm } from "node:fs/promises";
-import { writeFileSync, unlinkSync } from "node:fs";
+import { writeFileSync, unlinkSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import YAML from "yaml";
 import { createToolEntry, loadRegistry } from "./config.js";
@@ -190,10 +190,11 @@ async function handleInit(flags: Record<string, string | boolean>): Promise<void
   console.log(`Wrote registry: ${registryPath}`);
 }
 
-async function handleDistill(flags: Record<string, string | boolean>): Promise<void> {
-  const registryPath = expandHome(
-    typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY
-  );
+export async function handleDistill(
+  flags: Record<string, string | boolean>,
+  toolId?: string,
+  distillFn: (opts: DistillOptions) => Promise<DistillResult> = distillTool
+): Promise<void> {
   const docsDir = expandHome(
     typeof flags.docs === "string" ? flags.docs : DEFAULT_DOCS_DIR
   );
@@ -201,16 +202,32 @@ async function handleDistill(flags: Record<string, string | boolean>): Promise<v
     typeof flags.out === "string" ? flags.out : DEFAULT_SKILLS_OUT_DIR
   );
   const model = typeof flags.model === "string" ? flags.model : DEFAULT_MODEL;
-  const only = typeof flags.only === "string" ? new Set(flags.only.split(",").map((v) => v.trim())) : null;
   const distillConfigPath = typeof flags["distill-config"] === "string" ? flags["distill-config"] : undefined;
 
   const promptConfig = await loadDistillConfig(distillConfigPath);
 
-  const registry = await loadRegistry(registryPath);
-  const tools = registry.tools
-    .filter((tool) => tool.enabled !== false)
-    .filter((tool) => (only ? only.has(tool.id) : true))
-    .sort((a, b) => a.id.localeCompare(b.id));
+  let tools: Array<{ id: string; binary: string }>;
+
+  if (toolId) {
+    // Ad-hoc mode: distill a single tool by id
+    const rawDocsPath = path.join(docsDir, toolId, "tool.md");
+    if (!existsSync(rawDocsPath)) {
+      console.error(`Error: no raw docs found for "${toolId}". Run "tool-docs generate ${toolId}" first.`);
+      process.exit(1);
+    }
+    tools = [{ id: toolId, binary: toolId }];
+  } else {
+    // Registry mode: distill all (or filtered) tools
+    const registryPath = expandHome(
+      typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY
+    );
+    const only = typeof flags.only === "string" ? new Set(flags.only.split(",").map((v) => v.trim())) : null;
+    const registry = await loadRegistry(registryPath);
+    tools = registry.tools
+      .filter((tool) => tool.enabled !== false)
+      .filter((tool) => (only ? only.has(tool.id) : true))
+      .sort((a, b) => a.id.localeCompare(b.id));
+  }
 
   let generated = 0;
   let skipped = 0;
@@ -218,7 +235,7 @@ async function handleDistill(flags: Record<string, string | boolean>): Promise<v
   for (const tool of tools) {
     const outDir = path.join(outBase, tool.id);
     process.stdout.write(`distill ${tool.id}... `);
-    const result = await distillTool({ toolId: tool.id, binary: tool.binary, docsDir, outDir, model, promptConfig });
+    const result = await distillFn({ toolId: tool.id, binary: tool.binary, docsDir, outDir, model, promptConfig });
     if (result.skipped) {
       console.log(`skipped (${result.skipReason})`);
       skipped += 1;

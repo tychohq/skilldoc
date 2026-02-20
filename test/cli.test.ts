@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
-import { parseFlags, extractPositionalArgs, handleAutoRedist, handleGenerate, resolveBinary, lookupRegistryTool } from "../src/cli.js";
+import { parseFlags, extractPositionalArgs, handleAutoRedist, handleGenerate, handleDistill, resolveBinary, lookupRegistryTool } from "../src/cli.js";
 import { DEFAULT_MODEL, DEFAULT_SKILLS_DIR, DistillOptions, DistillResult } from "../src/distill.js";
 import { DEFAULT_VALIDATION_MODELS } from "../src/validate.js";
 
@@ -696,5 +696,129 @@ describe("bin/tool-docs.js --help (integration)", () => {
     const result = spawnSync("node", [binPath, "not-a-command"], { encoding: "utf8" });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("Unknown command");
+  });
+});
+
+describe("handleDistill with tool-id", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), `distill-adhoc-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function setupRawDocs(toolId: string, content = "# tool\n\nSome docs"): string {
+    const docsDir = path.join(tmpDir, "docs");
+    const toolDir = path.join(docsDir, toolId);
+    mkdirSync(toolDir, { recursive: true });
+    writeFileSync(path.join(toolDir, "tool.md"), content);
+    return docsDir;
+  }
+
+  it("exits with error when raw docs don't exist for the tool-id", async () => {
+    const docsDir = path.join(tmpDir, "docs");
+    mkdirSync(docsDir, { recursive: true });
+    // No tool.md created for "nonexistent"
+
+    let exitCode: number | undefined;
+    let errorOutput = "";
+    const origExit = process.exit;
+    const origError = console.error;
+    process.exit = ((code: number) => { exitCode = code; throw new Error("exit"); }) as never;
+    console.error = (msg: string) => { errorOutput += msg; };
+
+    try {
+      await handleDistill({ docs: docsDir, out: path.join(tmpDir, "skills") }, "nonexistent");
+    } catch {
+      // expected
+    } finally {
+      process.exit = origExit;
+      console.error = origError;
+    }
+
+    expect(exitCode).toBe(1);
+    expect(errorOutput).toContain('no raw docs found for "nonexistent"');
+    expect(errorOutput).toContain("tool-docs generate nonexistent");
+  });
+
+  it("does not require a registry when tool-id is provided", async () => {
+    const docsDir = setupRawDocs("mytool");
+    const skillsDir = path.join(tmpDir, "skills");
+    const captured: DistillOptions[] = [];
+
+    const mockDistill = async (opts: DistillOptions): Promise<DistillResult> => {
+      captured.push(opts);
+      return { toolId: opts.toolId, outDir: opts.outDir };
+    };
+
+    // Point registry to a nonexistent file — should not matter in ad-hoc mode
+    await handleDistill(
+      { docs: docsDir, out: skillsDir, registry: path.join(tmpDir, "nonexistent-registry.yaml") },
+      "mytool",
+      mockDistill
+    );
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0].toolId).toBe("mytool");
+  });
+
+  it("uses toolId as both id and binary in ad-hoc mode", async () => {
+    const docsDir = setupRawDocs("jq", "# jq\n\n## Usage\njq [OPTIONS] FILTER [FILE...]");
+    const skillsDir = path.join(tmpDir, "skills");
+    const captured: DistillOptions[] = [];
+
+    const mockDistill = async (opts: DistillOptions): Promise<DistillResult> => {
+      captured.push(opts);
+      return { toolId: opts.toolId, outDir: opts.outDir };
+    };
+
+    await handleDistill({ docs: docsDir, out: skillsDir }, "jq", mockDistill);
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0].toolId).toBe("jq");
+    expect(captured[0].binary).toBe("jq");
+  });
+});
+
+describe("bin/tool-docs.js distill <tool-id> (integration)", () => {
+  const binPath = path.resolve(import.meta.dir, "../bin/tool-docs.js");
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), `distill-int-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("exits with code 1 and prints error when raw docs don't exist", () => {
+    const docsDir = path.join(tmpDir, "docs");
+    mkdirSync(docsDir, { recursive: true });
+
+    const result = spawnSync("node", [binPath, "distill", "nonexistent-tool", "--docs", docsDir, "--out", path.join(tmpDir, "skills")], { encoding: "utf8" });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('no raw docs found for "nonexistent-tool"');
+    expect(result.stderr).toContain("tool-docs generate nonexistent-tool");
+  });
+
+  it("tool-id positional arg works when placed after flags", () => {
+    const docsDir = path.join(tmpDir, "docs");
+    mkdirSync(docsDir, { recursive: true });
+
+    const result = spawnSync("node", [binPath, "distill", "--docs", docsDir, "--out", path.join(tmpDir, "skills"), "nonexistent-tool"], { encoding: "utf8" });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('no raw docs found for "nonexistent-tool"');
+  });
+
+  it("help text shows positional arg for distill command", () => {
+    const result = spawnSync("node", [binPath, "--help"], { encoding: "utf8" });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("tool-docs distill [<tool-id>]");
   });
 });
