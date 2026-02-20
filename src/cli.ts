@@ -9,6 +9,7 @@ import { buildUsageDoc, extractUsageTokens } from "./usage.js";
 import { expandHome, ensureDir, writeFileEnsured } from "./utils.js";
 import { CommandDoc, CommandSummary, ToolDoc } from "./types.js";
 import { distillTool, DEFAULT_SKILLS_DIR, DEFAULT_DOCS_DIR, DEFAULT_MODEL } from "./distill.js";
+import { validateSkill, formatReport, DEFAULT_THRESHOLD } from "./validate.js";
 
 const DEFAULT_REGISTRY = "~/.agents/tool-docs/registry.yaml";
 const DEFAULT_OUT_DIR = "~/.agents/docs/tool-docs";
@@ -20,20 +21,24 @@ const HELP_TEXT = `tool-docs
 Usage:
   tool-docs generate [--registry <path>] [--out <path>] [--only <id1,id2>]
   tool-docs distill [--registry <path>] [--docs <path>] [--out <path>] [--only <id1,id2>] [--model <model>]
+  tool-docs validate <tool-id> [--skills <path>] [--model <model>] [--threshold <n>]
   tool-docs init [--registry <path>] [--force]
   tool-docs --help
 
 Commands:
   generate   Generate markdown + JSON docs for tools in the registry
   distill    Distill raw docs into agent-optimized skills (SKILL.md + docs/)
+  validate   Test skill quality using LLM-based scenario evaluation
   init       Create a starter registry file
 
 Options:
   --registry <path>   Path to registry YAML (default: ${DEFAULT_REGISTRY})
   --out <path>        Output directory (default: generate=${DEFAULT_OUT_DIR}, distill=${DEFAULT_SKILLS_OUT_DIR})
   --docs <path>       Path to raw docs dir for distill (default: ${DEFAULT_DOCS_DIR})
+  --skills <path>     Path to skills dir for validate (default: ${DEFAULT_SKILLS_OUT_DIR})
   --only <ids>        Comma-separated list of tool ids to process
-  --model <model>     LLM model for distill (default: ${DEFAULT_MODEL})
+  --model <model>     LLM model for distill/validate (default: ${DEFAULT_MODEL})
+  --threshold <n>     Minimum passing score for validate (default: ${DEFAULT_THRESHOLD})
   --force             Overwrite registry on init
   -h, --help          Show this help
 `;
@@ -65,6 +70,17 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "validate") {
+    const subArgs = args.slice(1);
+    const toolId = subArgs.find((a) => !a.startsWith("-"));
+    if (!toolId) {
+      console.error("validate requires a <tool-id> argument");
+      process.exit(1);
+    }
+    await handleValidate(toolId, flags);
+    return;
+  }
+
   if (command === "--version" || command === "-v") {
     console.log(VERSION);
     return;
@@ -83,7 +99,7 @@ export function parseFlags(args: string[]): Record<string, string | boolean> {
       flags.force = true;
       continue;
     }
-    if (arg === "--registry" || arg === "--out" || arg === "--only" || arg === "--docs" || arg === "--model") {
+    if (arg === "--registry" || arg === "--out" || arg === "--only" || arg === "--docs" || arg === "--model" || arg === "--skills" || arg === "--threshold") {
       const value = args[i + 1];
       if (!value || value.startsWith("-")) {
         throw new Error(`Missing value for ${arg}`);
@@ -161,6 +177,33 @@ async function handleDistill(flags: Record<string, string | boolean>): Promise<v
   }
 
   console.log(`Distilled ${generated} tool(s), skipped ${skipped}, output: ${outBase}`);
+}
+
+async function handleValidate(toolId: string, flags: Record<string, string | boolean>): Promise<void> {
+  const skillsDir = expandHome(
+    typeof flags.skills === "string" ? flags.skills : DEFAULT_SKILLS_OUT_DIR
+  );
+  const model = typeof flags.model === "string" ? flags.model : DEFAULT_MODEL;
+  const threshold =
+    typeof flags.threshold === "string" ? parseInt(flags.threshold, 10) : DEFAULT_THRESHOLD;
+
+  if (isNaN(threshold) || threshold < 1 || threshold > 10) {
+    console.error("--threshold must be a number between 1 and 10");
+    process.exit(1);
+  }
+
+  process.stdout.write(`validate ${toolId}...\n`);
+
+  try {
+    const report = await validateSkill({ toolId, skillsDir, model, threshold });
+    console.log(formatReport(report));
+    if (!report.passed) {
+      process.exit(1);
+    }
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
 }
 
 async function handleGenerate(flags: Record<string, string | boolean>): Promise<void> {

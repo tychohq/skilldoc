@@ -6972,8 +6972,8 @@ var require_dist = __commonJS((exports) => {
 
 // src/cli.ts
 var import_yaml2 = __toESM(require_dist(), 1);
-import path2 from "node:path";
-import { spawnSync as spawnSync2 } from "node:child_process";
+import path3 from "node:path";
+import { spawnSync as spawnSync3 } from "node:child_process";
 import { rm } from "node:fs/promises";
 
 // src/config.ts
@@ -7846,6 +7846,216 @@ function addMetadataHeader(skillContent, toolId, binary, description, generatedA
 `) + skillContent;
 }
 
+// src/validate.ts
+import path2 from "node:path";
+import { existsSync as existsSync2 } from "node:fs";
+import { readFile as readFile3 } from "node:fs/promises";
+import { spawnSync as spawnSync2 } from "node:child_process";
+var DEFAULT_THRESHOLD = 9;
+var NUM_SCENARIOS = 4;
+var defaultExec2 = (command, args, options) => spawnSync2(command, [...args], options);
+function buildScenariosPrompt(skillContent, toolId) {
+  return `You are evaluating skill documentation quality for an AI agent. Given the following CLI skill documentation for "${toolId}", generate exactly ${NUM_SCENARIOS} test scenarios that would test whether an AI agent could effectively use this documentation.
+
+Focus on the most common real-world tasks that the tool is used for.
+
+Return ONLY valid JSON: an array of exactly ${NUM_SCENARIOS} objects, each with:
+- "task": a short task description (e.g., "search for a pattern in Python files recursively")
+- "hint": what a correct command should include or look like
+
+Return ONLY valid JSON with no markdown fences.
+
+## Documentation
+
+${skillContent}`;
+}
+function buildEvaluationPrompt(skillContent, task) {
+  return `You are an AI agent that has ONLY been given the following documentation. Do NOT use any prior knowledge about the tool beyond what is in this documentation.
+
+## Documentation
+
+${skillContent}
+
+---
+
+## Task
+
+${task}
+
+## Instructions
+
+1. Using ONLY the above documentation, write the complete command to accomplish this task.
+2. Evaluate your response on these 4 criteria:
+   - completed: (true/false) Did the documentation give you enough information to complete the task?
+   - correct: (true/false) Is the command you wrote syntactically correct based on the documentation?
+   - hallucinated: (true/false) Did you use any flags or options NOT mentioned in the documentation?
+   - missing: what information was missing or unclear (empty string if nothing was missing)
+3. Give an overall score from 1-10 where 10 means "documentation was perfect for this task"
+
+Return ONLY valid JSON with exactly these keys:
+{
+  "command": "<the command you would run>",
+  "completed": true,
+  "correct": true,
+  "hallucinated": false,
+  "missing": "",
+  "score": 9,
+  "reasoning": "<brief explanation of your score>"
+}`;
+}
+function callLLM2(prompt, model, exec) {
+  const result = exec("claude", ["-p", "--output-format", "text", "--model", model, "--no-session-persistence"], { input: prompt, encoding: "utf8", maxBuffer: 10 * 1024 * 1024 });
+  if (result.error) {
+    throw new Error(`Failed to run claude: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    const stderr = result.stderr ?? "";
+    throw new Error(`claude exited with code ${result.status}${stderr ? `: ${stderr.slice(0, 200)}` : ""}`);
+  }
+  const output = result.stdout ?? "";
+  if (!output.trim()) {
+    const stderr = result.stderr ?? "";
+    throw new Error(`claude returned empty output${stderr ? `: ${stderr.slice(0, 200)}` : ""}`);
+  }
+  return output;
+}
+function stripFences(output) {
+  return output.trim().replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "").trim();
+}
+function parseScenarios(output) {
+  const stripped = stripFences(output);
+  let parsed;
+  try {
+    parsed = JSON.parse(stripped);
+  } catch {
+    throw new Error(`Failed to parse scenarios as JSON: ${stripped.slice(0, 200)}`);
+  }
+  if (!Array.isArray(parsed)) {
+    throw new Error("Scenarios output is not a JSON array");
+  }
+  return parsed.map((item, i) => {
+    if (typeof item !== "object" || item === null) {
+      throw new Error(`Scenario ${i} is not an object`);
+    }
+    const obj = item;
+    if (typeof obj.task !== "string") {
+      throw new Error(`Scenario ${i} missing "task" string`);
+    }
+    if (typeof obj.hint !== "string") {
+      throw new Error(`Scenario ${i} missing "hint" string`);
+    }
+    return { task: obj.task, hint: obj.hint };
+  });
+}
+function parseScorecard(task, output) {
+  const stripped = stripFences(output);
+  let parsed;
+  try {
+    parsed = JSON.parse(stripped);
+  } catch {
+    throw new Error(`Failed to parse scorecard as JSON: ${stripped.slice(0, 200)}`);
+  }
+  if (typeof parsed !== "object" || parsed === null) {
+    throw new Error("Scorecard output is not a JSON object");
+  }
+  const obj = parsed;
+  for (const key of ["command", "completed", "correct", "hallucinated", "missing", "score", "reasoning"]) {
+    if (!(key in obj)) {
+      throw new Error(`Scorecard missing required key: ${key}`);
+    }
+  }
+  const score = typeof obj.score === "number" ? obj.score : Number(obj.score);
+  if (isNaN(score) || score < 1 || score > 10) {
+    throw new Error(`Scorecard score must be between 1 and 10, got: ${obj.score}`);
+  }
+  return {
+    task,
+    command: String(obj.command),
+    completed: Boolean(obj.completed),
+    correct: Boolean(obj.correct),
+    hallucinated: Boolean(obj.hallucinated),
+    missing: String(obj.missing ?? ""),
+    score,
+    reasoning: String(obj.reasoning ?? "")
+  };
+}
+function generateScenarios(skillContent, toolId, model, exec = defaultExec2) {
+  const prompt = buildScenariosPrompt(skillContent, toolId);
+  const output = callLLM2(prompt, model, exec);
+  return parseScenarios(output);
+}
+function evaluateScenario(skillContent, task, model, exec = defaultExec2) {
+  const prompt = buildEvaluationPrompt(skillContent, task);
+  const output = callLLM2(prompt, model, exec);
+  return parseScorecard(task, output);
+}
+async function validateSkill(options) {
+  const {
+    toolId,
+    skillsDir = expandHome(DEFAULT_SKILLS_DIR),
+    model = DEFAULT_MODEL,
+    threshold = DEFAULT_THRESHOLD,
+    exec = defaultExec2
+  } = options;
+  const skillPath = path2.join(skillsDir, toolId, "SKILL.md");
+  if (!existsSync2(skillPath)) {
+    throw new Error(`No SKILL.md found for ${toolId} at ${skillPath}`);
+  }
+  const skillContent = await readFile3(skillPath, "utf8");
+  const scenarios = generateScenarios(skillContent, toolId, model, exec);
+  const scorecards = [];
+  for (const scenario of scenarios) {
+    const scorecard = evaluateScenario(skillContent, scenario.task, model, exec);
+    scorecards.push(scorecard);
+  }
+  const averageScore = scorecards.reduce((sum, s) => sum + s.score, 0) / scorecards.length;
+  return {
+    toolId,
+    skillPath,
+    model,
+    scenarios: scorecards,
+    averageScore,
+    passed: averageScore >= threshold,
+    threshold,
+    generatedAt: new Date().toISOString()
+  };
+}
+function formatReport(report) {
+  const lines = [];
+  lines.push(`Validation Report: ${report.toolId}`);
+  lines.push(`Model: ${report.model}`);
+  lines.push(`Skill: ${report.skillPath}`);
+  lines.push("");
+  for (let i = 0;i < report.scenarios.length; i++) {
+    const s = report.scenarios[i];
+    const issues = [];
+    if (!s.completed)
+      issues.push("incomplete");
+    if (!s.correct)
+      issues.push("incorrect");
+    if (s.hallucinated)
+      issues.push("hallucinated");
+    const issueStr = issues.length > 0 ? ` [${issues.join(", ")}]` : "";
+    lines.push(`  Scenario ${i + 1}: "${s.task}" → ${s.score}/10${issueStr}`);
+    if (s.command)
+      lines.push(`    Command: ${s.command}`);
+    if (s.missing)
+      lines.push(`    Missing: ${s.missing}`);
+  }
+  lines.push("");
+  const avgFormatted = report.averageScore.toFixed(1);
+  const status = report.passed ? "PASS" : "FAIL";
+  lines.push(`Average: ${avgFormatted}/10 — ${status} (threshold: ${report.threshold}/10)`);
+  if (!report.passed) {
+    const allMissing = report.scenarios.map((s) => s.missing).filter((m) => m.length > 0).filter((m, i, arr) => arr.indexOf(m) === i);
+    if (allMissing.length > 0) {
+      lines.push(`Missing from skill: ${allMissing.join("; ")}`);
+    }
+  }
+  return lines.join(`
+`);
+}
+
 // src/cli.ts
 var DEFAULT_REGISTRY = "~/.agents/tool-docs/registry.yaml";
 var DEFAULT_OUT_DIR = "~/.agents/docs/tool-docs";
@@ -7855,20 +8065,24 @@ var HELP_TEXT = `tool-docs
 Usage:
   tool-docs generate [--registry <path>] [--out <path>] [--only <id1,id2>]
   tool-docs distill [--registry <path>] [--docs <path>] [--out <path>] [--only <id1,id2>] [--model <model>]
+  tool-docs validate <tool-id> [--skills <path>] [--model <model>] [--threshold <n>]
   tool-docs init [--registry <path>] [--force]
   tool-docs --help
 
 Commands:
   generate   Generate markdown + JSON docs for tools in the registry
   distill    Distill raw docs into agent-optimized skills (SKILL.md + docs/)
+  validate   Test skill quality using LLM-based scenario evaluation
   init       Create a starter registry file
 
 Options:
   --registry <path>   Path to registry YAML (default: ${DEFAULT_REGISTRY})
   --out <path>        Output directory (default: generate=${DEFAULT_OUT_DIR}, distill=${DEFAULT_SKILLS_OUT_DIR})
   --docs <path>       Path to raw docs dir for distill (default: ${DEFAULT_DOCS_DIR})
+  --skills <path>     Path to skills dir for validate (default: ${DEFAULT_SKILLS_OUT_DIR})
   --only <ids>        Comma-separated list of tool ids to process
-  --model <model>     LLM model for distill (default: ${DEFAULT_MODEL})
+  --model <model>     LLM model for distill/validate (default: ${DEFAULT_MODEL})
+  --threshold <n>     Minimum passing score for validate (default: ${DEFAULT_THRESHOLD})
   --force             Overwrite registry on init
   -h, --help          Show this help
 `;
@@ -7893,6 +8107,16 @@ async function main() {
     await handleDistill(flags);
     return;
   }
+  if (command === "validate") {
+    const subArgs = args.slice(1);
+    const toolId = subArgs.find((a) => !a.startsWith("-"));
+    if (!toolId) {
+      console.error("validate requires a <tool-id> argument");
+      process.exit(1);
+    }
+    await handleValidate(toolId, flags);
+    return;
+  }
   if (command === "--version" || command === "-v") {
     console.log(VERSION);
     return;
@@ -7910,7 +8134,7 @@ function parseFlags(args) {
       flags.force = true;
       continue;
     }
-    if (arg === "--registry" || arg === "--out" || arg === "--only" || arg === "--docs" || arg === "--model") {
+    if (arg === "--registry" || arg === "--out" || arg === "--only" || arg === "--docs" || arg === "--model" || arg === "--skills" || arg === "--threshold") {
       const value = args[i + 1];
       if (!value || value.startsWith("-")) {
         throw new Error(`Missing value for ${arg}`);
@@ -7974,7 +8198,7 @@ async function handleDistill(flags) {
   let generated = 0;
   let skipped = 0;
   for (const tool of tools) {
-    const outDir = path2.join(outBase, tool.id);
+    const outDir = path3.join(outBase, tool.id);
     process.stdout.write(`distill ${tool.id}... `);
     const result = await distillTool({ toolId: tool.id, binary: tool.binary, docsDir, outDir, model });
     if (result.skipped) {
@@ -7987,6 +8211,27 @@ async function handleDistill(flags) {
     }
   }
   console.log(`Distilled ${generated} tool(s), skipped ${skipped}, output: ${outBase}`);
+}
+async function handleValidate(toolId, flags) {
+  const skillsDir = expandHome(typeof flags.skills === "string" ? flags.skills : DEFAULT_SKILLS_OUT_DIR);
+  const model = typeof flags.model === "string" ? flags.model : DEFAULT_MODEL;
+  const threshold = typeof flags.threshold === "string" ? parseInt(flags.threshold, 10) : DEFAULT_THRESHOLD;
+  if (isNaN(threshold) || threshold < 1 || threshold > 10) {
+    console.error("--threshold must be a number between 1 and 10");
+    process.exit(1);
+  }
+  process.stdout.write(`validate ${toolId}...
+`);
+  try {
+    const report = await validateSkill({ toolId, skillsDir, model, threshold });
+    console.log(formatReport(report));
+    if (!report.passed) {
+      process.exit(1);
+    }
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
 }
 async function handleGenerate(flags) {
   const registryPath = expandHome(typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY);
@@ -8036,23 +8281,23 @@ async function handleGenerate(flags) {
       env: parsed.env,
       warnings
     };
-    const toolDir = path2.join(outDir, tool.id);
+    const toolDir = path3.join(outDir, tool.id);
     await ensureDir(toolDir);
-    await writeFileEnsured(path2.join(toolDir, "tool.json"), JSON.stringify(doc, null, 2));
-    await writeFileEnsured(path2.join(toolDir, "tool.yaml"), import_yaml2.default.stringify(doc));
-    await writeFileEnsured(path2.join(toolDir, "tool.md"), renderToolMarkdown(doc));
-    await rm(path2.join(toolDir, "raw.txt"), { force: true });
+    await writeFileEnsured(path3.join(toolDir, "tool.json"), JSON.stringify(doc, null, 2));
+    await writeFileEnsured(path3.join(toolDir, "tool.yaml"), import_yaml2.default.stringify(doc));
+    await writeFileEnsured(path3.join(toolDir, "tool.md"), renderToolMarkdown(doc));
+    await rm(path3.join(toolDir, "raw.txt"), { force: true });
     if (tool.commandHelpArgs) {
       await generateCommandDocs(tool.id, tool.binary, tool.commandHelpArgs, commands, toolDir);
     }
     indexLines.push(`| ${tool.id} | ${tool.binary} |`);
   }
-  await writeFileEnsured(path2.join(outDir, "index.md"), indexLines.join(`
+  await writeFileEnsured(path3.join(outDir, "index.md"), indexLines.join(`
 `));
   console.log(`Generated docs for ${tools.length} tool(s) in ${outDir}`);
 }
 async function generateCommandDocs(toolId, binary, commandHelpArgs, commands, toolDir) {
-  const commandsDir = path2.join(toolDir, "commands");
+  const commandsDir = path3.join(toolDir, "commands");
   await ensureDir(commandsDir);
   for (const command of commands) {
     const args = commandHelpArgs.map((arg) => arg.replace("{command}", command.name));
@@ -8087,11 +8332,11 @@ async function generateCommandDocs(toolId, binary, commandHelpArgs, commands, to
       env: parsed.env,
       warnings
     };
-    const commandDir = path2.join(commandsDir, slugify(command.name));
+    const commandDir = path3.join(commandsDir, slugify(command.name));
     await ensureDir(commandDir);
-    await writeFileEnsured(path2.join(commandDir, "command.json"), JSON.stringify(doc, null, 2));
-    await writeFileEnsured(path2.join(commandDir, "command.yaml"), import_yaml2.default.stringify(doc));
-    await writeFileEnsured(path2.join(commandDir, "command.md"), renderCommandMarkdown(doc));
+    await writeFileEnsured(path3.join(commandDir, "command.json"), JSON.stringify(doc, null, 2));
+    await writeFileEnsured(path3.join(commandDir, "command.yaml"), import_yaml2.default.stringify(doc));
+    await writeFileEnsured(path3.join(commandDir, "command.md"), renderCommandMarkdown(doc));
   }
 }
 function commandDocPath(command) {
@@ -8113,7 +8358,7 @@ function runCommand(binary, args) {
     MANPAGER: "cat",
     LESS: "FRX"
   };
-  const result = spawnSync2(binary, args, {
+  const result = spawnSync3(binary, args, {
     encoding: "utf8",
     env
   });
