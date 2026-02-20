@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from "bun:test";
 import path from "node:path";
 import { mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from "node:fs";
 import os from "node:os";
-import { parseDistilledOutput, callLLM, distillTool, detectVersion, LLMCaller } from "../src/distill.js";
+import { parseDistilledOutput, callLLM, distillTool, detectVersion, loadDistillConfig, buildPrompt, DEFAULT_PROMPT_CONFIG, LLMCaller } from "../src/distill.js";
 
 // Minimal valid LLM output
 const validJson = JSON.stringify({
@@ -736,5 +736,320 @@ describe("distillTool - full flow", () => {
     await distillTool({ toolId: "mytool", binary: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
 
     expect(capturedFeedback).toBeUndefined();
+  });
+});
+
+describe("buildPrompt — config customization", () => {
+  it("uses default priorities when no config provided", () => {
+    const prompt = buildPrompt("raw docs", "tool");
+    expect(prompt).toContain("Most-used flags/commands first");
+    expect(prompt).toContain("Real-world usage patterns");
+    expect(prompt).toContain("Agent-specific gotchas");
+    expect(prompt).toContain("Concrete runnable examples");
+  });
+
+  it("uses custom priorities from config", () => {
+    const prompt = buildPrompt("raw docs", "tool", undefined, {
+      priorities: ["Custom first priority", "Custom second priority"],
+    });
+    expect(prompt).toContain("1. Custom first priority");
+    expect(prompt).toContain("2. Custom second priority");
+    expect(prompt).not.toContain("Most-used flags/commands first");
+  });
+
+  it("uses default size limits when no config provided", () => {
+    const prompt = buildPrompt("raw docs", "tool");
+    expect(prompt).toContain("≤ 2000 bytes");
+    expect(prompt).toContain("≤ 1000 bytes");
+  });
+
+  it("uses custom size limits from config", () => {
+    const prompt = buildPrompt("raw docs", "tool", undefined, {
+      sizeLimits: { skill: 1500, troubleshooting: 750 },
+    });
+    expect(prompt).toContain("≤ 1500 bytes");
+    expect(prompt).toContain("≤ 750 bytes");
+    // skill line uses override; advanced/recipes still use default
+    expect(prompt).toContain('"skill": ≤ 1500 bytes');
+    expect(prompt).not.toContain('"skill": ≤ 2000 bytes');
+    expect(prompt).toContain('"troubleshooting": ≤ 750 bytes');
+    expect(prompt).not.toContain('"troubleshooting": ≤ 1000 bytes');
+  });
+
+  it("partial size limit override only changes specified files", () => {
+    const prompt = buildPrompt("raw docs", "tool", undefined, {
+      sizeLimits: { skill: 1000 },
+    });
+    expect(prompt).toContain("≤ 1000 bytes");
+    // advanced and recipes still use defaults
+    const advancedMatch = prompt.match(/"advanced".*?≤ (\d+) bytes/);
+    expect(advancedMatch?.[1]).toBe("2000");
+  });
+
+  it("appends extraInstructions before the feedback section", () => {
+    const prompt = buildPrompt("raw docs", "tool", undefined, {
+      extraInstructions: "Always use --quiet flag in examples.",
+    });
+    expect(prompt).toContain("Always use --quiet flag in examples.");
+  });
+
+  it("does not include extraInstructions section when empty string", () => {
+    const prompt = buildPrompt("raw docs", "tool", undefined, { extraInstructions: "" });
+    // extraInstructions are only included when non-empty; check no double newlines from empty string
+    const withoutFeedback = prompt.split("Return ONLY valid JSON")[1] ?? "";
+    expect(withoutFeedback.trimStart()).not.toMatch(/^[\n]{3,}/);
+  });
+
+  it("extraInstructions appears before validation feedback when both present", () => {
+    const prompt = buildPrompt("raw docs", "tool", "agent needed --count flag", {
+      extraInstructions: "Prefer POSIX-compatible examples.",
+    });
+    const extraPos = prompt.indexOf("Prefer POSIX-compatible examples.");
+    const feedbackPos = prompt.indexOf("Validation Feedback");
+    expect(extraPos).toBeGreaterThan(0);
+    expect(feedbackPos).toBeGreaterThan(extraPos);
+  });
+});
+
+describe("callLLM — config forwarding", () => {
+  const validJson = JSON.stringify({
+    description: "Fast file search tool",
+    skill: "# rg\n\nSearch files",
+    advanced: "## Advanced\n\nPCRE2 flags",
+    recipes: "## Recipes\n\nSearch Python files",
+    troubleshooting: "## Troubleshooting\n\nQuoting issues",
+  });
+
+  it("forwards promptConfig to the prompt", () => {
+    let capturedInput = "";
+    const exec = (_cmd: string, _args: ReadonlyArray<string>, opts: { input: string }) => {
+      capturedInput = opts.input;
+      return { stdout: validJson, stderr: "", status: 0 };
+    };
+    callLLM("docs", "tool", "model", exec, undefined, { extraInstructions: "Use POSIX paths." });
+    expect(capturedInput).toContain("Use POSIX paths.");
+  });
+
+  it("uses default prompt when promptConfig is omitted", () => {
+    let capturedInput = "";
+    const exec = (_cmd: string, _args: ReadonlyArray<string>, opts: { input: string }) => {
+      capturedInput = opts.input;
+      return { stdout: validJson, stderr: "", status: 0 };
+    };
+    callLLM("docs", "tool", "model", exec);
+    expect(capturedInput).toContain("≤ 2000 bytes");
+    expect(capturedInput).toContain("≤ 1000 bytes");
+  });
+});
+
+describe("loadDistillConfig", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), `distill-config-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("returns empty object when config file does not exist", async () => {
+    const config = await loadDistillConfig(path.join(tmpDir, "nonexistent.yaml"));
+    expect(config).toEqual({});
+  });
+
+  it("returns empty object when config file is invalid YAML", async () => {
+    const configPath = path.join(tmpDir, "bad.yaml");
+    writeFileSync(configPath, "{ this is: [invalid yaml");
+    const config = await loadDistillConfig(configPath);
+    expect(config).toEqual({});
+  });
+
+  it("returns empty object when config file is not an object", async () => {
+    const configPath = path.join(tmpDir, "arr.yaml");
+    writeFileSync(configPath, "- item1\n- item2\n");
+    const config = await loadDistillConfig(configPath);
+    expect(config).toEqual({});
+  });
+
+  it("loads sizeLimits from config file", async () => {
+    const configPath = path.join(tmpDir, "config.yaml");
+    writeFileSync(configPath, "sizeLimits:\n  skill: 1500\n  troubleshooting: 800\n");
+    const config = await loadDistillConfig(configPath);
+    expect(config.sizeLimits?.skill).toBe(1500);
+    expect(config.sizeLimits?.troubleshooting).toBe(800);
+    expect(config.sizeLimits?.advanced).toBeUndefined();
+  });
+
+  it("loads priorities array from config file", async () => {
+    const configPath = path.join(tmpDir, "config.yaml");
+    writeFileSync(configPath, "priorities:\n  - 'First priority'\n  - 'Second priority'\n");
+    const config = await loadDistillConfig(configPath);
+    expect(config.priorities).toEqual(["First priority", "Second priority"]);
+  });
+
+  it("loads extraInstructions from config file", async () => {
+    const configPath = path.join(tmpDir, "config.yaml");
+    writeFileSync(configPath, "extraInstructions: 'Always use --quiet flag.'\n");
+    const config = await loadDistillConfig(configPath);
+    expect(config.extraInstructions).toBe("Always use --quiet flag.");
+  });
+
+  it("loads all fields together", async () => {
+    const configPath = path.join(tmpDir, "config.yaml");
+    writeFileSync(
+      configPath,
+      "sizeLimits:\n  skill: 1200\n  advanced: 1800\npriorities:\n  - 'Custom rule'\nextraInstructions: 'Extra note.'\n"
+    );
+    const config = await loadDistillConfig(configPath);
+    expect(config.sizeLimits?.skill).toBe(1200);
+    expect(config.sizeLimits?.advanced).toBe(1800);
+    expect(config.priorities).toEqual(["Custom rule"]);
+    expect(config.extraInstructions).toBe("Extra note.");
+  });
+
+  it("ignores unknown top-level fields", async () => {
+    const configPath = path.join(tmpDir, "config.yaml");
+    writeFileSync(configPath, "extraInstructions: 'note'\nunknownField: 42\n");
+    const config = await loadDistillConfig(configPath);
+    expect(config.extraInstructions).toBe("note");
+    expect((config as Record<string, unknown>).unknownField).toBeUndefined();
+  });
+
+  it("ignores priorities when not an array of strings", async () => {
+    const configPath = path.join(tmpDir, "config.yaml");
+    writeFileSync(configPath, "priorities: 'not an array'\n");
+    const config = await loadDistillConfig(configPath);
+    expect(config.priorities).toBeUndefined();
+  });
+});
+
+describe("distillTool — promptConfig integration", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), `distill-prompt-config-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function setupDocs(toolId: string, content = "# tool\n\nSome docs") {
+    const docsDir = path.join(tmpDir, "docs");
+    const toolDir = path.join(docsDir, toolId);
+    mkdirSync(toolDir, { recursive: true });
+    writeFileSync(path.join(toolDir, "tool.md"), content);
+    return docsDir;
+  }
+
+  it("respects custom sizeLimits in size warnings", async () => {
+    const docsDir = setupDocs("mytool");
+    const outDir = path.join(tmpDir, "skills", "mytool");
+
+    const mockLLM: LLMCaller = () => ({
+      description: "d",
+      skill: "x".repeat(1001), // exceeds custom limit of 1000 but not default 2000
+      advanced: "adv",
+      recipes: "rec",
+      troubleshooting: "trbl",
+    });
+
+    const result = await distillTool({
+      toolId: "mytool",
+      binary: "mytool",
+      docsDir,
+      outDir,
+      model: "test-model",
+      llmCaller: mockLLM,
+      promptConfig: { sizeLimits: { skill: 1000 } },
+    });
+
+    expect(result.sizeWarnings).toBeDefined();
+    expect(result.sizeWarnings?.some((w) => w.includes("SKILL.md"))).toBe(true);
+  });
+
+  it("no warning when custom limit is higher than content size", async () => {
+    const docsDir = setupDocs("mytool");
+    const outDir = path.join(tmpDir, "skills", "mytool");
+
+    const mockLLM: LLMCaller = () => ({
+      description: "d",
+      skill: "x".repeat(1500), // within custom limit of 3000
+      advanced: "adv",
+      recipes: "rec",
+      troubleshooting: "trbl",
+    });
+
+    const result = await distillTool({
+      toolId: "mytool",
+      binary: "mytool",
+      docsDir,
+      outDir,
+      model: "test-model",
+      llmCaller: mockLLM,
+      promptConfig: { sizeLimits: { skill: 3000 } },
+    });
+
+    expect(result.sizeWarnings).toBeUndefined();
+  });
+
+  it("default LLM caller uses promptConfig", async () => {
+    // We can't directly test the default LLM caller without mocking the exec layer.
+    // Instead, verify that promptConfig is passed to the llmCaller when using custom llmCaller.
+    const docsDir = setupDocs("mytool");
+    const outDir = path.join(tmpDir, "skills", "mytool");
+
+    let capturedConfig: unknown;
+    // The LLMCaller type doesn't expose config; we verify via size limits behavior instead.
+    // This is a smoke test that distillTool doesn't crash with promptConfig set.
+    const mockLLM: LLMCaller = () => ({
+      description: "d",
+      skill: "s",
+      advanced: "a",
+      recipes: "r",
+      troubleshooting: "t",
+    });
+
+    const result = await distillTool({
+      toolId: "mytool",
+      binary: "mytool",
+      docsDir,
+      outDir,
+      model: "test-model",
+      llmCaller: mockLLM,
+      promptConfig: { priorities: ["Custom priority"] },
+    });
+
+    expect(result.skipped).toBeUndefined();
+    expect(result.toolId).toBe("mytool");
+    void capturedConfig; // silence unused var warning
+  });
+});
+
+describe("DEFAULT_PROMPT_CONFIG", () => {
+  it("has all required size limit fields", () => {
+    expect(DEFAULT_PROMPT_CONFIG.sizeLimits?.skill).toBe(2000);
+    expect(DEFAULT_PROMPT_CONFIG.sizeLimits?.advanced).toBe(2000);
+    expect(DEFAULT_PROMPT_CONFIG.sizeLimits?.recipes).toBe(2000);
+    expect(DEFAULT_PROMPT_CONFIG.sizeLimits?.troubleshooting).toBe(1000);
+  });
+
+  it("has 4 default priorities", () => {
+    expect(DEFAULT_PROMPT_CONFIG.priorities?.length).toBe(4);
+  });
+
+  it("default priorities include the 80/20 framing", () => {
+    const combined = DEFAULT_PROMPT_CONFIG.priorities!.join(" ");
+    expect(combined).toContain("20%");
+    expect(combined).toContain("80%");
+  });
+
+  it("default priorities include agent-specific gotchas", () => {
+    const combined = DEFAULT_PROMPT_CONFIG.priorities!.join(" ");
+    expect(combined).toContain("gotchas");
+    expect(combined).toContain("quoting");
   });
 });

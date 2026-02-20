@@ -68,7 +68,7 @@ The SKILL.md is the entry point. The `docs/` folder has deeper sections that age
 ### Phase 5: Iteration & Polish
 - [x] Add `tool-docs refresh [--only <ids>]` that re-runs generate + distill for tools whose `--help` output has changed
 - [x] Add `--diff` flag to refresh that shows what changed in the skill output
-- [ ] Write a meta-AGENTS.md for the repo documenting the distillation prompt engineering lessons learned
+- [x] Write a meta-AGENTS.md for the repo documenting the distillation prompt engineering lessons learned
 - [ ] Ensure the final distill prompt template is well-documented and tweakable via a config file
 
 ---

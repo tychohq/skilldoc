@@ -11,7 +11,7 @@ import { renderCommandMarkdown, renderToolMarkdown } from "./render.js";
 import { buildUsageDoc, extractUsageTokens } from "./usage.js";
 import { expandHome, ensureDir, writeFileEnsured, readText } from "./utils.js";
 import { CommandDoc, CommandSummary, ToolDoc } from "./types.js";
-import { distillTool, DEFAULT_SKILLS_DIR, DEFAULT_DOCS_DIR, DEFAULT_MODEL, DistillOptions, DistillResult } from "./distill.js";
+import { distillTool, DEFAULT_SKILLS_DIR, DEFAULT_DOCS_DIR, DEFAULT_MODEL, DEFAULT_DISTILL_CONFIG_PATH, loadDistillConfig, DistillOptions, DistillResult } from "./distill.js";
 import {
   validateSkillMultiModel,
   formatMultiModelReport,
@@ -32,7 +32,7 @@ const HELP_TEXT = `tool-docs
 
 Usage:
   tool-docs generate [--registry <path>] [--out <path>] [--only <id1,id2>]
-  tool-docs distill [--registry <path>] [--docs <path>] [--out <path>] [--only <id1,id2>] [--model <model>]
+  tool-docs distill [--registry <path>] [--docs <path>] [--out <path>] [--only <id1,id2>] [--model <model>] [--distill-config <path>]
   tool-docs refresh [--registry <path>] [--out <path>] [--only <id1,id2>] [--model <model>] [--diff]
   tool-docs validate <tool-id> [--skills <path>] [--models <m1,m2>] [--threshold <n>] [--auto-redist]
   tool-docs report [--skills <path>]
@@ -48,18 +48,19 @@ Commands:
   init       Create a starter registry file
 
 Options:
-  --registry <path>   Path to registry YAML (default: ${DEFAULT_REGISTRY})
-  --out <path>        Output directory (default: generate=${DEFAULT_OUT_DIR}, distill=${DEFAULT_SKILLS_OUT_DIR})
-  --docs <path>       Path to raw docs dir for distill (default: ${DEFAULT_DOCS_DIR})
-  --skills <path>     Path to skills dir for validate (default: ${DEFAULT_SKILLS_OUT_DIR})
-  --only <ids>        Comma-separated list of tool ids to process
-  --model <model>     LLM model for distill/auto-redist (default: ${DEFAULT_MODEL})
-  --models <m1,m2>    Comma-separated models for validate (default: ${DEFAULT_VALIDATION_MODELS.join(",")})
-  --threshold <n>     Minimum passing score for validate (default: ${DEFAULT_THRESHOLD})
-  --auto-redist       Re-run distill with feedback if validation fails
-  --force             Overwrite registry on init
-  --diff              Show diff of skill output after refresh
-  -h, --help          Show this help
+  --registry <path>       Path to registry YAML (default: ${DEFAULT_REGISTRY})
+  --out <path>            Output directory (default: generate=${DEFAULT_OUT_DIR}, distill=${DEFAULT_SKILLS_OUT_DIR})
+  --docs <path>           Path to raw docs dir for distill (default: ${DEFAULT_DOCS_DIR})
+  --skills <path>         Path to skills dir for validate (default: ${DEFAULT_SKILLS_OUT_DIR})
+  --only <ids>            Comma-separated list of tool ids to process
+  --model <model>         LLM model for distill/auto-redist (default: ${DEFAULT_MODEL})
+  --models <m1,m2>        Comma-separated models for validate (default: ${DEFAULT_VALIDATION_MODELS.join(",")})
+  --threshold <n>         Minimum passing score for validate (default: ${DEFAULT_THRESHOLD})
+  --distill-config <path> Path to distill prompt config YAML (default: ${DEFAULT_DISTILL_CONFIG_PATH})
+  --auto-redist           Re-run distill with feedback if validation fails
+  --force                 Overwrite registry on init
+  --diff                  Show diff of skill output after refresh
+  -h, --help              Show this help
 `;
 
 const VERSION = "0.2.0";
@@ -128,7 +129,7 @@ export function parseFlags(args: string[]): Record<string, string | boolean> {
       flags[arg.replace(/^--/, "")] = true;
       continue;
     }
-    if (arg === "--registry" || arg === "--out" || arg === "--only" || arg === "--docs" || arg === "--model" || arg === "--models" || arg === "--skills" || arg === "--threshold") {
+    if (arg === "--registry" || arg === "--out" || arg === "--only" || arg === "--docs" || arg === "--model" || arg === "--models" || arg === "--skills" || arg === "--threshold" || arg === "--distill-config") {
       const value = args[i + 1];
       if (!value || value.startsWith("-")) {
         throw new Error(`Missing value for ${arg}`);
@@ -181,6 +182,9 @@ async function handleDistill(flags: Record<string, string | boolean>): Promise<v
   );
   const model = typeof flags.model === "string" ? flags.model : DEFAULT_MODEL;
   const only = typeof flags.only === "string" ? new Set(flags.only.split(",").map((v) => v.trim())) : null;
+  const distillConfigPath = typeof flags["distill-config"] === "string" ? flags["distill-config"] : undefined;
+
+  const promptConfig = await loadDistillConfig(distillConfigPath);
 
   const registry = await loadRegistry(registryPath);
   const tools = registry.tools
@@ -194,7 +198,7 @@ async function handleDistill(flags: Record<string, string | boolean>): Promise<v
   for (const tool of tools) {
     const outDir = path.join(outBase, tool.id);
     process.stdout.write(`distill ${tool.id}... `);
-    const result = await distillTool({ toolId: tool.id, binary: tool.binary, docsDir, outDir, model });
+    const result = await distillTool({ toolId: tool.id, binary: tool.binary, docsDir, outDir, model, promptConfig });
     if (result.skipped) {
       console.log(`skipped (${result.skipReason})`);
       skipped += 1;

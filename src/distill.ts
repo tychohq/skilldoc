@@ -2,13 +2,85 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { existsSync, readdirSync } from "node:fs";
-import { writeFileEnsured, ensureDir } from "./utils.js";
+import YAML from "yaml";
+import { writeFileEnsured, ensureDir, expandHome } from "./utils.js";
 
 const DEFAULT_SKILLS_DIR = "~/.agents/skills";
 const DEFAULT_DOCS_DIR = "~/.agents/docs/tool-docs";
 const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
+const DEFAULT_DISTILL_CONFIG_PATH = "~/.agents/tool-docs/distill-config.yaml";
 
 const GENERATED_MARKER = "generated-from: agent-tool-docs";
+
+/**
+ * Configuration for the distillation prompt template.
+ *
+ * All fields are optional — defaults match the tuned values from prompt engineering.
+ * Create ~/.agents/tool-docs/distill-config.yaml to override without touching source code.
+ *
+ * Example distill-config.yaml:
+ *
+ *   # Tighter size budget — forces more aggressive compression
+ *   sizeLimits:
+ *     skill: 1500
+ *     troubleshooting: 800
+ *
+ *   # Add a custom priority that front-loads safety-relevant flags
+ *   priorities:
+ *     - "**Most-used flags/commands first** — the 20% of flags that cover 80% of real-world use"
+ *     - "**Safety flags** — flags that prevent data loss or destructive side effects"
+ *     - "**Real-world usage patterns** over exhaustive flag lists"
+ *     - "**Agent-specific gotchas** — quoting pitfalls, escaping issues, common errors"
+ *     - "**Concrete runnable examples** over abstract descriptions"
+ *
+ *   # Append project-level guidance to every distillation prompt
+ *   extraInstructions: |
+ *     This documentation set is used by agents running inside CI pipelines.
+ *     Prefer non-interactive flags and machine-readable output formats.
+ */
+export type DistillPromptConfig = {
+  /**
+   * Per-file byte limits used in both the LLM prompt and post-generation size checks.
+   * Lower values force more aggressive compression from the LLM.
+   * Defaults: skill=2000, advanced=2000, recipes=2000, troubleshooting=1000.
+   */
+  sizeLimits?: {
+    skill?: number;
+    advanced?: number;
+    recipes?: number;
+    troubleshooting?: number;
+  };
+  /**
+   * Prioritization rules embedded in the prompt, listed in order.
+   * Each string is rendered as a numbered list item and supports markdown.
+   * Changing the order or wording shifts what the LLM emphasizes.
+   * Defaults encode the 80/20 rule: most-used patterns first, exhaustive coverage last.
+   */
+  priorities?: string[];
+  /**
+   * Additional instructions appended to the prompt before the JSON output requirement.
+   * Use this to add project-specific conventions, tool-class guidance, or audience notes
+   * without modifying the core prompt template.
+   */
+  extraInstructions?: string;
+};
+
+/** Default values used when a DistillPromptConfig field is omitted. */
+export const DEFAULT_PROMPT_CONFIG: DistillPromptConfig = {
+  sizeLimits: {
+    skill: 2000,
+    advanced: 2000,
+    recipes: 2000,
+    troubleshooting: 1000,
+  },
+  priorities: [
+    "**Most-used flags/commands first** — the 20% of flags that cover 80% of real-world use",
+    "**Real-world usage patterns** over exhaustive flag lists — show how to accomplish tasks, not just what flags exist",
+    "**Agent-specific gotchas** — quoting pitfalls, escaping issues, common errors, flags LLMs commonly misuse, output format surprises",
+    "**Concrete runnable examples** over abstract descriptions",
+  ],
+  extraInstructions: "",
+};
 
 export type DistillResult = {
   toolId: string;
@@ -18,17 +90,7 @@ export type DistillResult = {
   sizeWarnings?: string[];
 };
 
-const SIZE_LIMITS: Record<string, number> = {
-  "SKILL.md": 2000,
-  "advanced.md": 2000,
-  "recipes.md": 2000,
-  "troubleshooting.md": 1000,
-};
-
 export type LLMCaller = (rawDocs: string, toolId: string, model: string, feedback?: string) => DistilledContent;
-
-const defaultLLMCaller: LLMCaller = (rawDocs, toolId, model, feedback) =>
-  callLLM(rawDocs, toolId, model, defaultExec, feedback);
 
 export type DistillOptions = {
   toolId: string;
@@ -38,10 +100,13 @@ export type DistillOptions = {
   model: string;
   llmCaller?: LLMCaller;
   feedback?: string;
+  /** Prompt template config. When omitted, defaults from DEFAULT_PROMPT_CONFIG are used. */
+  promptConfig?: DistillPromptConfig;
 };
 
 export async function distillTool(options: DistillOptions): Promise<DistillResult> {
-  const { toolId, binary, docsDir, outDir, model, llmCaller = defaultLLMCaller, feedback } = options;
+  const { toolId, binary, docsDir, outDir, model, llmCaller, feedback, promptConfig = {} } = options;
+  const caller: LLMCaller = llmCaller ?? ((rawDocs, tid, m, fb) => callLLM(rawDocs, tid, m, defaultExec, fb, promptConfig));
 
   // Check if skill exists and was hand-written (no marker)
   const skillPath = path.join(outDir, "SKILL.md");
@@ -59,7 +124,7 @@ export async function distillTool(options: DistillOptions): Promise<DistillResul
   }
 
   // Call LLM to distill
-  const distilled = llmCaller(rawContent, toolId, model, feedback);
+  const distilled = caller(rawContent, toolId, model, feedback);
 
   // Write output files
   await ensureDir(outDir);
@@ -74,12 +139,13 @@ export async function distillTool(options: DistillOptions): Promise<DistillResul
   await writeFileEnsured(path.join(outDir, "docs", "recipes.md"), distilled.recipes);
   await writeFileEnsured(path.join(outDir, "docs", "troubleshooting.md"), distilled.troubleshooting);
 
+  const sizeLimits = resolveSizeLimits(promptConfig);
   const sizeWarnings = checkSizeLimits({
     "SKILL.md": skillMd,
     "advanced.md": distilled.advanced,
     "recipes.md": distilled.recipes,
     "troubleshooting.md": distilled.troubleshooting,
-  });
+  }, sizeLimits);
 
   return { toolId, outDir, ...(sizeWarnings.length > 0 ? { sizeWarnings } : {}) };
 }
@@ -114,10 +180,21 @@ type DistilledContent = {
   troubleshooting: string;
 };
 
-function checkSizeLimits(files: Record<string, string>): string[] {
+function resolveSizeLimits(config: DistillPromptConfig): Record<string, number> {
+  const defaults = DEFAULT_PROMPT_CONFIG.sizeLimits!;
+  const overrides = config.sizeLimits ?? {};
+  return {
+    "SKILL.md": overrides.skill ?? defaults.skill!,
+    "advanced.md": overrides.advanced ?? defaults.advanced!,
+    "recipes.md": overrides.recipes ?? defaults.recipes!,
+    "troubleshooting.md": overrides.troubleshooting ?? defaults.troubleshooting!,
+  };
+}
+
+function checkSizeLimits(files: Record<string, string>, limits: Record<string, number>): string[] {
   const warnings: string[] = [];
   for (const [name, content] of Object.entries(files)) {
-    const limit = SIZE_LIMITS[name];
+    const limit = limits[name];
     if (limit === undefined) continue;
     const size = new TextEncoder().encode(content).length;
     if (size > limit) {
@@ -127,7 +204,24 @@ function checkSizeLimits(files: Record<string, string>): string[] {
   return warnings;
 }
 
-function buildPrompt(rawDocs: string, toolId: string, feedback?: string): string {
+/**
+ * Build the distillation prompt from raw docs and a (possibly partial) config.
+ *
+ * The prompt has three configurable sections via DistillPromptConfig:
+ *   1. priorities     — numbered list of what to emphasize across all files
+ *   2. sizeLimits     — per-file byte budgets stated in the prompt and enforced post-gen
+ *   3. extraInstructions — appended before the JSON output requirement
+ *
+ * All other sections (output format specs, JSON key list, feedback injection) are fixed
+ * structural elements of the prompt and are not exposed for customization.
+ */
+export function buildPrompt(rawDocs: string, toolId: string, feedback?: string, config: DistillPromptConfig = {}): string {
+  const sl = resolveSizeLimits(config);
+  const priorities = config.priorities ?? DEFAULT_PROMPT_CONFIG.priorities!;
+  const extraInstructions = config.extraInstructions ?? "";
+
+  const priorityList = priorities.map((p, i) => `${i + 1}. ${p}`).join("\n");
+
   return `You are an agent documentation specialist. Your task is to distill raw CLI documentation into lean, agent-optimized skill files.
 
 ## Raw Documentation for: ${toolId}
@@ -141,16 +235,13 @@ ${rawDocs}
 Produce 4 documentation files in JSON format. **SKILL.md is the most important file** — agents read it first on 90% of requests. When in doubt, put essential information in SKILL.md.
 
 Prioritize across all files:
-1. **Most-used flags/commands first** — the 20% of flags that cover 80% of real-world use
-2. **Real-world usage patterns** over exhaustive flag lists — show how to accomplish tasks, not just what flags exist
-3. **Agent-specific gotchas** — quoting pitfalls, escaping issues, common errors, flags LLMs commonly misuse, output format surprises
-4. **Concrete runnable examples** over abstract descriptions
+${priorityList}
 
 Per-file size targets (strict — return less content rather than exceed these):
-- "skill": ≤ 2000 bytes — the essential quick reference every agent needs
-- "advanced": ≤ 2000 bytes — power-user flags and edge cases
-- "recipes": ≤ 2000 bytes — task-oriented examples
-- "troubleshooting": ≤ 1000 bytes — known gotchas and common LLM mistakes
+- "skill": ≤ ${sl["SKILL.md"]} bytes — the essential quick reference every agent needs
+- "advanced": ≤ ${sl["advanced.md"]} bytes — power-user flags and edge cases
+- "recipes": ≤ ${sl["recipes.md"]} bytes — task-oriented examples
+- "troubleshooting": ≤ ${sl["troubleshooting.md"]} bytes — known gotchas and common LLM mistakes
 
 **IMPORTANT: Always return valid JSON, even if the raw docs are sparse or show warnings like "No commands detected."** If the raw docs are incomplete, use your general knowledge of the tool to produce useful documentation. Do not explain the issue in prose — just return the JSON.
 
@@ -216,7 +307,7 @@ docs/troubleshooting.md format:
 
 Keep each file ruthlessly concise. No padding, no exhaustive lists. Respect the per-file byte limits. SKILL.md is the most important — agents rely on it first.
 
-Return ONLY valid JSON, no markdown fences around the JSON itself.${
+Return ONLY valid JSON, no markdown fences around the JSON itself.${extraInstructions ? `\n\n${extraInstructions}` : ""}${
     feedback
       ? `\n\n---\n\n## Validation Feedback\n\nA previous version of this skill was tested by AI agents and received a failing score. Please address these issues:\n\n${feedback}\n\nFix the above gaps in your new distillation.`
       : ""
@@ -244,9 +335,10 @@ export function callLLM(
   toolId: string,
   model: string,
   exec: ExecFn = defaultExec,
-  feedback?: string
+  feedback?: string,
+  promptConfig?: DistillPromptConfig
 ): DistilledContent {
-  const prompt = buildPrompt(rawDocs, toolId, feedback);
+  const prompt = buildPrompt(rawDocs, toolId, feedback, promptConfig);
 
   const result = exec("claude", ["-p", "--output-format", "text", "--model", model, "--no-session-persistence"], {
     input: prompt,
@@ -336,4 +428,56 @@ function addMetadataHeader(
   return lines.join("\n") + skillContent;
 }
 
-export { DEFAULT_SKILLS_DIR, DEFAULT_DOCS_DIR, DEFAULT_MODEL };
+/**
+ * Load a DistillPromptConfig from a YAML file.
+ *
+ * Returns an empty object (all defaults) if the file doesn't exist or is unparseable —
+ * config is optional and the pipeline works fine without it.
+ *
+ * Recognized fields: sizeLimits (skill/advanced/recipes/troubleshooting), priorities, extraInstructions.
+ * Unknown fields are silently ignored.
+ */
+export async function loadDistillConfig(configPath?: string): Promise<DistillPromptConfig> {
+  const resolved = expandHome(configPath ?? DEFAULT_DISTILL_CONFIG_PATH);
+  let raw: string;
+  try {
+    raw = await readFile(resolved, "utf8");
+  } catch {
+    return {}; // Config file is optional
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = YAML.parse(raw);
+  } catch {
+    return {}; // Unparseable config falls back to defaults
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+  return extractDistillConfig(parsed as Record<string, unknown>);
+}
+
+function extractDistillConfig(raw: Record<string, unknown>): DistillPromptConfig {
+  const config: DistillPromptConfig = {};
+
+  if (raw.sizeLimits && typeof raw.sizeLimits === "object" && !Array.isArray(raw.sizeLimits)) {
+    const sl = raw.sizeLimits as Record<string, unknown>;
+    const sizeLimits: DistillPromptConfig["sizeLimits"] = {};
+    for (const key of ["skill", "advanced", "recipes", "troubleshooting"] as const) {
+      if (typeof sl[key] === "number") sizeLimits[key] = sl[key] as number;
+    }
+    config.sizeLimits = sizeLimits;
+  }
+
+  if (Array.isArray(raw.priorities) && raw.priorities.every((p) => typeof p === "string")) {
+    config.priorities = raw.priorities as string[];
+  }
+
+  if (typeof raw.extraInstructions === "string") {
+    config.extraInstructions = raw.extraInstructions;
+  }
+
+  return config;
+}
+
+export { DEFAULT_SKILLS_DIR, DEFAULT_DOCS_DIR, DEFAULT_MODEL, DEFAULT_DISTILL_CONFIG_PATH };

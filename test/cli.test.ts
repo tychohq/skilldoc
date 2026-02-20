@@ -225,3 +225,30 @@ describe("handleAutoRedist", () => {
     ).resolves.toBeUndefined();
   });
 });
+
+describe("parseFlags --distill-config", () => {
+  it("returns the specified path when --distill-config is provided", () => {
+    const flags = parseFlags(["--distill-config", "/tmp/my-distill-config.yaml"]);
+    expect(flags["distill-config"]).toBe("/tmp/my-distill-config.yaml");
+  });
+
+  it("returns undefined for distill-config when not provided", () => {
+    const flags = parseFlags(["--model", "claude-haiku-4-5-20251001"]);
+    expect(flags["distill-config"]).toBeUndefined();
+  });
+
+  it("throws when --distill-config has no value", () => {
+    expect(() => parseFlags(["--distill-config"])).toThrow("Missing value for --distill-config");
+  });
+
+  it("throws when --distill-config value looks like another flag", () => {
+    expect(() => parseFlags(["--distill-config", "--model"])).toThrow("Missing value for --distill-config");
+  });
+
+  it("parses --distill-config alongside other flags", () => {
+    const flags = parseFlags(["--distill-config", "/tmp/cfg.yaml", "--model", "claude-haiku-4-5-20251001", "--only", "rg"]);
+    expect(flags["distill-config"]).toBe("/tmp/cfg.yaml");
+    expect(flags.model).toBe("claude-haiku-4-5-20251001");
+    expect(flags.only).toBe("rg");
+  });
+});
