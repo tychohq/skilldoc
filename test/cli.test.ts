@@ -1498,10 +1498,8 @@ describe("generateCommandDocs - recursive subcommand detection", () => {
     expect(existsSync(remoteDir)).toBe(true);
     expect(existsSync(path.join(remoteDir, "command.json"))).toBe(true);
 
-    const subCommandsDir = path.join(remoteDir, "subcommands");
-    expect(existsSync(subCommandsDir)).toBe(true);
-    expect(existsSync(path.join(subCommandsDir, "add", "command.json"))).toBe(true);
-    expect(existsSync(path.join(subCommandsDir, "remove", "command.json"))).toBe(true);
+    expect(existsSync(path.join(remoteDir, "add", "command.json"))).toBe(true);
+    expect(existsSync(path.join(remoteDir, "remove", "command.json"))).toBe(true);
   });
 
   it("parent command doc has subcommands field with docPaths", async () => {
@@ -1524,7 +1522,7 @@ describe("generateCommandDocs - recursive subcommand detection", () => {
     expect(doc.subcommands).toBeDefined();
     expect(doc.subcommands).toHaveLength(1);
     expect(doc.subcommands[0].name).toBe("add");
-    expect(doc.subcommands[0].docPath).toBe("subcommands/add/command.md");
+    expect(doc.subcommands[0].docPath).toBe("add/command.md");
   });
 
   it("subcommand doc has full command path in command field", async () => {
@@ -1544,7 +1542,7 @@ describe("generateCommandDocs - recursive subcommand detection", () => {
     );
 
     const subDoc = JSON.parse(readFileSync(
-      path.join(toolDir, "commands", "remote", "subcommands", "add", "command.json"),
+      path.join(toolDir, "commands", "remote", "add", "command.json"),
       "utf8"
     ));
     expect(subDoc.command).toBe("remote add");
@@ -1613,7 +1611,7 @@ describe("generateCommandDocs - recursive subcommand detection", () => {
 
     // Check sub-subcommand doc exists
     const subSubDir = path.join(
-      toolDir, "commands", "remote", "subcommands", "add", "subcommands", "branch"
+      toolDir, "commands", "remote", "add", "branch"
     );
     expect(existsSync(path.join(subSubDir, "command.json"))).toBe(true);
 

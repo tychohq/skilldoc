@@ -8992,7 +8992,7 @@ async function generateOneCommandDoc(toolId, binary, command, helpArgs, commands
   }
   const subcommands = parsed.commands.length > 0 ? parsed.commands.map((sc) => ({
     ...sc,
-    docPath: `subcommands/${slugify(sc.name)}/command.md`
+    docPath: `${slugify(sc.name)}/command.md`
   })) : undefined;
   const doc = {
     kind: "command",
@@ -9016,11 +9016,9 @@ async function generateOneCommandDoc(toolId, binary, command, helpArgs, commands
   await writeFileEnsured(path3.join(commandDir, "command.yaml"), import_yaml3.default.stringify(doc));
   await writeFileEnsured(path3.join(commandDir, "command.md"), renderCommandMarkdown(doc));
   if (depth < MAX_SUBCOMMAND_DEPTH && parsed.commands.length > 0) {
-    const subCommandsDir = path3.join(commandDir, "subcommands");
-    await ensureDir(subCommandsDir);
     for (const subCmd of parsed.commands) {
       const subArgs = [...cmdPath, subCmd.name, "--help"];
-      await generateOneCommandDoc(toolId, binary, subCmd, subArgs, subCommandsDir, [...cmdPath, subCmd.name], depth + 1, runFn);
+      await generateOneCommandDoc(toolId, binary, subCmd, subArgs, commandDir, [...cmdPath, subCmd.name], depth + 1, runFn);
     }
   }
 }

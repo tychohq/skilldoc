@@ -688,7 +688,7 @@ async function generateOneCommandDoc(
     parsed.commands.length > 0
       ? parsed.commands.map((sc) => ({
           ...sc,
-          docPath: `subcommands/${slugify(sc.name)}/command.md`,
+          docPath: `${slugify(sc.name)}/command.md`,
         }))
       : undefined;
 
@@ -716,8 +716,6 @@ async function generateOneCommandDoc(
   await writeFileEnsured(path.join(commandDir, "command.md"), renderCommandMarkdown(doc));
 
   if (depth < MAX_SUBCOMMAND_DEPTH && parsed.commands.length > 0) {
-    const subCommandsDir = path.join(commandDir, "subcommands");
-    await ensureDir(subCommandsDir);
     for (const subCmd of parsed.commands) {
       const subArgs = [...cmdPath, subCmd.name, "--help"];
       await generateOneCommandDoc(
@@ -725,7 +723,7 @@ async function generateOneCommandDoc(
         binary,
         subCmd,
         subArgs,
-        subCommandsDir,
+        commandDir,
         [...cmdPath, subCmd.name],
         depth + 1,
         runFn
