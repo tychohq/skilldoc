@@ -687,6 +687,42 @@ describe("distillTool - full flow", () => {
     expect(result.sizeWarnings).toBeUndefined();
   });
 
+  it("does not warn when advanced.md is exactly at the 500-token byte threshold", async () => {
+    const docsDir = setupDocs("mytool");
+    const outDir = path.join(tmpDir, "skills", "mytool");
+
+    const mockLLM: LLMCaller = () => ({
+      description: "d",
+      skill: "# mytool",
+      advanced: "x".repeat(2000), // 2000 bytes => 500 estimated tokens
+      recipes: "rec",
+      troubleshooting: "trbl",
+    });
+
+    const result = await distillTool({ toolId: "mytool", binary: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
+
+    expect(result.sizeWarnings).toBeUndefined();
+  });
+
+  it("uses UTF-8 byte length for token estimates in size warnings", async () => {
+    const docsDir = setupDocs("mytool");
+    const outDir = path.join(tmpDir, "skills", "mytool");
+
+    const mockLLM: LLMCaller = () => ({
+      description: "d",
+      skill: "# mytool",
+      advanced: "\u{1F600}".repeat(501), // 2004 bytes => 501 estimated tokens
+      recipes: "rec",
+      troubleshooting: "trbl",
+    });
+
+    const result = await distillTool({ toolId: "mytool", binary: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
+
+    expect(result.sizeWarnings).toBeDefined();
+    expect(result.sizeWarnings?.some((w) => w.includes("advanced.md"))).toBe(true);
+    expect(result.sizeWarnings?.some((w) => w.includes("501 tokens"))).toBe(true);
+  });
+
   it("returns sizeWarnings when SKILL.md exceeds 1000 tokens", async () => {
     const docsDir = setupDocs("mytool");
     const outDir = path.join(tmpDir, "skills", "mytool");
@@ -808,6 +844,8 @@ describe("buildPrompt — config customization", () => {
     expect(prompt).toContain("≤ 1000 tokens");
     expect(prompt).toContain("≤ 500 tokens");
     expect(prompt).toContain("≤ 250 tokens");
+    expect(prompt).toContain("per-file token limits");
+    expect(prompt).not.toContain("per-file byte limits");
   });
 
   it("uses custom size limits from config", () => {
@@ -1126,6 +1164,13 @@ describe("DEFAULT_PROMPT_CONFIG", () => {
     expect(DEFAULT_PROMPT_CONFIG.sizeLimits?.advanced).toBe(500);
     expect(DEFAULT_PROMPT_CONFIG.sizeLimits?.recipes).toBe(500);
     expect(DEFAULT_PROMPT_CONFIG.sizeLimits?.troubleshooting).toBe(250);
+  });
+
+  it("uses token-based defaults instead of legacy byte limits", () => {
+    expect(DEFAULT_PROMPT_CONFIG.sizeLimits?.skill).not.toBe(4000);
+    expect(DEFAULT_PROMPT_CONFIG.sizeLimits?.advanced).not.toBe(2000);
+    expect(DEFAULT_PROMPT_CONFIG.sizeLimits?.recipes).not.toBe(2000);
+    expect(DEFAULT_PROMPT_CONFIG.sizeLimits?.troubleshooting).not.toBe(1000);
   });
 
   it("has 6 default priorities", () => {

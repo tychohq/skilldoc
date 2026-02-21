@@ -24,9 +24,9 @@ When `commandHelpArgs` is not specified in the registry (or when running in ad-h
 
 LLMs understand tokens better than bytes, and tokens are what actually matter for context budgets.
 
-- [ ] Change `sizeLimits` in `DistillPromptConfig` from bytes to tokens: `skill: 1000`, `advanced: 500`, `recipes: 500`, `troubleshooting: 250`
-- [ ] Update `DEFAULT_PROMPT_CONFIG` with token-based defaults
-- [ ] Update `buildPrompt()` to say "≤ 1000 tokens" instead of "≤ 4000 bytes"
+- [x] Change `sizeLimits` in `DistillPromptConfig` from bytes to tokens: `skill: 1000`, `advanced: 500`, `recipes: 500`, `troubleshooting: 250`
+- [x] Update `DEFAULT_PROMPT_CONFIG` with token-based defaults
+- [x] Update `buildPrompt()` to say "≤ 1000 tokens" instead of "≤ 4000 bytes"
 - [ ] Update `checkSizeLimits()` to estimate tokens instead of counting bytes. Use the heuristic: `tokens ≈ bytes / 4` (good enough for English text/markdown)
 - [ ] Update size warning messages to say "tokens" instead of "bytes"
 - [ ] Update all tests that reference byte limits to use token limits

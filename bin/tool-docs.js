@@ -7705,13 +7705,15 @@ var DEFAULT_MODEL = "claude-haiku-4-5-20251001";
 var DEFAULT_DISTILL_CONFIG_PATH = "~/.agents/tool-docs/distill-config.yaml";
 var GENERATED_MARKER = "generated-from: agent-tool-docs";
 var INSUFFICIENT_DOCS_SENTINEL = "Insufficient raw docs — re-run generate after fixing parser";
+var DEFAULT_SIZE_LIMITS_TOKENS = {
+  skill: 1000,
+  advanced: 500,
+  recipes: 500,
+  troubleshooting: 250
+};
+var TOKEN_ESTIMATE_BYTES_PER_TOKEN = 4;
 var DEFAULT_PROMPT_CONFIG = {
-  sizeLimits: {
-    skill: 1000,
-    advanced: 500,
-    recipes: 500,
-    troubleshooting: 250
-  },
+  sizeLimits: DEFAULT_SIZE_LIMITS_TOKENS,
   priorities: [
     "**Most-used flags/commands first** — the 20% of flags that cover 80% of real-world use",
     "**Behavior-changing flags** — flags that significantly alter a command's behavior (like `--skip-deploys`, `--dry-run`, `--force`) should appear alongside their commands, not buried in a separate flags section",
@@ -7814,7 +7816,7 @@ function checkSizeLimits(files, limits) {
   return warnings;
 }
 function estimateTokenCount(content) {
-  return Math.ceil(new TextEncoder().encode(content).length / 4);
+  return Math.ceil(new TextEncoder().encode(content).length / TOKEN_ESTIMATE_BYTES_PER_TOKEN);
 }
 function buildPrompt(rawDocs, toolId, feedback, config = {}) {
   const sl = resolveSizeLimits(config);
@@ -7916,7 +7918,7 @@ docs/troubleshooting.md format:
 <things AI agents typically get wrong — wrong flags, quoting issues, incorrect assumptions>
 \`\`\`
 
-Keep each file ruthlessly concise. No padding, no exhaustive lists. Respect the per-file byte limits. SKILL.md is the most important — agents rely on it first.
+Keep each file ruthlessly concise. No padding, no exhaustive lists. Respect the per-file token limits. SKILL.md is the most important — agents rely on it first.
 
 Return ONLY valid JSON, no markdown fences around the JSON itself.${extraInstructions ? `
 

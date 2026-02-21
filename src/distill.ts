@@ -72,14 +72,17 @@ export type DistillPromptConfig = {
   extraInstructions?: string;
 };
 
+const DEFAULT_SIZE_LIMITS_TOKENS: NonNullable<DistillPromptConfig["sizeLimits"]> = {
+  skill: 1000,
+  advanced: 500,
+  recipes: 500,
+  troubleshooting: 250,
+};
+const TOKEN_ESTIMATE_BYTES_PER_TOKEN = 4;
+
 /** Default values used when a DistillPromptConfig field is omitted. */
 export const DEFAULT_PROMPT_CONFIG: DistillPromptConfig = {
-  sizeLimits: {
-    skill: 1000,
-    advanced: 500,
-    recipes: 500,
-    troubleshooting: 250,
-  },
+  sizeLimits: DEFAULT_SIZE_LIMITS_TOKENS,
   priorities: [
     "**Most-used flags/commands first** — the 20% of flags that cover 80% of real-world use",
     "**Behavior-changing flags** — flags that significantly alter a command's behavior (like `--skip-deploys`, `--dry-run`, `--force`) should appear alongside their commands, not buried in a separate flags section",
@@ -239,8 +242,8 @@ function checkSizeLimits(files: Record<string, string>, limits: Record<string, n
 }
 
 function estimateTokenCount(content: string): number {
-  // Approximate LLM token count from UTF-8 bytes (about 4 bytes per token).
-  return Math.ceil(new TextEncoder().encode(content).length / 4);
+  // Approximate LLM token count from UTF-8 bytes: tokens ~= bytes / 4.
+  return Math.ceil(new TextEncoder().encode(content).length / TOKEN_ESTIMATE_BYTES_PER_TOKEN);
 }
 
 /**
@@ -355,7 +358,7 @@ docs/troubleshooting.md format:
 <things AI agents typically get wrong — wrong flags, quoting issues, incorrect assumptions>
 \`\`\`
 
-Keep each file ruthlessly concise. No padding, no exhaustive lists. Respect the per-file byte limits. SKILL.md is the most important — agents rely on it first.
+Keep each file ruthlessly concise. No padding, no exhaustive lists. Respect the per-file token limits. SKILL.md is the most important — agents rely on it first.
 
 Return ONLY valid JSON, no markdown fences around the JSON itself.${extraInstructions ? `\n\n${extraInstructions}` : ""}${
     feedback
