@@ -866,7 +866,7 @@ describe("handleDistill with tool-id", () => {
     const mockDistill = async (opts: DistillOptions): Promise<DistillResult> => ({
       toolId: opts.toolId,
       outDir: opts.outDir,
-      sizeWarnings: ["SKILL.md is 2500 bytes (limit: 2000 bytes)"],
+      sizeWarnings: ["SKILL.md is 4500 bytes (limit: 4000 bytes)"],
     });
 
     let consoleOutput = "";

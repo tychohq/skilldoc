@@ -818,7 +818,7 @@ describe("buildPrompt — config customization", () => {
     expect(prompt).toContain("≤ 750 bytes");
     // skill line uses override; advanced/recipes still use default
     expect(prompt).toContain('"skill": ≤ 1500 bytes');
-    expect(prompt).not.toContain('"skill": ≤ 2000 bytes');
+    expect(prompt).not.toContain('"skill": ≤ 4000 bytes');
     expect(prompt).toContain('"troubleshooting": ≤ 750 bytes');
     expect(prompt).not.toContain('"troubleshooting": ≤ 1000 bytes');
   });
