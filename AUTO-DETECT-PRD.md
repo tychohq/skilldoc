@@ -31,7 +31,7 @@ LLMs understand tokens better than bytes, and tokens are what actually matter fo
 - [x] Update size warning messages to say "tokens" instead of "bytes"
 - [x] Update all tests that reference byte limits to use token limits
 - [x] Update `distill-config.yaml` docs/comments in `distill.ts` to reference tokens
-- [ ] For the `complexity` field: `simple` tools get 500 token skill limit, `complex` tools get 1000 tokens
+- [x] For the `complexity` field: `simple` tools get 500 token skill limit, `complex` tools get 1000 tokens
 
 ## Non-Goals
 - Implementing a real tokenizer (tiktoken etc.) — the bytes/4 heuristic is accurate enough
