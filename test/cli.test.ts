@@ -1754,3 +1754,185 @@ describe("generateCommandDocs - recursive subcommand detection", () => {
     expect(capturedCalls.length).toBe(5);
   });
 });
+
+describe("generateCommandDocs - 2-level nested subcommand docs", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), `nested2-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  type RunFnResult = { output: string; exitCode: number | null };
+
+  function makeRunFn(responses: Record<string, string>): (binary: string, args: string[]) => RunFnResult {
+    return (_binary, args) => ({
+      output: responses[args.join(" ")] ?? "",
+      exitCode: 0,
+    });
+  }
+
+  it("creates command.json, command.yaml, and command.md for both depth-1 and depth-2 subcommands", async () => {
+    const toolDir = path.join(tmpDir, "mytool");
+    mkdirSync(toolDir, { recursive: true });
+
+    const runFn = makeRunFn({
+      "--help remote": "Commands:\n  add     Add a remote\n  remove  Remove a remote\n",
+      "remote add --help": "Usage: mytool remote add <name> <url>\n",
+      "remote remove --help": "Usage: mytool remote remove <name>\n",
+    });
+
+    await generateCommandDocs(
+      "mytool", "mytool-bin",
+      ["--help", "{command}"],
+      [{ name: "remote", summary: "Manage remotes" }],
+      toolDir, runFn
+    );
+
+    const remoteDir = path.join(toolDir, "commands", "remote");
+    expect(existsSync(path.join(remoteDir, "command.json"))).toBe(true);
+    expect(existsSync(path.join(remoteDir, "command.yaml"))).toBe(true);
+    expect(existsSync(path.join(remoteDir, "command.md"))).toBe(true);
+
+    const addDir = path.join(remoteDir, "add");
+    expect(existsSync(path.join(addDir, "command.json"))).toBe(true);
+    expect(existsSync(path.join(addDir, "command.yaml"))).toBe(true);
+    expect(existsSync(path.join(addDir, "command.md"))).toBe(true);
+
+    const removeDir = path.join(remoteDir, "remove");
+    expect(existsSync(path.join(removeDir, "command.json"))).toBe(true);
+    expect(existsSync(path.join(removeDir, "command.yaml"))).toBe(true);
+    expect(existsSync(path.join(removeDir, "command.md"))).toBe(true);
+  });
+
+  it("depth-1 command doc lists both depth-2 subcommands with correct docPaths", async () => {
+    const toolDir = path.join(tmpDir, "mytool");
+    mkdirSync(toolDir, { recursive: true });
+
+    const runFn = makeRunFn({
+      "--help remote": "Commands:\n  add     Add a remote\n  remove  Remove a remote\n",
+      "remote add --help": "Usage: mytool remote add <name>\n",
+      "remote remove --help": "Usage: mytool remote remove <name>\n",
+    });
+
+    await generateCommandDocs(
+      "mytool", "mytool-bin",
+      ["--help", "{command}"],
+      [{ name: "remote", summary: "Manage remotes" }],
+      toolDir, runFn
+    );
+
+    const remoteDoc = JSON.parse(
+      readFileSync(path.join(toolDir, "commands", "remote", "command.json"), "utf8")
+    );
+    expect(remoteDoc.subcommands).toHaveLength(2);
+
+    const names = remoteDoc.subcommands.map((s: { name: string }) => s.name);
+    expect(names).toContain("add");
+    expect(names).toContain("remove");
+
+    const addEntry = remoteDoc.subcommands.find((s: { name: string }) => s.name === "add");
+    expect(addEntry.docPath).toBe("add/command.md");
+    const removeEntry = remoteDoc.subcommands.find((s: { name: string }) => s.name === "remove");
+    expect(removeEntry.docPath).toBe("remove/command.md");
+  });
+
+  it("depth-2 command docs have the full 2-word command path", async () => {
+    const toolDir = path.join(tmpDir, "mytool");
+    mkdirSync(toolDir, { recursive: true });
+
+    const runFn = makeRunFn({
+      "--help remote": "Commands:\n  add  Add a remote\n  remove  Remove a remote\n",
+      "remote add --help": "Usage: mytool remote add\n",
+      "remote remove --help": "Usage: mytool remote remove\n",
+    });
+
+    await generateCommandDocs(
+      "mytool", "mytool-bin",
+      ["--help", "{command}"],
+      [{ name: "remote", summary: "Manage remotes" }],
+      toolDir, runFn
+    );
+
+    const addDoc = JSON.parse(
+      readFileSync(path.join(toolDir, "commands", "remote", "add", "command.json"), "utf8")
+    );
+    expect(addDoc.command).toBe("remote add");
+
+    const removeDoc = JSON.parse(
+      readFileSync(path.join(toolDir, "commands", "remote", "remove", "command.json"), "utf8")
+    );
+    expect(removeDoc.command).toBe("remote remove");
+  });
+
+  it("depth-2 command docs have no subcommands field when they are leaf commands", async () => {
+    const toolDir = path.join(tmpDir, "mytool");
+    mkdirSync(toolDir, { recursive: true });
+
+    const runFn = makeRunFn({
+      "--help remote": "Commands:\n  add  Add a remote\n",
+      "remote add --help": "Usage: mytool remote add <name>\n",
+    });
+
+    await generateCommandDocs(
+      "mytool", "mytool-bin",
+      ["--help", "{command}"],
+      [{ name: "remote", summary: "Manage remotes" }],
+      toolDir, runFn
+    );
+
+    const addDoc = JSON.parse(
+      readFileSync(path.join(toolDir, "commands", "remote", "add", "command.json"), "utf8")
+    );
+    expect(addDoc.subcommands).toBeUndefined();
+  });
+
+  it("depth-2 command docs record correct toolId, binary, and kind", async () => {
+    const toolDir = path.join(tmpDir, "gh");
+    mkdirSync(toolDir, { recursive: true });
+
+    const runFn = makeRunFn({
+      "--help auth": "Commands:\n  login  Log in\n",
+      "auth login --help": "Usage: gh auth login\n",
+    });
+
+    await generateCommandDocs(
+      "gh", "gh",
+      ["--help", "{command}"],
+      [{ name: "auth", summary: "Authenticate" }],
+      toolDir, runFn
+    );
+
+    const loginDoc = JSON.parse(
+      readFileSync(path.join(toolDir, "commands", "auth", "login", "command.json"), "utf8")
+    );
+    expect(loginDoc.kind).toBe("command");
+    expect(loginDoc.toolId).toBe("gh");
+    expect(loginDoc.binary).toBe("gh");
+  });
+
+  it("depth-2 command.md is non-empty and contains the command path", async () => {
+    const toolDir = path.join(tmpDir, "mytool");
+    mkdirSync(toolDir, { recursive: true });
+
+    const runFn = makeRunFn({
+      "--help remote": "Commands:\n  add  Add a remote\n",
+      "remote add --help": "Usage: mytool remote add <name> <url>\n  -v, --verbose  Verbose output\n",
+    });
+
+    await generateCommandDocs(
+      "mytool", "mytool-bin",
+      ["--help", "{command}"],
+      [{ name: "remote", summary: "Manage remotes" }],
+      toolDir, runFn
+    );
+
+    const md = readFileSync(path.join(toolDir, "commands", "remote", "add", "command.md"), "utf8");
+    expect(md.length).toBeGreaterThan(0);
+    expect(md).toContain("remote add");
+  });
+});
