@@ -656,7 +656,40 @@ export async function handleGenerate(flags: Record<string, string | boolean>, bi
 
 export const DEFAULT_MAX_DEPTH = 2;
 
-type RunFn = (binary: string, args: string[]) => { output: string; exitCode: number | null; error?: string };
+export type RunFn = (binary: string, args: string[]) => { output: string; exitCode: number | null; error?: string };
+
+const SUBCOMMAND_KEYWORD_RE = /\b(manage|control)\b/i;
+
+/**
+ * Returns true if a command summary likely indicates the command manages sub-resources.
+ * Heuristic: description contains "manage" or "control" (word-boundary, case-insensitive).
+ */
+export function hasSubcommandKeyword(summary: string): boolean {
+  return SUBCOMMAND_KEYWORD_RE.test(summary);
+}
+
+/**
+ * Identifies top-level commands that likely have subcommands.
+ * Two heuristics are applied:
+ *   1. Description contains "manage" or "control" (text check, no subprocess).
+ *   2. Running `<binary> <cmd> --help` returns output with a "Commands" section.
+ * When `binary` and `runFn` are omitted, only the text heuristic is applied.
+ */
+export function identifySubcommandCandidates(
+  commands: CommandSummary[],
+  binary?: string,
+  runFn?: RunFn
+): CommandSummary[] {
+  return commands.filter((cmd) => {
+    if (hasSubcommandKeyword(cmd.summary)) return true;
+    if (binary && runFn) {
+      const result = runFn(binary, [cmd.name, "--help"]);
+      const parsed = parseHelp(result.output);
+      return parsed.commands.length > 0;
+    }
+    return false;
+  });
+}
 
 export async function generateCommandDocs(
   toolId: string,

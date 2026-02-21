@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
-import { parseFlags, extractPositionalArgs, handleAutoRedist, handleGenerate, handleDistill, handleInit, handleRun, handleRunBatch, resolveBinary, lookupRegistryTool, generateCommandDocs, DEFAULT_MAX_DEPTH, applyComplexity, COMPLEXITY_SKILL_LIMITS, type RunDeps, type RunBatchDeps, type RunResult } from "../src/cli.js";
+import { parseFlags, extractPositionalArgs, handleAutoRedist, handleGenerate, handleDistill, handleInit, handleRun, handleRunBatch, resolveBinary, lookupRegistryTool, generateCommandDocs, DEFAULT_MAX_DEPTH, applyComplexity, COMPLEXITY_SKILL_LIMITS, hasSubcommandKeyword, identifySubcommandCandidates, type RunFn, type RunDeps, type RunBatchDeps, type RunResult } from "../src/cli.js";
 import { DEFAULT_MODEL, DEFAULT_SKILLS_DIR, DistillOptions, DistillResult } from "../src/distill.js";
 import { DEFAULT_VALIDATION_MODELS, type MultiModelValidationReport } from "../src/validate.js";
 
