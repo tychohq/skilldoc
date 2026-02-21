@@ -137,6 +137,26 @@ describe("callLLM", () => {
     expect(capturedInput).toContain("task-oriented recipes");
   });
 
+  it("prompt includes SKILL.md format spec with Critical Distinctions section", () => {
+    let capturedInput = "";
+    const exec = (_cmd: string, _args: ReadonlyArray<string>, opts: { input: string }) => {
+      capturedInput = opts.input;
+      return { stdout: validJson, stderr: "", status: 0 };
+    };
+    callLLM("docs", "tool", "model", exec);
+    expect(capturedInput).toContain("## Critical Distinctions");
+  });
+
+  it("prompt includes Critical Distinctions description about confused commands/flags", () => {
+    let capturedInput = "";
+    const exec = (_cmd: string, _args: ReadonlyArray<string>, opts: { input: string }) => {
+      capturedInput = opts.input;
+      return { stdout: validJson, stderr: "", status: 0 };
+    };
+    callLLM("docs", "tool", "model", exec);
+    expect(capturedInput).toContain("commonly confused with each other");
+  });
+
   it("prompt includes troubleshooting.md format spec with Symptom/Fix structure and LLM Mistakes", () => {
     let capturedInput = "";
     const exec = (_cmd: string, _args: ReadonlyArray<string>, opts: { input: string }) => {
@@ -798,6 +818,12 @@ describe("buildPrompt — config customization", () => {
     // extraInstructions are only included when non-empty; check no double newlines from empty string
     const withoutFeedback = prompt.split("Return ONLY valid JSON")[1] ?? "";
     expect(withoutFeedback.trimStart()).not.toMatch(/^[\n]{3,}/);
+  });
+
+  it("SKILL.md format spec includes Critical Distinctions section for confused commands/flags", () => {
+    const prompt = buildPrompt("raw docs", "tool");
+    expect(prompt).toContain("## Critical Distinctions");
+    expect(prompt).toContain("commonly confused with each other");
   });
 
   it("extraInstructions appears before validation feedback when both present", () => {

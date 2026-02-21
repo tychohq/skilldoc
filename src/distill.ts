@@ -304,6 +304,9 @@ SKILL.md format:
 
 ## Common Patterns
 <3-5 concrete examples covering the most common use cases>
+
+## Critical Distinctions
+<commands/flags commonly confused with each other — clarify the difference>
 \`\`\`
 
 docs/advanced.md format:
