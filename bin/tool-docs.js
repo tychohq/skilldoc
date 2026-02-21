@@ -8712,8 +8712,8 @@ tools:
 `));
 }
 var COMPLEXITY_SKILL_LIMITS = {
-  simple: 2000,
-  complex: 4000
+  simple: 500,
+  complex: 1000
 };
 function applyComplexity(base, complexity) {
   if (!complexity || base.sizeLimits?.skill !== undefined)

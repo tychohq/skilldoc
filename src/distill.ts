@@ -27,10 +27,10 @@ export const INSUFFICIENT_DOCS_SENTINEL = "Insufficient raw docs — re-run gene
  *
  * Example distill-config.yaml:
  *
- *   # Tighter size budget — forces more aggressive compression
+ *   # Tighter token budgets — forces more aggressive compression
  *   sizeLimits:
- *     skill: 1500
- *     troubleshooting: 800
+ *     skill: 1500          # tokens
+ *     troubleshooting: 800 # tokens
  *
  *   # Add a custom priority that front-loads safety-relevant flags
  *   priorities:
@@ -487,7 +487,7 @@ function addMetadataHeader(
  * Returns an empty object (all defaults) if the file doesn't exist or is unparseable —
  * config is optional and the pipeline works fine without it.
  *
- * Recognized fields: sizeLimits (skill/advanced/recipes/troubleshooting), priorities, extraInstructions.
+ * Recognized fields: sizeLimits (skill/advanced/recipes/troubleshooting, in tokens), priorities, extraInstructions.
  * Unknown fields are silently ignored.
  */
 export async function loadDistillConfig(configPath?: string): Promise<DistillPromptConfig> {

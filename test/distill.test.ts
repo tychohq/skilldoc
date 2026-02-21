@@ -743,6 +743,25 @@ describe("distillTool - full flow", () => {
     expect(result.sizeWarnings?.some((w) => w.includes("1000"))).toBe(true);
   });
 
+  it("formats size warnings in tokens instead of bytes", async () => {
+    const docsDir = setupDocs("mytool");
+    const outDir = path.join(tmpDir, "skills", "mytool");
+
+    const mockLLM: LLMCaller = () => ({
+      description: "d",
+      skill: "x".repeat(4001), // 4001 bytes => 1001 estimated tokens
+      advanced: "adv",
+      recipes: "rec",
+      troubleshooting: "trbl",
+    });
+
+    const result = await distillTool({ toolId: "mytool", binary: "mytool", docsDir, outDir, model: "test-model", llmCaller: mockLLM });
+
+    expect(result.sizeWarnings?.length).toBe(1);
+    expect(result.sizeWarnings?.[0]).toMatch(/^SKILL\.md is \d+ tokens \(limit: 1000 tokens\)$/);
+    expect(result.sizeWarnings?.some((w) => w.includes("bytes"))).toBe(false);
+  });
+
   it("returns sizeWarnings when troubleshooting.md exceeds 250 tokens", async () => {
     const docsDir = setupDocs("mytool");
     const outDir = path.join(tmpDir, "skills", "mytool");

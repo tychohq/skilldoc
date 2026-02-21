@@ -222,12 +222,12 @@ export async function handleInit(flags: Record<string, string | boolean>): Promi
 
 /**
  * Derive a skill token limit from a tool's complexity setting.
- * simple → 2000 tokens (single-command tools like jq, rg)
- * complex → 4000 tokens (multi-subcommand tools like gh, railway, wrangler)
+ * simple → 500 tokens (single-command tools like jq, rg)
+ * complex → 1000 tokens (multi-subcommand tools like gh, railway, wrangler)
  */
 export const COMPLEXITY_SKILL_LIMITS: Record<ToolComplexity, number> = {
-  simple: 2000,
-  complex: 4000,
+  simple: 500,
+  complex: 1000,
 };
 
 /**

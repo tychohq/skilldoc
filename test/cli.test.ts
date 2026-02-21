@@ -1126,12 +1126,12 @@ describe("bin/tool-docs.js --help (integration)", () => {
 });
 
 describe("COMPLEXITY_SKILL_LIMITS", () => {
-  it("maps simple to 2000 tokens", () => {
-    expect(COMPLEXITY_SKILL_LIMITS.simple).toBe(2000);
+  it("maps simple to 500 tokens", () => {
+    expect(COMPLEXITY_SKILL_LIMITS.simple).toBe(500);
   });
 
-  it("maps complex to 4000 tokens", () => {
-    expect(COMPLEXITY_SKILL_LIMITS.complex).toBe(4000);
+  it("maps complex to 1000 tokens", () => {
+    expect(COMPLEXITY_SKILL_LIMITS.complex).toBe(1000);
   });
 });
 
@@ -1142,20 +1142,20 @@ describe("applyComplexity", () => {
     expect(result).toBe(base);
   });
 
-  it("sets sizeLimits.skill to 2000 for simple complexity", () => {
+  it("sets sizeLimits.skill to 500 for simple complexity", () => {
     const result = applyComplexity({}, "simple");
-    expect(result.sizeLimits?.skill).toBe(2000);
+    expect(result.sizeLimits?.skill).toBe(500);
   });
 
-  it("sets sizeLimits.skill to 4000 for complex complexity", () => {
+  it("sets sizeLimits.skill to 1000 for complex complexity", () => {
     const result = applyComplexity({}, "complex");
-    expect(result.sizeLimits?.skill).toBe(4000);
+    expect(result.sizeLimits?.skill).toBe(1000);
   });
 
   it("preserves other sizeLimits fields when applying complexity", () => {
     const base = { sizeLimits: { advanced: 1500, recipes: 1200, troubleshooting: 800 } };
     const result = applyComplexity(base, "simple");
-    expect(result.sizeLimits?.skill).toBe(2000);
+    expect(result.sizeLimits?.skill).toBe(500);
     expect(result.sizeLimits?.advanced).toBe(1500);
     expect(result.sizeLimits?.recipes).toBe(1200);
     expect(result.sizeLimits?.troubleshooting).toBe(800);
@@ -1171,7 +1171,7 @@ describe("applyComplexity", () => {
   it("explicit sizeLimits.skill in base config takes priority over complexity", () => {
     const base = { sizeLimits: { skill: 3000 } };
     const result = applyComplexity(base, "simple");
-    // explicit 3000 wins over complexity-derived 2000
+    // explicit 3000 wins over complexity-derived 500
     expect(result.sizeLimits?.skill).toBe(3000);
     expect(result).toBe(base);
   });
@@ -1209,7 +1209,7 @@ describe("handleDistill — complexity integration", () => {
     return docsDir;
   }
 
-  it("passes skill limit 2000 to distillFn for simple tools", async () => {
+  it("passes skill limit 500 to distillFn for simple tools", async () => {
     const docsDir = setupRawDocs("jq");
     const regPath = setupRegistry("jq", "jq", "simple");
     const captured: DistillOptions[] = [];
@@ -1222,10 +1222,10 @@ describe("handleDistill — complexity integration", () => {
     await handleDistill({ docs: docsDir, out: path.join(tmpDir, "skills"), registry: regPath }, undefined, mockDistill);
 
     expect(captured).toHaveLength(1);
-    expect(captured[0].promptConfig?.sizeLimits?.skill).toBe(2000);
+    expect(captured[0].promptConfig?.sizeLimits?.skill).toBe(500);
   });
 
-  it("passes skill limit 4000 to distillFn for complex tools", async () => {
+  it("passes skill limit 1000 to distillFn for complex tools", async () => {
     const docsDir = setupRawDocs("gh");
     const regPath = setupRegistry("gh", "gh", "complex");
     const captured: DistillOptions[] = [];
@@ -1238,7 +1238,7 @@ describe("handleDistill — complexity integration", () => {
     await handleDistill({ docs: docsDir, out: path.join(tmpDir, "skills"), registry: regPath }, undefined, mockDistill);
 
     expect(captured).toHaveLength(1);
-    expect(captured[0].promptConfig?.sizeLimits?.skill).toBe(4000);
+    expect(captured[0].promptConfig?.sizeLimits?.skill).toBe(1000);
   });
 
   it("passes no explicit skill limit to distillFn when complexity is omitted", async () => {
