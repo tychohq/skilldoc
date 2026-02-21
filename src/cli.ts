@@ -11,8 +11,8 @@ import { parseHelp } from "./parser.js";
 import { renderCommandMarkdown, renderToolMarkdown } from "./render.js";
 import { buildUsageDoc, extractUsageTokens } from "./usage.js";
 import { expandHome, ensureDir, writeFileEnsured, readText } from "./utils.js";
-import { CommandDoc, CommandSummary, Registry, RegistryTool, ToolDoc } from "./types.js";
-import { distillTool, DEFAULT_SKILLS_DIR, DEFAULT_DOCS_DIR, DEFAULT_MODEL, DEFAULT_DISTILL_CONFIG_PATH, loadDistillConfig, DistillOptions, DistillResult } from "./distill.js";
+import { CommandDoc, CommandSummary, Registry, RegistryTool, ToolComplexity, ToolDoc } from "./types.js";
+import { distillTool, DEFAULT_SKILLS_DIR, DEFAULT_DOCS_DIR, DEFAULT_MODEL, DEFAULT_DISTILL_CONFIG_PATH, loadDistillConfig, DistillOptions, DistillResult, DistillPromptConfig } from "./distill.js";
 import {
   validateSkillMultiModel,
   formatMultiModelReport,
@@ -220,6 +220,29 @@ export async function handleInit(flags: Record<string, string | boolean>): Promi
   console.log(lines.join("\n"));
 }
 
+/**
+ * Derive a skill byte limit from a tool's complexity setting.
+ * simple → 2000 bytes (single-command tools like jq, rg)
+ * complex → 4000 bytes (multi-subcommand tools like gh, railway, wrangler)
+ */
+export const COMPLEXITY_SKILL_LIMITS: Record<ToolComplexity, number> = {
+  simple: 2000,
+  complex: 4000,
+};
+
+/**
+ * Merge a tool's complexity into a base DistillPromptConfig.
+ * If the base config already has an explicit sizeLimits.skill, it takes priority.
+ * If complexity is undefined, the base config is returned unchanged.
+ */
+export function applyComplexity(base: DistillPromptConfig, complexity?: ToolComplexity): DistillPromptConfig {
+  if (!complexity || base.sizeLimits?.skill !== undefined) return base;
+  return {
+    ...base,
+    sizeLimits: { ...base.sizeLimits, skill: COMPLEXITY_SKILL_LIMITS[complexity] },
+  };
+}
+
 export async function handleDistill(
   flags: Record<string, string | boolean>,
   toolId?: string,
@@ -236,7 +259,7 @@ export async function handleDistill(
 
   const promptConfig = await loadDistillConfig(distillConfigPath);
 
-  let tools: Array<{ id: string; binary: string }>;
+  let tools: Array<{ id: string; binary: string; complexity?: ToolComplexity }>;
 
   if (toolId) {
     // Ad-hoc mode: distill a single tool by id
@@ -265,7 +288,8 @@ export async function handleDistill(
   for (const tool of tools) {
     const outDir = path.join(outBase, tool.id);
     process.stdout.write(`distill ${tool.id}... `);
-    const result = await distillFn({ toolId: tool.id, binary: tool.binary, docsDir, outDir, model, promptConfig });
+    const toolPromptConfig = applyComplexity(promptConfig, tool.complexity);
+    const result = await distillFn({ toolId: tool.id, binary: tool.binary, docsDir, outDir, model, promptConfig: toolPromptConfig });
     if (result.skipped) {
       console.log(`skipped (${result.skipReason})`);
       skipped += 1;

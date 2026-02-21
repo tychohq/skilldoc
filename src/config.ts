@@ -46,6 +46,11 @@ function normalizeTool(tool: RegistryTool): RegistryTool {
       throw new Error(`Registry tool ${tool.id} has invalid category "${tool.category}". Must be cli, sdk, or api.`);
     }
   }
+  if (tool.complexity !== undefined) {
+    if (tool.complexity !== "simple" && tool.complexity !== "complex") {
+      throw new Error(`Registry tool ${tool.id} has invalid complexity "${tool.complexity}". Must be simple or complex.`);
+    }
+  }
   if (tool.homepage !== undefined && typeof tool.homepage !== "string") {
     throw new Error(`Registry tool ${tool.id} homepage must be a string.`);
   }

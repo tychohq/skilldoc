@@ -106,6 +106,51 @@ describe("loadRegistry — category field", () => {
   });
 });
 
+describe("loadRegistry — complexity field", () => {
+  it("accepts complexity: simple", async () => {
+    const yaml = YAML.stringify({
+      version: 1,
+      tools: [{ id: "jq", binary: "jq", complexity: "simple" }],
+    });
+    await withTmpRegistry(yaml, async (p) => {
+      const registry = await loadRegistry(p);
+      expect(registry.tools[0].complexity).toBe("simple");
+    });
+  });
+
+  it("accepts complexity: complex", async () => {
+    const yaml = YAML.stringify({
+      version: 1,
+      tools: [{ id: "gh", binary: "gh", complexity: "complex" }],
+    });
+    await withTmpRegistry(yaml, async (p) => {
+      const registry = await loadRegistry(p);
+      expect(registry.tools[0].complexity).toBe("complex");
+    });
+  });
+
+  it("allows complexity to be omitted", async () => {
+    const yaml = YAML.stringify({
+      version: 1,
+      tools: [{ id: "rg", binary: "rg" }],
+    });
+    await withTmpRegistry(yaml, async (p) => {
+      const registry = await loadRegistry(p);
+      expect(registry.tools[0].complexity).toBeUndefined();
+    });
+  });
+
+  it("throws on invalid complexity value", async () => {
+    const yaml = YAML.stringify({
+      version: 1,
+      tools: [{ id: "rg", binary: "rg", complexity: "medium" }],
+    });
+    await withTmpRegistry(yaml, async (p) => {
+      await expect(loadRegistry(p)).rejects.toThrow('invalid complexity "medium"');
+    });
+  });
+});
+
 describe("loadRegistry — homepage field", () => {
   it("accepts a homepage URL", async () => {
     const yaml = YAML.stringify({

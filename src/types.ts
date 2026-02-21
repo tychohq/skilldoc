@@ -5,6 +5,8 @@ export type Registry = {
 
 export type ToolCategory = "cli" | "sdk" | "api";
 
+export type ToolComplexity = "simple" | "complex";
+
 export type RegistryTool = {
   id: string;
   binary: string;
@@ -15,6 +17,7 @@ export type RegistryTool = {
   env?: string[];
   enabled?: boolean;
   category?: ToolCategory;
+  complexity?: ToolComplexity;
   homepage?: string;
   useCases?: string[];
   maxDepth?: number;

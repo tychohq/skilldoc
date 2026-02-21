@@ -7099,6 +7099,11 @@ function normalizeTool(tool) {
       throw new Error(`Registry tool ${tool.id} has invalid category "${tool.category}". Must be cli, sdk, or api.`);
     }
   }
+  if (tool.complexity !== undefined) {
+    if (tool.complexity !== "simple" && tool.complexity !== "complex") {
+      throw new Error(`Registry tool ${tool.id} has invalid complexity "${tool.complexity}". Must be simple or complex.`);
+    }
+  }
   if (tool.homepage !== undefined && typeof tool.homepage !== "string") {
     throw new Error(`Registry tool ${tool.id} homepage must be a string.`);
   }
@@ -8701,6 +8706,18 @@ tools:
   console.log(lines.join(`
 `));
 }
+var COMPLEXITY_SKILL_LIMITS = {
+  simple: 2000,
+  complex: 4000
+};
+function applyComplexity(base, complexity) {
+  if (!complexity || base.sizeLimits?.skill !== undefined)
+    return base;
+  return {
+    ...base,
+    sizeLimits: { ...base.sizeLimits, skill: COMPLEXITY_SKILL_LIMITS[complexity] }
+  };
+}
 async function handleDistill(flags, toolId, distillFn = distillTool) {
   const docsDir = expandHome(typeof flags.docs === "string" ? flags.docs : DEFAULT_DOCS_DIR);
   const outBase = expandHome(typeof flags.out === "string" ? flags.out : DEFAULT_SKILLS_OUT_DIR);
@@ -8726,7 +8743,8 @@ async function handleDistill(flags, toolId, distillFn = distillTool) {
   for (const tool of tools) {
     const outDir = path3.join(outBase, tool.id);
     process.stdout.write(`distill ${tool.id}... `);
-    const result = await distillFn({ toolId: tool.id, binary: tool.binary, docsDir, outDir, model, promptConfig });
+    const toolPromptConfig = applyComplexity(promptConfig, tool.complexity);
+    const result = await distillFn({ toolId: tool.id, binary: tool.binary, docsDir, outDir, model, promptConfig: toolPromptConfig });
     if (result.skipped) {
       console.log(`skipped (${result.skipReason})`);
       skipped += 1;
@@ -9210,5 +9228,7 @@ export {
   extractPositionalArgs,
   computeSkillDiff,
   computeHash,
-  DEFAULT_MAX_DEPTH
+  applyComplexity,
+  DEFAULT_MAX_DEPTH,
+  COMPLEXITY_SKILL_LIMITS
 };
