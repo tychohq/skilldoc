@@ -205,13 +205,14 @@ describe("callLLM", () => {
     expect(capturedInput).toContain("SKILL.md is the most important");
   });
 
-  it("prompt includes per-file byte limits including 1000-byte limit for troubleshooting", () => {
+  it("prompt includes per-file byte limits including 4000-byte limit for skill and 1000-byte limit for troubleshooting", () => {
     let capturedInput = "";
     const exec = (_cmd: string, _args: ReadonlyArray<string>, opts: { input: string }) => {
       capturedInput = opts.input;
       return { stdout: validJson, stderr: "", status: 0 };
     };
     callLLM("docs", "tool", "model", exec);
+    expect(capturedInput).toContain("≤ 4000 bytes");
     expect(capturedInput).toContain("≤ 2000 bytes");
     expect(capturedInput).toContain("≤ 1000 bytes");
   });
@@ -804,6 +805,7 @@ describe("buildPrompt — config customization", () => {
 
   it("uses default size limits when no config provided", () => {
     const prompt = buildPrompt("raw docs", "tool");
+    expect(prompt).toContain("≤ 4000 bytes");
     expect(prompt).toContain("≤ 2000 bytes");
     expect(prompt).toContain("≤ 1000 bytes");
   });
@@ -925,6 +927,7 @@ describe("callLLM — config forwarding", () => {
       return { stdout: validJson, stderr: "", status: 0 };
     };
     callLLM("docs", "tool", "model", exec);
+    expect(capturedInput).toContain("≤ 4000 bytes");
     expect(capturedInput).toContain("≤ 2000 bytes");
     expect(capturedInput).toContain("≤ 1000 bytes");
   });
