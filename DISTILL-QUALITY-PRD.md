@@ -43,7 +43,7 @@ The current 2KB limit forces aggressive compression that drops critical informat
 - [x] Change the default `sizeLimits.skill` from 2000 to 4000 bytes in `DEFAULT_PROMPT_CONFIG`
 - [x] Update the prompt to say "≤ 4000 bytes" for skill
 - [x] Update tests that assert on the old 2000 byte limit
-- [ ] Consider adding a `complexity` field to registry entries: `simple` (single-command tools like jq, rg) get 2KB, `complex` (multi-subcommand tools like gh, railway, wrangler) get 4KB. If implemented, pass the limit dynamically to `buildPrompt`.
+- [x] Consider adding a `complexity` field to registry entries: `simple` (single-command tools like jq, rg) get 2KB, `complex` (multi-subcommand tools like gh, railway, wrangler) get 4KB. If implemented, pass the limit dynamically to `buildPrompt`.
 
 ## Non-Goals
 - Changing the validation scoring system (already improved in previous PRD)
