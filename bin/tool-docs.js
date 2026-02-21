@@ -7688,7 +7688,7 @@ var import_yaml2 = __toESM(require_dist(), 1);
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { readFile as readFile2 } from "node:fs/promises";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 var DEFAULT_SKILLS_DIR = "~/.agents/skills";
 var DEFAULT_DOCS_DIR = "~/.agents/docs/tool-docs";
 var DEFAULT_MODEL = "claude-haiku-4-5-20251001";
@@ -7753,20 +7753,30 @@ async function gatherRawDocs(toolId, docsDir) {
   const parts = [];
   parts.push(await readFile2(toolMdPath, "utf8"));
   const commandsDir = path.join(docsDir, toolId, "commands");
-  if (existsSync(commandsDir)) {
-    const commandDirs = readdirSync(commandsDir);
-    for (const cmdDir of commandDirs.sort()) {
-      const cmdMd = path.join(commandsDir, cmdDir, "command.md");
-      if (existsSync(cmdMd)) {
-        parts.push(await readFile2(cmdMd, "utf8"));
-      }
-    }
-  }
+  const commandParts = await gatherCommandDocs(commandsDir);
+  parts.push(...commandParts);
   return parts.join(`
 
 ---
 
 `);
+}
+async function gatherCommandDocs(dir) {
+  const parts = [];
+  if (!existsSync(dir))
+    return parts;
+  const entries = readdirSync(dir);
+  const subdirs = entries.filter((name) => statSync(path.join(dir, name)).isDirectory()).sort();
+  for (const name of subdirs) {
+    const subDir = path.join(dir, name);
+    const cmdMd = path.join(subDir, "command.md");
+    if (existsSync(cmdMd)) {
+      parts.push(await readFile2(cmdMd, "utf8"));
+    }
+    const nested = await gatherCommandDocs(subDir);
+    parts.push(...nested);
+  }
+  return parts;
 }
 function resolveSizeLimits(config) {
   const defaults = DEFAULT_PROMPT_CONFIG.sizeLimits;

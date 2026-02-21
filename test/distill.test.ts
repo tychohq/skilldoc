@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from "bun:test";
 import path from "node:path";
 import { mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from "node:fs";
 import os from "node:os";
-import { parseDistilledOutput, callLLM, distillTool, detectVersion, loadDistillConfig, buildPrompt, DEFAULT_PROMPT_CONFIG, LLMCaller, INSUFFICIENT_DOCS_SENTINEL } from "../src/distill.js";
+import { parseDistilledOutput, callLLM, distillTool, detectVersion, loadDistillConfig, buildPrompt, DEFAULT_PROMPT_CONFIG, LLMCaller, INSUFFICIENT_DOCS_SENTINEL, gatherRawDocs } from "../src/distill.js";
 
 // Minimal valid LLM output
 const validJson = JSON.stringify({
@@ -1243,5 +1243,123 @@ describe("distillTool — insufficient docs sentinel handling", () => {
 
     expect(result.skipped).toBe(true);
     expect(result.skipReason).toBe(INSUFFICIENT_DOCS_SENTINEL);
+  });
+});
+
+describe("gatherRawDocs — recursive subcommand docs", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), `gather-rawdocs-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function makeToolDocs(toolId: string): { docsDir: string; toolDir: string } {
+    const docsDir = path.join(tmpDir, "docs");
+    const toolDir = path.join(docsDir, toolId);
+    mkdirSync(toolDir, { recursive: true });
+    writeFileSync(path.join(toolDir, "tool.md"), `# ${toolId}\n\nMain docs`);
+    return { docsDir, toolDir };
+  }
+
+  it("returns null when tool.md does not exist", async () => {
+    const docsDir = path.join(tmpDir, "docs");
+    mkdirSync(docsDir, { recursive: true });
+    expect(await gatherRawDocs("notool", docsDir)).toBeNull();
+  });
+
+  it("returns only tool.md content when no commands directory exists", async () => {
+    const { docsDir } = makeToolDocs("mytool");
+    const result = await gatherRawDocs("mytool", docsDir);
+    expect(result).toContain("Main docs");
+    expect(result).not.toContain("---");
+  });
+
+  it("includes nested subcommand docs one level deep", async () => {
+    const { docsDir, toolDir } = makeToolDocs("mytool");
+    const installDir = path.join(toolDir, "commands", "install");
+    const installGlobalDir = path.join(installDir, "global");
+    mkdirSync(installGlobalDir, { recursive: true });
+    writeFileSync(path.join(installDir, "command.md"), "## install\n\nInstall a package");
+    writeFileSync(path.join(installGlobalDir, "command.md"), "## install global\n\nInstall globally");
+
+    const result = await gatherRawDocs("mytool", docsDir);
+    expect(result).toContain("Main docs");
+    expect(result).toContain("Install a package");
+    expect(result).toContain("Install globally");
+  });
+
+  it("includes deeply nested subcommand docs (three levels)", async () => {
+    const { docsDir, toolDir } = makeToolDocs("mytool");
+    const prDir = path.join(toolDir, "commands", "pr");
+    const prCreateDir = path.join(prDir, "create");
+    const prCreateDraftDir = path.join(prCreateDir, "draft");
+    mkdirSync(prCreateDraftDir, { recursive: true });
+    writeFileSync(path.join(prDir, "command.md"), "## pr\n\nPull request commands");
+    writeFileSync(path.join(prCreateDir, "command.md"), "## pr create\n\nCreate a pull request");
+    writeFileSync(path.join(prCreateDraftDir, "command.md"), "## pr create draft\n\nCreate a draft PR");
+
+    const result = await gatherRawDocs("mytool", docsDir);
+    expect(result).toContain("Pull request commands");
+    expect(result).toContain("Create a pull request");
+    expect(result).toContain("Create a draft PR");
+  });
+
+  it("includes parent command before its subcommands (depth-first order)", async () => {
+    const { docsDir, toolDir } = makeToolDocs("mytool");
+    const installDir = path.join(toolDir, "commands", "install");
+    const installGlobalDir = path.join(installDir, "global");
+    mkdirSync(installGlobalDir, { recursive: true });
+    writeFileSync(path.join(installDir, "command.md"), "PARENT_CONTENT");
+    writeFileSync(path.join(installGlobalDir, "command.md"), "CHILD_CONTENT");
+
+    const result = await gatherRawDocs("mytool", docsDir);
+    expect(result!.indexOf("PARENT_CONTENT")).toBeLessThan(result!.indexOf("CHILD_CONTENT"));
+  });
+
+  it("includes multiple top-level commands with their subcommands in sorted order", async () => {
+    const { docsDir, toolDir } = makeToolDocs("mytool");
+    const aDir = path.join(toolDir, "commands", "alpha");
+    const aSub = path.join(aDir, "sub");
+    const bDir = path.join(toolDir, "commands", "beta");
+    mkdirSync(aSub, { recursive: true });
+    mkdirSync(bDir, { recursive: true });
+    writeFileSync(path.join(aDir, "command.md"), "ALPHA_CMD");
+    writeFileSync(path.join(aSub, "command.md"), "ALPHA_SUB_CMD");
+    writeFileSync(path.join(bDir, "command.md"), "BETA_CMD");
+
+    const result = await gatherRawDocs("mytool", docsDir);
+    const alphaPos = result!.indexOf("ALPHA_CMD");
+    const alphaSubPos = result!.indexOf("ALPHA_SUB_CMD");
+    const betaPos = result!.indexOf("BETA_CMD");
+
+    expect(alphaPos).toBeLessThan(alphaSubPos);
+    expect(alphaSubPos).toBeLessThan(betaPos);
+  });
+
+  it("skips subdirectories without command.md but still recurses into them", async () => {
+    const { docsDir, toolDir } = makeToolDocs("mytool");
+    // "deploy" has no command.md but has a subcommand "deploy production" that does
+    const deployDir = path.join(toolDir, "commands", "deploy");
+    const deployProdDir = path.join(deployDir, "production");
+    mkdirSync(deployProdDir, { recursive: true });
+    writeFileSync(path.join(deployProdDir, "command.md"), "DEPLOY_PROD_CONTENT");
+
+    const result = await gatherRawDocs("mytool", docsDir);
+    expect(result).toContain("DEPLOY_PROD_CONTENT");
+  });
+
+  it("separates sections with horizontal rules", async () => {
+    const { docsDir, toolDir } = makeToolDocs("mytool");
+    const cmdDir = path.join(toolDir, "commands", "run");
+    mkdirSync(cmdDir, { recursive: true });
+    writeFileSync(path.join(cmdDir, "command.md"), "## run\n\nRun a script");
+
+    const result = await gatherRawDocs("mytool", docsDir);
+    expect(result).toContain("---");
   });
 });

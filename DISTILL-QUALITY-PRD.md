@@ -13,8 +13,8 @@ Feedback from real-world usage of `tool-docs run railway` revealed the auto-gene
 
 The `generate` step only captures top-level `--help` output. Tools like `railway` have nested subcommands (`variable list/set/delete`, `environment new/link/delete`, `service status/redeploy/restart`) whose flags and usage only appear in `<cmd> <subcmd> --help`.
 
-- [ ] In `cli.ts` `generateCommandDocs()`, for each top-level command that has its own subcommands (detected by parsing the command's `--help` output), recursively capture `<binary> <cmd> <subcmd> --help`
-- [ ] Store nested command docs at `commands/<cmd>/<subcmd>/command.md` (one level deeper)
+- [x] In `cli.ts` `generateCommandDocs()`, for each top-level command that has its own subcommands (detected by parsing the command's `--help` output), recursively capture `<binary> <cmd> <subcmd> --help`
+- [x] Store nested command docs at `commands/<cmd>/<subcmd>/command.md` (one level deeper)
 - [ ] In `gatherRawDocs()` (`distill.ts`), recursively read all nested command docs so the LLM sees the full subcommand tree
 - [ ] Add a `maxDepth` option to registry entries (default: 2) to prevent infinite recursion on deeply nested CLIs
 - [ ] Add tests: verify that a tool with 2-level subcommands produces nested command docs

@@ -1,7 +1,7 @@
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import YAML from "yaml";
 import { writeFileEnsured, ensureDir, expandHome } from "./utils.js";
 
@@ -169,19 +169,39 @@ export async function gatherRawDocs(toolId: string, docsDir: string): Promise<st
   const parts: string[] = [];
   parts.push(await readFile(toolMdPath, "utf8"));
 
-  // Include command docs if they exist
+  // Recursively include command docs if they exist
   const commandsDir = path.join(docsDir, toolId, "commands");
-  if (existsSync(commandsDir)) {
-    const commandDirs = readdirSync(commandsDir);
-    for (const cmdDir of commandDirs.sort()) {
-      const cmdMd = path.join(commandsDir, cmdDir, "command.md");
-      if (existsSync(cmdMd)) {
-        parts.push(await readFile(cmdMd, "utf8"));
-      }
-    }
-  }
+  const commandParts = await gatherCommandDocs(commandsDir);
+  parts.push(...commandParts);
 
   return parts.join("\n\n---\n\n");
+}
+
+/**
+ * Recursively gather all command.md files from a commands directory tree.
+ * Subcommands are stored directly inside their parent command's directory
+ * (not under a nested "commands/" folder), so we recurse into every subdirectory.
+ */
+async function gatherCommandDocs(dir: string): Promise<string[]> {
+  const parts: string[] = [];
+  if (!existsSync(dir)) return parts;
+
+  const entries = readdirSync(dir) as string[];
+  const subdirs = entries
+    .filter((name) => statSync(path.join(dir, name)).isDirectory())
+    .sort();
+
+  for (const name of subdirs) {
+    const subDir = path.join(dir, name);
+    const cmdMd = path.join(subDir, "command.md");
+    if (existsSync(cmdMd)) {
+      parts.push(await readFile(cmdMd, "utf8"));
+    }
+    const nested = await gatherCommandDocs(subDir);
+    parts.push(...nested);
+  }
+
+  return parts;
 }
 
 type DistilledContent = {
