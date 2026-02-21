@@ -304,7 +304,7 @@ SKILL.md format:
 \`\`\`
 
 ## Key Commands / Flags
-<concise table or list of the 5-10 most important commands/flags>
+<table of the 5-10 most important commands/subcommands; show key arguments inline in the command column (e.g. \`variable set KEY=VAL\`); note the most important flags per command in the purpose column (e.g. \`--skip-deploys\`)>
 
 ## Common Patterns
 <3-5 concrete examples covering the most common use cases>

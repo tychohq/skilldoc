@@ -114,6 +114,18 @@ describe("callLLM", () => {
     expect(capturedInput).toContain("## Common Patterns");
   });
 
+  it("prompt instructs Key Commands table to show key arguments inline in command column", () => {
+    let capturedInput = "";
+    const exec = (_cmd: string, _args: ReadonlyArray<string>, opts: { input: string }) => {
+      capturedInput = opts.input;
+      return { stdout: validJson, stderr: "", status: 0 };
+    };
+    callLLM("docs", "tool", "model", exec);
+    expect(capturedInput).toContain("variable set KEY=VAL");
+    expect(capturedInput).toContain("--skip-deploys");
+    expect(capturedInput).toContain("inline");
+  });
+
   it("prompt includes advanced.md format spec with Power-User Flags and Edge Cases", () => {
     let capturedInput = "";
     const exec = (_cmd: string, _args: ReadonlyArray<string>, opts: { input: string }) => {
@@ -856,6 +868,13 @@ describe("buildPrompt — config customization", () => {
   it("Critical Distinctions instruction says to omit when no confusion risk exists", () => {
     const prompt = buildPrompt("raw docs", "tool");
     expect(prompt).toContain("Omit entirely if no confusion risk exists");
+  });
+
+  it("SKILL.md format spec instructs Key Commands table to show key arguments and flags inline", () => {
+    const prompt = buildPrompt("raw docs", "tool");
+    expect(prompt).toContain("variable set KEY=VAL");
+    expect(prompt).toContain("--skip-deploys");
+    expect(prompt).toContain("inline");
   });
 
   it("extraInstructions appears before validation feedback when both present", () => {
