@@ -1114,8 +1114,8 @@ describe("DEFAULT_PROMPT_CONFIG", () => {
     expect(DEFAULT_PROMPT_CONFIG.sizeLimits?.troubleshooting).toBe(1000);
   });
 
-  it("has 5 default priorities", () => {
-    expect(DEFAULT_PROMPT_CONFIG.priorities?.length).toBe(5);
+  it("has 6 default priorities", () => {
+    expect(DEFAULT_PROMPT_CONFIG.priorities?.length).toBe(6);
   });
 
   it("default priorities include the 80/20 framing", () => {
@@ -1134,6 +1134,14 @@ describe("DEFAULT_PROMPT_CONFIG", () => {
     const combined = DEFAULT_PROMPT_CONFIG.priorities!.join(" ");
     expect(combined).toContain("Confusion prevention");
     expect(combined).toContain("misleading names");
+  });
+
+  it("default priorities include behavior-changing flags alongside commands", () => {
+    const combined = DEFAULT_PROMPT_CONFIG.priorities!.join(" ");
+    expect(combined).toContain("Behavior-changing flags");
+    expect(combined).toContain("--skip-deploys");
+    expect(combined).toContain("--dry-run");
+    expect(combined).toContain("--force");
   });
 });
 

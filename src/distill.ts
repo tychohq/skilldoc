@@ -82,6 +82,7 @@ export const DEFAULT_PROMPT_CONFIG: DistillPromptConfig = {
   },
   priorities: [
     "**Most-used flags/commands first** — the 20% of flags that cover 80% of real-world use",
+    "**Behavior-changing flags** — flags that significantly alter a command's behavior (like `--skip-deploys`, `--dry-run`, `--force`) should appear alongside their commands, not buried in a separate flags section",
     "**Real-world usage patterns** over exhaustive flag lists — show how to accomplish tasks, not just what flags exist",
     "**Agent-specific gotchas** — quoting pitfalls, escaping issues, common errors, flags LLMs commonly misuse, output format surprises",
     "**Confusion prevention** — call out commands or flags that look similar but do different things, or that have misleading names",
