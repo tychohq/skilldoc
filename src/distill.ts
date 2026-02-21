@@ -75,7 +75,7 @@ export type DistillPromptConfig = {
 /** Default values used when a DistillPromptConfig field is omitted. */
 export const DEFAULT_PROMPT_CONFIG: DistillPromptConfig = {
   sizeLimits: {
-    skill: 2000,
+    skill: 4000,
     advanced: 2000,
     recipes: 2000,
     troubleshooting: 1000,

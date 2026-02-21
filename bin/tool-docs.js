@@ -7702,7 +7702,7 @@ var GENERATED_MARKER = "generated-from: agent-tool-docs";
 var INSUFFICIENT_DOCS_SENTINEL = "Insufficient raw docs — re-run generate after fixing parser";
 var DEFAULT_PROMPT_CONFIG = {
   sizeLimits: {
-    skill: 2000,
+    skill: 4000,
     advanced: 2000,
     recipes: 2000,
     troubleshooting: 1000

@@ -686,11 +686,11 @@ describe("distillTool - full flow", () => {
     expect(result.sizeWarnings).toBeUndefined();
   });
 
-  it("returns sizeWarnings when SKILL.md exceeds 2000 bytes", async () => {
+  it("returns sizeWarnings when SKILL.md exceeds 4000 bytes", async () => {
     const docsDir = setupDocs("mytool");
     const outDir = path.join(tmpDir, "skills", "mytool");
 
-    const oversizedSkill = "x".repeat(2001);
+    const oversizedSkill = "x".repeat(4001);
     const mockLLM: LLMCaller = () => ({
       description: "d",
       skill: oversizedSkill,
@@ -703,7 +703,7 @@ describe("distillTool - full flow", () => {
 
     expect(result.sizeWarnings).toBeDefined();
     expect(result.sizeWarnings?.some((w) => w.includes("SKILL.md"))).toBe(true);
-    expect(result.sizeWarnings?.some((w) => w.includes("2000"))).toBe(true);
+    expect(result.sizeWarnings?.some((w) => w.includes("4000"))).toBe(true);
   });
 
   it("returns sizeWarnings when troubleshooting.md exceeds 1000 bytes", async () => {
@@ -732,7 +732,7 @@ describe("distillTool - full flow", () => {
 
     const mockLLM: LLMCaller = () => ({
       description: "d",
-      skill: "x".repeat(2001),
+      skill: "x".repeat(4001),
       advanced: "x".repeat(2001),
       recipes: "rec",
       troubleshooting: "trbl",
@@ -1039,7 +1039,7 @@ describe("distillTool — promptConfig integration", () => {
 
     const mockLLM: LLMCaller = () => ({
       description: "d",
-      skill: "x".repeat(1001), // exceeds custom limit of 1000 but not default 2000
+      skill: "x".repeat(1001), // exceeds custom limit of 1000 but not default 4000
       advanced: "adv",
       recipes: "rec",
       troubleshooting: "trbl",
@@ -1119,7 +1119,7 @@ describe("distillTool — promptConfig integration", () => {
 
 describe("DEFAULT_PROMPT_CONFIG", () => {
   it("has all required size limit fields", () => {
-    expect(DEFAULT_PROMPT_CONFIG.sizeLimits?.skill).toBe(2000);
+    expect(DEFAULT_PROMPT_CONFIG.sizeLimits?.skill).toBe(4000);
     expect(DEFAULT_PROMPT_CONFIG.sizeLimits?.advanced).toBe(2000);
     expect(DEFAULT_PROMPT_CONFIG.sizeLimits?.recipes).toBe(2000);
     expect(DEFAULT_PROMPT_CONFIG.sizeLimits?.troubleshooting).toBe(1000);
