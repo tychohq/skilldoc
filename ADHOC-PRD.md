@@ -100,14 +100,14 @@ Pass a tool name, get a skill. No registry, no config, no init.
 
 ### Phase 7: Distribution — npm + Homebrew
 
-- [ ] Publish to npm so users can run `npx agent-tool-docs run jq` or `npm install -g agent-tool-docs` with zero setup
-- [ ] Verify package.json has all required fields for npm publish: name, version, description, bin, repository, license, keywords, homepage
-- [ ] Make sure the `bin` field points to the built CLI entry point and works via `npx`
-- [ ] Add `bun run build` to a `prepublishOnly` script so npm publish always ships a fresh build
-- [ ] Create a Homebrew tap repo (`homebrew-tap` or `homebrew-agent-tool-docs`) with a formula
-- [ ] Use `bun build --compile` to produce standalone binaries (darwin-arm64, darwin-x64, linux-x64, linux-arm64) that don't require Node/Bun at runtime
-- [ ] Set up a GitHub Actions release workflow: on git tag → build binaries → create GitHub release → update Homebrew formula SHA
-- [ ] Update README Quick Start to show install options as an inline stack (all variants visible, copy-pasteable):
+- [x] Publish to npm so users can run `npx agent-tool-docs run jq` or `npm install -g agent-tool-docs` with zero setup
+- [x] Verify package.json has all required fields for npm publish: name, version, description, bin, repository, license, keywords, homepage
+- [x] Make sure the `bin` field points to the built CLI entry point and works via `npx`
+- [x] Add `bun run build` to a `prepublishOnly` script so npm publish always ships a fresh build
+- [x] Create a Homebrew tap repo (`homebrew-tap` or `homebrew-agent-tool-docs`) with a formula
+- [x] Use `bun build --compile` to produce standalone binaries (darwin-arm64, darwin-x64, linux-x64, linux-arm64) that don't require Node/Bun at runtime
+- [x] Set up a GitHub Actions release workflow: on git tag → build binaries → create GitHub release → update Homebrew formula SHA
+- [x] Update README Quick Start to show install options as an inline stack (all variants visible, copy-pasteable):
   ```bash
   # npm
   npx agent-tool-docs run jq

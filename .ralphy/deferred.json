@@ -1,9 +1,3 @@
 {
-  "tasks": {
-    "markdown:ADHOC-PRD.md:103": {
-      "count": 1,
-      "last": "2026-02-20T16:48:57.084Z",
-      "title": "Publish to npm so users can run `npx agent-tool-docs run jq` or `npm install -g agent-tool-docs` with zero setup"
-    }
-  }
+  "tasks": {}
 }

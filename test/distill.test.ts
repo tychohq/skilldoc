@@ -1063,8 +1063,8 @@ describe("DEFAULT_PROMPT_CONFIG", () => {
     expect(DEFAULT_PROMPT_CONFIG.sizeLimits?.troubleshooting).toBe(1000);
   });
 
-  it("has 4 default priorities", () => {
-    expect(DEFAULT_PROMPT_CONFIG.priorities?.length).toBe(4);
+  it("has 5 default priorities", () => {
+    expect(DEFAULT_PROMPT_CONFIG.priorities?.length).toBe(5);
   });
 
   it("default priorities include the 80/20 framing", () => {
@@ -1077,6 +1077,12 @@ describe("DEFAULT_PROMPT_CONFIG", () => {
     const combined = DEFAULT_PROMPT_CONFIG.priorities!.join(" ");
     expect(combined).toContain("gotchas");
     expect(combined).toContain("quoting");
+  });
+
+  it("default priorities include confusion prevention for similar-looking commands/flags", () => {
+    const combined = DEFAULT_PROMPT_CONFIG.priorities!.join(" ");
+    expect(combined).toContain("Confusion prevention");
+    expect(combined).toContain("misleading names");
   });
 });
 

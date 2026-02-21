@@ -34,18 +34,34 @@ SKILL.md    →  drop into AGENTS.md, CLAUDE.md, OpenClaw skills
 
 ## Quick Start
 
-```bash
-# Install
-git clone https://github.com/BrennerSpear/agent-tool-docs && cd agent-tool-docs
-bun install && bun run build
+### Install
 
-# Generate a verified skill for jq (or any CLI tool)
+```bash
+# npm
+npx agent-tool-docs run jq
+
+# pnpm
+pnpx agent-tool-docs run jq
+
+# bun
+bunx agent-tool-docs run jq
+
+# Homebrew (macOS / Linux)
+brew tap BrennerSpear/tap
+brew install agent-tool-docs
+tool-docs run jq
+```
+
+### Generate a skill
+
+```bash
+# Full pipeline in one shot: generate → distill → validate
 tool-docs run jq
 
 # Your agent-optimized skill is at ~/.agents/skills/jq/SKILL.md
 ```
 
-`run` executes the full pipeline in one shot: generate → distill → validate. Drop `~/.agents/skills/jq/SKILL.md` into your `AGENTS.md`, `CLAUDE.md`, or OpenClaw skills directory. Your agent has verified docs instead of guessing from training data.
+Drop `~/.agents/skills/jq/SKILL.md` into your `AGENTS.md`, `CLAUDE.md`, or OpenClaw skills directory. Your agent has verified docs instead of guessing from training data.
 
 You can also run each step individually:
 
