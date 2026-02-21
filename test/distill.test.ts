@@ -154,7 +154,20 @@ describe("callLLM", () => {
       return { stdout: validJson, stderr: "", status: 0 };
     };
     callLLM("docs", "tool", "model", exec);
-    expect(capturedInput).toContain("commonly confused with each other");
+    expect(capturedInput).toContain("two or more commands could plausibly be confused");
+  });
+
+  it("Critical Distinctions appears at the TOP of SKILL.md format (before Quick Reference)", () => {
+    let capturedInput = "";
+    const exec = (_cmd: string, _args: ReadonlyArray<string>, opts: { input: string }) => {
+      capturedInput = opts.input;
+      return { stdout: validJson, stderr: "", status: 0 };
+    };
+    callLLM("docs", "tool", "model", exec);
+    const criticalPos = capturedInput.indexOf("## Critical Distinctions");
+    const quickRefPos = capturedInput.indexOf("## Quick Reference");
+    expect(criticalPos).toBeGreaterThan(0);
+    expect(criticalPos).toBeLessThan(quickRefPos);
   });
 
   it("prompt includes troubleshooting.md format spec with Symptom/Fix structure and LLM Mistakes", () => {
@@ -823,7 +836,26 @@ describe("buildPrompt — config customization", () => {
   it("SKILL.md format spec includes Critical Distinctions section for confused commands/flags", () => {
     const prompt = buildPrompt("raw docs", "tool");
     expect(prompt).toContain("## Critical Distinctions");
-    expect(prompt).toContain("commonly confused with each other");
+    expect(prompt).toContain("two or more commands could plausibly be confused");
+  });
+
+  it("Critical Distinctions appears at the TOP of SKILL.md format (before Quick Reference)", () => {
+    const prompt = buildPrompt("raw docs", "tool");
+    const criticalPos = prompt.indexOf("## Critical Distinctions");
+    const quickRefPos = prompt.indexOf("## Quick Reference");
+    expect(criticalPos).toBeGreaterThan(0);
+    expect(criticalPos).toBeLessThan(quickRefPos);
+  });
+
+  it("Critical Distinctions instruction mentions similar names and overlapping purposes", () => {
+    const prompt = buildPrompt("raw docs", "tool");
+    expect(prompt).toContain("similar names");
+    expect(prompt).toContain("overlapping purposes");
+  });
+
+  it("Critical Distinctions instruction says to omit when no confusion risk exists", () => {
+    const prompt = buildPrompt("raw docs", "tool");
+    expect(prompt).toContain("Omit entirely if no confusion risk exists");
   });
 
   it("extraInstructions appears before validation feedback when both present", () => {
