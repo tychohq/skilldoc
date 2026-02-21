@@ -26,15 +26,15 @@ The hand-written Railway skill has a "Critical Distinctions" section that preven
 - [x] Update `buildPrompt()` in `distill.ts` to add a new section to the SKILL.md format template: `## Critical Distinctions` — commands/flags that are easily confused with each other
 - [x] Add a priority rule: "**Confusion prevention** — call out commands or flags that look similar but do different things, or that have misleading names"
 - [x] The prompt should instruct the LLM: "If two or more commands could plausibly be confused (similar names, overlapping purposes), add a ## Critical Distinctions section at the TOP of SKILL.md explaining the differences"
-- [ ] Add test: verify `buildPrompt` output contains "Critical Distinctions" instruction
+- [x] Add test: verify `buildPrompt` output contains "Critical Distinctions" instruction
 
 ### 3. Include significant flags in subcommand reference table
 
 The auto-generated output lists commands with one-line descriptions but omits key flags. The hand-written version notes things like `--skip-deploys` on `variable set`, `-b` on `login`, `-d` on `up`.
 
-- [ ] Update the distill prompt's SKILL.md format to show that the Key Commands/Subcommand Reference table should include the most important flags inline: e.g. `variable set KEY=VAL` with note about `--skip-deploys`
-- [ ] Add a priority: "**Behavior-changing flags** — flags that significantly alter a command's behavior (like `--skip-deploys`, `--dry-run`, `--force`) should appear alongside their commands, not buried in a separate flags section"
-- [ ] Update the example format in the prompt to show inline flag notes in the command table
+- [x] Update the distill prompt's SKILL.md format to show that the Key Commands/Subcommand Reference table should include the most important flags inline: e.g. `variable set KEY=VAL` with note about `--skip-deploys`
+- [x] Add a priority: "**Behavior-changing flags** — flags that significantly alter a command's behavior (like `--skip-deploys`, `--dry-run`, `--force`) should appear alongside their commands, not buried in a separate flags section"
+- [x] Update the example format in the prompt to show inline flag notes in the command table
 
 ### 4. Increase SKILL.md size limit for complex CLIs
 
