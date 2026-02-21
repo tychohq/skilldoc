@@ -630,62 +630,107 @@ export async function handleGenerate(flags: Record<string, string | boolean>, bi
   console.log(`Generated docs for ${tools.length} tool(s) in ${outDir}`);
 }
 
-async function generateCommandDocs(
+const MAX_SUBCOMMAND_DEPTH = 3;
+
+type RunFn = (binary: string, args: string[]) => { output: string; exitCode: number | null; error?: string };
+
+export async function generateCommandDocs(
   toolId: string,
   binary: string,
   commandHelpArgs: string[],
   commands: CommandSummary[],
-  toolDir: string
+  toolDir: string,
+  runFn: RunFn = runCommand
 ): Promise<void> {
   const commandsDir = path.join(toolDir, "commands");
   await ensureDir(commandsDir);
 
   for (const command of commands) {
     const args = commandHelpArgs.map((arg) => arg.replace("{command}", command.name));
-    const helpResult = runCommand(binary, args);
-    const parsed = parseHelp(helpResult.output);
-    const warnings = [...parsed.warnings];
+    await generateOneCommandDoc(toolId, binary, command, args, commandsDir, [command.name], 0, runFn);
+  }
+}
 
-    if (helpResult.error) {
-      warnings.push(helpResult.error);
+async function generateOneCommandDoc(
+  toolId: string,
+  binary: string,
+  command: CommandSummary,
+  helpArgs: string[],
+  commandsDir: string,
+  cmdPath: string[],
+  depth: number,
+  runFn: RunFn
+): Promise<void> {
+  const helpResult = runFn(binary, helpArgs);
+  const parsed = parseHelp(helpResult.output);
+  const warnings = [...parsed.warnings];
+
+  if (helpResult.error) {
+    warnings.push(helpResult.error);
+  }
+
+  const usageTokens = extractUsageTokens(parsed.usageLines, binary);
+  const usage = buildUsageDoc(parsed.usageLines, binary);
+
+  const optionsFromUsage = parsed.options.length === 0 && usageTokens.flags.length > 0;
+  const options = optionsFromUsage
+    ? usageTokens.flags.map((flag) => ({ flags: flag, description: "" }))
+    : parsed.options;
+
+  if (optionsFromUsage) {
+    const index = warnings.indexOf("No options detected.");
+    if (index !== -1) {
+      warnings.splice(index, 1);
     }
+  }
 
-    const usageTokens = extractUsageTokens(parsed.usageLines, binary);
-    const usage = buildUsageDoc(parsed.usageLines, binary);
+  const subcommands: CommandSummary[] | undefined =
+    parsed.commands.length > 0
+      ? parsed.commands.map((sc) => ({
+          ...sc,
+          docPath: `subcommands/${slugify(sc.name)}/command.md`,
+        }))
+      : undefined;
 
-    const optionsFromUsage = parsed.options.length === 0 && usageTokens.flags.length > 0;
-    const options = optionsFromUsage
-      ? usageTokens.flags.map((flag) => ({ flags: flag, description: "" }))
-      : parsed.options;
+  const doc: CommandDoc = {
+    kind: "command",
+    toolId,
+    command: cmdPath.join(" "),
+    summary: command.summary,
+    binary,
+    generatedAt: new Date().toISOString(),
+    helpArgs,
+    helpExitCode: helpResult.exitCode,
+    usage,
+    subcommands,
+    options,
+    examples: parsed.examples,
+    env: parsed.env,
+    warnings,
+  };
 
-    if (optionsFromUsage) {
-      const index = warnings.indexOf("No options detected.");
-      if (index !== -1) {
-        warnings.splice(index, 1);
-      }
+  const commandDir = path.join(commandsDir, slugify(command.name));
+  await ensureDir(commandDir);
+  await writeFileEnsured(path.join(commandDir, "command.json"), JSON.stringify(doc, null, 2));
+  await writeFileEnsured(path.join(commandDir, "command.yaml"), YAML.stringify(doc));
+  await writeFileEnsured(path.join(commandDir, "command.md"), renderCommandMarkdown(doc));
+
+  if (depth < MAX_SUBCOMMAND_DEPTH && parsed.commands.length > 0) {
+    const subCommandsDir = path.join(commandDir, "subcommands");
+    await ensureDir(subCommandsDir);
+    for (const subCmd of parsed.commands) {
+      const subArgs = [...cmdPath, subCmd.name, "--help"];
+      await generateOneCommandDoc(
+        toolId,
+        binary,
+        subCmd,
+        subArgs,
+        subCommandsDir,
+        [...cmdPath, subCmd.name],
+        depth + 1,
+        runFn
+      );
     }
-
-    const doc: CommandDoc = {
-      kind: "command",
-      toolId,
-      command: command.name,
-      summary: command.summary,
-      binary,
-      generatedAt: new Date().toISOString(),
-      helpArgs: args,
-      helpExitCode: helpResult.exitCode,
-      usage,
-      options,
-      examples: parsed.examples,
-      env: parsed.env,
-      warnings,
-    };
-
-    const commandDir = path.join(commandsDir, slugify(command.name));
-    await ensureDir(commandDir);
-    await writeFileEnsured(path.join(commandDir, "command.json"), JSON.stringify(doc, null, 2));
-    await writeFileEnsured(path.join(commandDir, "command.yaml"), YAML.stringify(doc));
-    await writeFileEnsured(path.join(commandDir, "command.md"), renderCommandMarkdown(doc));
   }
 }
 

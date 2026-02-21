@@ -7403,6 +7403,16 @@ function renderCommandMarkdown(doc) {
     lines.push("");
   }
   renderUsageSection(lines, doc.usage.requiredArgs, doc.usage.optionalArgs);
+  if (doc.subcommands && doc.subcommands.length > 0) {
+    lines.push("## Subcommands");
+    lines.push("");
+    lines.push("| Subcommand | Summary |", "| --- | --- |");
+    for (const subCmd of doc.subcommands) {
+      const label = subCmd.docPath ? `[${escapePipes(subCmd.name)}](${subCmd.docPath})` : escapePipes(subCmd.name);
+      lines.push(`| ${label} | ${escapePipes(subCmd.summary)} |`);
+    }
+    lines.push("");
+  }
   if (doc.options.length > 0) {
     lines.push("## Flags");
     lines.push("");
@@ -8954,47 +8964,64 @@ async function handleGenerate(flags, binaryName) {
 `));
   console.log(`Generated docs for ${tools.length} tool(s) in ${outDir}`);
 }
-async function generateCommandDocs(toolId, binary, commandHelpArgs, commands, toolDir) {
+var MAX_SUBCOMMAND_DEPTH = 3;
+async function generateCommandDocs(toolId, binary, commandHelpArgs, commands, toolDir, runFn = runCommand) {
   const commandsDir = path3.join(toolDir, "commands");
   await ensureDir(commandsDir);
   for (const command of commands) {
     const args = commandHelpArgs.map((arg) => arg.replace("{command}", command.name));
-    const helpResult = runCommand(binary, args);
-    const parsed = parseHelp(helpResult.output);
-    const warnings = [...parsed.warnings];
-    if (helpResult.error) {
-      warnings.push(helpResult.error);
+    await generateOneCommandDoc(toolId, binary, command, args, commandsDir, [command.name], 0, runFn);
+  }
+}
+async function generateOneCommandDoc(toolId, binary, command, helpArgs, commandsDir, cmdPath, depth, runFn) {
+  const helpResult = runFn(binary, helpArgs);
+  const parsed = parseHelp(helpResult.output);
+  const warnings = [...parsed.warnings];
+  if (helpResult.error) {
+    warnings.push(helpResult.error);
+  }
+  const usageTokens = extractUsageTokens(parsed.usageLines, binary);
+  const usage = buildUsageDoc(parsed.usageLines, binary);
+  const optionsFromUsage = parsed.options.length === 0 && usageTokens.flags.length > 0;
+  const options = optionsFromUsage ? usageTokens.flags.map((flag) => ({ flags: flag, description: "" })) : parsed.options;
+  if (optionsFromUsage) {
+    const index = warnings.indexOf("No options detected.");
+    if (index !== -1) {
+      warnings.splice(index, 1);
     }
-    const usageTokens = extractUsageTokens(parsed.usageLines, binary);
-    const usage = buildUsageDoc(parsed.usageLines, binary);
-    const optionsFromUsage = parsed.options.length === 0 && usageTokens.flags.length > 0;
-    const options = optionsFromUsage ? usageTokens.flags.map((flag) => ({ flags: flag, description: "" })) : parsed.options;
-    if (optionsFromUsage) {
-      const index = warnings.indexOf("No options detected.");
-      if (index !== -1) {
-        warnings.splice(index, 1);
-      }
+  }
+  const subcommands = parsed.commands.length > 0 ? parsed.commands.map((sc) => ({
+    ...sc,
+    docPath: `subcommands/${slugify(sc.name)}/command.md`
+  })) : undefined;
+  const doc = {
+    kind: "command",
+    toolId,
+    command: cmdPath.join(" "),
+    summary: command.summary,
+    binary,
+    generatedAt: new Date().toISOString(),
+    helpArgs,
+    helpExitCode: helpResult.exitCode,
+    usage,
+    subcommands,
+    options,
+    examples: parsed.examples,
+    env: parsed.env,
+    warnings
+  };
+  const commandDir = path3.join(commandsDir, slugify(command.name));
+  await ensureDir(commandDir);
+  await writeFileEnsured(path3.join(commandDir, "command.json"), JSON.stringify(doc, null, 2));
+  await writeFileEnsured(path3.join(commandDir, "command.yaml"), import_yaml3.default.stringify(doc));
+  await writeFileEnsured(path3.join(commandDir, "command.md"), renderCommandMarkdown(doc));
+  if (depth < MAX_SUBCOMMAND_DEPTH && parsed.commands.length > 0) {
+    const subCommandsDir = path3.join(commandDir, "subcommands");
+    await ensureDir(subCommandsDir);
+    for (const subCmd of parsed.commands) {
+      const subArgs = [...cmdPath, subCmd.name, "--help"];
+      await generateOneCommandDoc(toolId, binary, subCmd, subArgs, subCommandsDir, [...cmdPath, subCmd.name], depth + 1, runFn);
     }
-    const doc = {
-      kind: "command",
-      toolId,
-      command: command.name,
-      summary: command.summary,
-      binary,
-      generatedAt: new Date().toISOString(),
-      helpArgs: args,
-      helpExitCode: helpResult.exitCode,
-      usage,
-      options,
-      examples: parsed.examples,
-      env: parsed.env,
-      warnings
-    };
-    const commandDir = path3.join(commandsDir, slugify(command.name));
-    await ensureDir(commandDir);
-    await writeFileEnsured(path3.join(commandDir, "command.json"), JSON.stringify(doc, null, 2));
-    await writeFileEnsured(path3.join(commandDir, "command.yaml"), import_yaml3.default.stringify(doc));
-    await writeFileEnsured(path3.join(commandDir, "command.md"), renderCommandMarkdown(doc));
   }
 }
 function commandDocPath(command) {
@@ -9157,6 +9184,7 @@ export {
   handleDistill,
   handleAutoRedist,
   getChangedTools,
+  generateCommandDocs,
   extractPositionalArgs,
   computeSkillDiff,
   computeHash

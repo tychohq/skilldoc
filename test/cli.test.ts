@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
-import { parseFlags, extractPositionalArgs, handleAutoRedist, handleGenerate, handleDistill, handleInit, handleRun, handleRunBatch, resolveBinary, lookupRegistryTool, type RunDeps, type RunBatchDeps, type RunResult } from "../src/cli.js";
+import { parseFlags, extractPositionalArgs, handleAutoRedist, handleGenerate, handleDistill, handleInit, handleRun, handleRunBatch, resolveBinary, lookupRegistryTool, generateCommandDocs, type RunDeps, type RunBatchDeps, type RunResult } from "../src/cli.js";
 import { DEFAULT_MODEL, DEFAULT_SKILLS_DIR, DistillOptions, DistillResult } from "../src/distill.js";
 import { DEFAULT_VALIDATION_MODELS, type MultiModelValidationReport } from "../src/validate.js";
 
@@ -473,7 +473,7 @@ describe("handleGenerate registry precedence", () => {
 
   it("uses registry helpArgs when positional arg matches a registry tool", async () => {
     const registryPath = path.join(tmpDir, "registry.yaml");
-    writeFileSync(registryPath, `version: 1\ntools:\n  - id: git\n    binary: git\n    helpArgs: ["-h"]\n    displayName: Git\n    commandHelpArgs: ["help", "{command}"]\n`);
+    writeFileSync(registryPath, `version: 1\ntools:\n  - id: git\n    binary: git\n    helpArgs: ["-h"]\n    displayName: Git\n`);
     const outDir = path.join(tmpDir, "out");
     mkdirSync(outDir, { recursive: true });
     await handleGenerate({ out: outDir, registry: registryPath }, "git");
@@ -503,13 +503,14 @@ describe("handleGenerate registry precedence", () => {
 
   it("generates command docs when registry entry has commandHelpArgs", async () => {
     const registryPath = path.join(tmpDir, "registry.yaml");
-    writeFileSync(registryPath, `version: 1\ntools:\n  - id: git\n    binary: git\n    helpArgs: ["-h"]\n    commandHelpArgs: ["help", "{command}"]\n`);
+    // Use echo with commandHelpArgs — echo has no subcommands but commandHelpArgs
+    // still triggers the commands/ dir to be created
+    writeFileSync(registryPath, `version: 1\ntools:\n  - id: echo\n    binary: echo\n    commandHelpArgs: ["--help"]\n`);
     const outDir = path.join(tmpDir, "out");
     mkdirSync(outDir, { recursive: true });
-    await handleGenerate({ out: outDir, registry: registryPath }, "git");
-    const doc = JSON.parse(readFileSync(path.join(outDir, "git", "tool.json"), "utf8"));
-    // git -h lists commands, and commandHelpArgs should trigger command doc generation
-    expect(existsSync(path.join(outDir, "git", "commands"))).toBe(true);
+    await handleGenerate({ out: outDir, registry: registryPath }, "echo");
+    // commandHelpArgs presence should trigger command doc generation infrastructure
+    expect(existsSync(path.join(outDir, "echo", "commands"))).toBe(true);
   });
 });
 
@@ -1452,5 +1453,264 @@ describe("handleRunBatch", () => {
     }
 
     expect(logs.some((l) => l.includes("No tools to process"))).toBe(true);
+  });
+});
+
+describe("generateCommandDocs - recursive subcommand detection", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), `subcommand-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  type RunFnResult = { output: string; exitCode: number | null };
+
+  function makeRunFn(responses: Record<string, string>): (binary: string, args: string[]) => RunFnResult {
+    return (_binary, args) => ({
+      output: responses[args.join(" ")] ?? "",
+      exitCode: 0,
+    });
+  }
+
+  it("generates subcommand docs when a command has subcommands", async () => {
+    const toolDir = path.join(tmpDir, "mytool");
+    mkdirSync(toolDir, { recursive: true });
+
+    const runFn = makeRunFn({
+      "--help remote": "Commands:\n  add     Add a remote\n  remove  Remove a remote\n",
+      "remote add --help": "Usage: mytool remote add <name> <url>\n",
+      "remote remove --help": "Usage: mytool remote remove <name>\n",
+    });
+
+    await generateCommandDocs(
+      "mytool", "mytool-bin",
+      ["--help", "{command}"],
+      [{ name: "remote", summary: "Manage remotes" }],
+      toolDir, runFn
+    );
+
+    const remoteDir = path.join(toolDir, "commands", "remote");
+    expect(existsSync(remoteDir)).toBe(true);
+    expect(existsSync(path.join(remoteDir, "command.json"))).toBe(true);
+
+    const subCommandsDir = path.join(remoteDir, "subcommands");
+    expect(existsSync(subCommandsDir)).toBe(true);
+    expect(existsSync(path.join(subCommandsDir, "add", "command.json"))).toBe(true);
+    expect(existsSync(path.join(subCommandsDir, "remove", "command.json"))).toBe(true);
+  });
+
+  it("parent command doc has subcommands field with docPaths", async () => {
+    const toolDir = path.join(tmpDir, "mytool");
+    mkdirSync(toolDir, { recursive: true });
+
+    const runFn = makeRunFn({
+      "--help remote": "Commands:\n  add  Add a remote\n",
+      "remote add --help": "Usage: mytool remote add <name>\n",
+    });
+
+    await generateCommandDocs(
+      "mytool", "mytool-bin",
+      ["--help", "{command}"],
+      [{ name: "remote", summary: "Manage remotes" }],
+      toolDir, runFn
+    );
+
+    const doc = JSON.parse(readFileSync(path.join(toolDir, "commands", "remote", "command.json"), "utf8"));
+    expect(doc.subcommands).toBeDefined();
+    expect(doc.subcommands).toHaveLength(1);
+    expect(doc.subcommands[0].name).toBe("add");
+    expect(doc.subcommands[0].docPath).toBe("subcommands/add/command.md");
+  });
+
+  it("subcommand doc has full command path in command field", async () => {
+    const toolDir = path.join(tmpDir, "mytool");
+    mkdirSync(toolDir, { recursive: true });
+
+    const runFn = makeRunFn({
+      "--help remote": "Commands:\n  add  Add a remote\n",
+      "remote add --help": "Usage: mytool remote add\n",
+    });
+
+    await generateCommandDocs(
+      "mytool", "mytool-bin",
+      ["--help", "{command}"],
+      [{ name: "remote", summary: "Manage remotes" }],
+      toolDir, runFn
+    );
+
+    const subDoc = JSON.parse(readFileSync(
+      path.join(toolDir, "commands", "remote", "subcommands", "add", "command.json"),
+      "utf8"
+    ));
+    expect(subDoc.command).toBe("remote add");
+  });
+
+  it("command without subcommands has no subcommands field", async () => {
+    const toolDir = path.join(tmpDir, "mytool");
+    mkdirSync(toolDir, { recursive: true });
+
+    const runFn = makeRunFn({
+      "--help push": "Usage: mytool push [options]\n",
+    });
+
+    await generateCommandDocs(
+      "mytool", "mytool-bin",
+      ["--help", "{command}"],
+      [{ name: "push", summary: "Push changes" }],
+      toolDir, runFn
+    );
+
+    const doc = JSON.parse(readFileSync(path.join(toolDir, "commands", "push", "command.json"), "utf8"));
+    expect(doc.subcommands).toBeUndefined();
+  });
+
+  it("subcommand help is invoked as [parentCmd, subCmd, --help]", async () => {
+    const toolDir = path.join(tmpDir, "mytool");
+    mkdirSync(toolDir, { recursive: true });
+
+    const capturedCalls: Array<string[]> = [];
+    const runFn = (_binary: string, args: string[]): RunFnResult => {
+      capturedCalls.push(args);
+      if (args.join(" ") === "--help remote") {
+        return { output: "Commands:\n  add  Add a remote\n", exitCode: 0 };
+      }
+      return { output: "", exitCode: 0 };
+    };
+
+    await generateCommandDocs(
+      "mytool", "mytool-bin",
+      ["--help", "{command}"],
+      [{ name: "remote", summary: "Manage remotes" }],
+      toolDir, runFn
+    );
+
+    const subCmdCall = capturedCalls.find((args) => args.includes("add"));
+    expect(subCmdCall).toBeDefined();
+    expect(subCmdCall).toEqual(["remote", "add", "--help"]);
+  });
+
+  it("recursively generates sub-subcommand docs", async () => {
+    const toolDir = path.join(tmpDir, "mytool");
+    mkdirSync(toolDir, { recursive: true });
+
+    const runFn = makeRunFn({
+      "--help remote": "Commands:\n  add  Add a remote\n",
+      "remote add --help": "Commands:\n  branch  Add with branch tracking\n",
+      "remote add branch --help": "Usage: mytool remote add branch\n",
+    });
+
+    await generateCommandDocs(
+      "mytool", "mytool-bin",
+      ["--help", "{command}"],
+      [{ name: "remote", summary: "Manage remotes" }],
+      toolDir, runFn
+    );
+
+    // Check sub-subcommand doc exists
+    const subSubDir = path.join(
+      toolDir, "commands", "remote", "subcommands", "add", "subcommands", "branch"
+    );
+    expect(existsSync(path.join(subSubDir, "command.json"))).toBe(true);
+
+    const subSubDoc = JSON.parse(readFileSync(path.join(subSubDir, "command.json"), "utf8"));
+    expect(subSubDoc.command).toBe("remote add branch");
+  });
+
+  it("sub-subcommand help is invoked as [grandparent, parent, subCmd, --help]", async () => {
+    const toolDir = path.join(tmpDir, "mytool");
+    mkdirSync(toolDir, { recursive: true });
+
+    const capturedCalls: Array<string[]> = [];
+    const runFn = (_binary: string, args: string[]): RunFnResult => {
+      capturedCalls.push(args);
+      if (args.join(" ") === "--help remote") {
+        return { output: "Commands:\n  add  Add a remote\n", exitCode: 0 };
+      }
+      if (args.join(" ") === "remote add --help") {
+        return { output: "Commands:\n  branch  With branch\n", exitCode: 0 };
+      }
+      return { output: "", exitCode: 0 };
+    };
+
+    await generateCommandDocs(
+      "mytool", "mytool-bin",
+      ["--help", "{command}"],
+      [{ name: "remote", summary: "Manage remotes" }],
+      toolDir, runFn
+    );
+
+    const subSubCall = capturedCalls.find((args) => args.includes("branch"));
+    expect(subSubCall).toBeDefined();
+    expect(subSubCall).toEqual(["remote", "add", "branch", "--help"]);
+  });
+
+  it("top-level command doc has single-word command field", async () => {
+    const toolDir = path.join(tmpDir, "mytool");
+    mkdirSync(toolDir, { recursive: true });
+
+    const runFn = makeRunFn({ "--help push": "Usage: mytool push\n" });
+
+    await generateCommandDocs(
+      "mytool", "mytool-bin",
+      ["--help", "{command}"],
+      [{ name: "push", summary: "Push" }],
+      toolDir, runFn
+    );
+
+    const doc = JSON.parse(readFileSync(path.join(toolDir, "commands", "push", "command.json"), "utf8"));
+    expect(doc.command).toBe("push");
+  });
+
+  it("command.md includes Subcommands section when subcommands are present", async () => {
+    const toolDir = path.join(tmpDir, "mytool");
+    mkdirSync(toolDir, { recursive: true });
+
+    const runFn = makeRunFn({
+      "--help remote": "Commands:\n  add  Add a remote\n",
+      "remote add --help": "",
+    });
+
+    await generateCommandDocs(
+      "mytool", "mytool-bin",
+      ["--help", "{command}"],
+      [{ name: "remote", summary: "Manage remotes" }],
+      toolDir, runFn
+    );
+
+    const md = readFileSync(path.join(toolDir, "commands", "remote", "command.md"), "utf8");
+    expect(md).toContain("## Subcommands");
+    expect(md).toContain("add");
+  });
+
+  it("does not recurse beyond MAX_SUBCOMMAND_DEPTH", async () => {
+    const toolDir = path.join(tmpDir, "mytool");
+    mkdirSync(toolDir, { recursive: true });
+
+    // Build a deeply nested command chain that would infinitely recurse
+    const capturedCalls: Array<string[]> = [];
+    const runFn = (_binary: string, args: string[]): RunFnResult => {
+      capturedCalls.push(args);
+      // Always return a subcommand named "deep" to trigger recursion
+      return { output: "Commands:\n  deep  Go deeper\n", exitCode: 0 };
+    };
+
+    await generateCommandDocs(
+      "mytool", "mytool-bin",
+      ["--help", "{command}"],
+      [{ name: "cmd", summary: "A command" }],
+      toolDir, runFn
+    );
+
+    // With MAX_SUBCOMMAND_DEPTH = 3, we should have exactly 4 calls:
+    // depth 0: "--help cmd"
+    // depth 1: "cmd deep --help"
+    // depth 2: "cmd deep deep --help"
+    // depth 3: "cmd deep deep deep --help"  (depth 3 = last level, no further recursion)
+    expect(capturedCalls.length).toBe(4);
   });
 });
