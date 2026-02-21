@@ -7173,7 +7173,17 @@ function parseHelp(rawHelp) {
   const commandsSections = sections.filter((s) => /command/i.test(s.name));
   const examplesSection = findSection(sections, SECTION_NAMES.examples);
   const envSection = findSection(sections, SECTION_NAMES.env);
-  const commandLines = commandsSections.length > 0 ? commandsSections.flatMap((s) => s.lines) : sections.flatMap((section) => section.lines);
+  const excludeSections = new Set([
+    ...commandsSections.map((s) => s.name),
+    ...examplesSection ? [examplesSection.name] : [],
+    ...envSection ? [envSection.name] : []
+  ]);
+  const optionNameSet = new Set(sections.filter((s) => /option|flag/i.test(s.name)).map((s) => s.name));
+  const candidateSections = commandsSections.length > 0 ? [
+    ...commandsSections,
+    ...sections.filter((s) => !excludeSections.has(s.name) && !optionNameSet.has(s.name) && !/option|flag|usage/i.test(s.name))
+  ] : sections;
+  const commandLines = candidateSections.flatMap((s) => s.lines);
   const commands = parseCommands(commandLines, true);
   const optionsSections = sections.filter((section) => /option|flag/i.test(section.name));
   const optionLines = optionsSections.length > 0 ? optionsSections.flatMap((section) => section.lines) : sections.length === 0 ? preambleLines : [];

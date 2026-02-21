@@ -80,10 +80,31 @@ export function parseHelp(rawHelp: string): ParsedHelp {
   const examplesSection = findSection(sections, SECTION_NAMES.examples);
   const envSection = findSection(sections, SECTION_NAMES.env);
 
-  const commandLines =
+  // Collect commands from explicit "command" sections first, then also scan
+  // all other non-option/non-example/non-env sections for command-like lines.
+  // This handles tools like wrangler that group commands under category headers
+  // (ACCOUNT, COMPUTE & AI, STORAGE & DATABASES, etc.).
+  const excludeSections = new Set([
+    ...commandsSections.map((s) => s.name),
+    ...(examplesSection ? [examplesSection.name] : []),
+    ...(envSection ? [envSection.name] : []),
+  ]);
+  const optionNameSet = new Set(
+    sections.filter((s) => /option|flag/i.test(s.name)).map((s) => s.name)
+  );
+  const candidateSections =
     commandsSections.length > 0
-      ? commandsSections.flatMap((s) => s.lines)
-      : sections.flatMap((section) => section.lines);
+      ? [
+          ...commandsSections,
+          ...sections.filter(
+            (s) =>
+              !excludeSections.has(s.name) &&
+              !optionNameSet.has(s.name) &&
+              !/option|flag|usage/i.test(s.name)
+          ),
+        ]
+      : sections;
+  const commandLines = candidateSections.flatMap((s) => s.lines);
   const commands = parseCommands(commandLines, true);
 
   const optionsSections = sections.filter((section) =>
