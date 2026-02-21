@@ -700,6 +700,139 @@ describe("bin/tool-docs.js --help (integration)", () => {
   });
 });
 
+describe("COMPLEXITY_SKILL_LIMITS", () => {
+  it("maps simple to 2000 bytes", () => {
+    expect(COMPLEXITY_SKILL_LIMITS.simple).toBe(2000);
+  });
+
+  it("maps complex to 4000 bytes", () => {
+    expect(COMPLEXITY_SKILL_LIMITS.complex).toBe(4000);
+  });
+});
+
+describe("applyComplexity", () => {
+  it("returns base config unchanged when complexity is undefined", () => {
+    const base = { priorities: ["first"] };
+    const result = applyComplexity(base, undefined);
+    expect(result).toBe(base);
+  });
+
+  it("sets sizeLimits.skill to 2000 for simple complexity", () => {
+    const result = applyComplexity({}, "simple");
+    expect(result.sizeLimits?.skill).toBe(2000);
+  });
+
+  it("sets sizeLimits.skill to 4000 for complex complexity", () => {
+    const result = applyComplexity({}, "complex");
+    expect(result.sizeLimits?.skill).toBe(4000);
+  });
+
+  it("preserves other sizeLimits fields when applying complexity", () => {
+    const base = { sizeLimits: { advanced: 1500, recipes: 1200, troubleshooting: 800 } };
+    const result = applyComplexity(base, "simple");
+    expect(result.sizeLimits?.skill).toBe(2000);
+    expect(result.sizeLimits?.advanced).toBe(1500);
+    expect(result.sizeLimits?.recipes).toBe(1200);
+    expect(result.sizeLimits?.troubleshooting).toBe(800);
+  });
+
+  it("preserves other config fields when applying complexity", () => {
+    const base = { priorities: ["p1", "p2"], extraInstructions: "custom" };
+    const result = applyComplexity(base, "simple");
+    expect(result.priorities).toEqual(["p1", "p2"]);
+    expect(result.extraInstructions).toBe("custom");
+  });
+
+  it("explicit sizeLimits.skill in base config takes priority over complexity", () => {
+    const base = { sizeLimits: { skill: 3000 } };
+    const result = applyComplexity(base, "simple");
+    // explicit 3000 wins over complexity-derived 2000
+    expect(result.sizeLimits?.skill).toBe(3000);
+    expect(result).toBe(base);
+  });
+
+  it("returns base unchanged when complexity is undefined and sizeLimits.skill is set", () => {
+    const base = { sizeLimits: { skill: 1500 } };
+    const result = applyComplexity(base, undefined);
+    expect(result).toBe(base);
+  });
+});
+
+describe("handleDistill — complexity integration", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), `distill-complexity-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function setupRegistry(id: string, binary: string, complexity?: string): string {
+    const regPath = path.join(tmpDir, "registry.yaml");
+    const complexityLine = complexity ? `    complexity: ${complexity}\n` : "";
+    writeFileSync(regPath, `version: 1\ntools:\n  - id: ${id}\n    binary: ${binary}\n${complexityLine}`);
+    return regPath;
+  }
+
+  function setupRawDocs(toolId: string): string {
+    const docsDir = path.join(tmpDir, "docs");
+    mkdirSync(path.join(docsDir, toolId), { recursive: true });
+    writeFileSync(path.join(docsDir, toolId, "tool.md"), `# ${toolId}\n\nDocs for ${toolId}`);
+    return docsDir;
+  }
+
+  it("passes skill limit 2000 to distillFn for simple tools", async () => {
+    const docsDir = setupRawDocs("jq");
+    const regPath = setupRegistry("jq", "jq", "simple");
+    const captured: DistillOptions[] = [];
+
+    const mockDistill = async (opts: DistillOptions): Promise<DistillResult> => {
+      captured.push(opts);
+      return { toolId: opts.toolId, outDir: opts.outDir };
+    };
+
+    await handleDistill({ docs: docsDir, out: path.join(tmpDir, "skills"), registry: regPath }, undefined, mockDistill);
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0].promptConfig?.sizeLimits?.skill).toBe(2000);
+  });
+
+  it("passes skill limit 4000 to distillFn for complex tools", async () => {
+    const docsDir = setupRawDocs("gh");
+    const regPath = setupRegistry("gh", "gh", "complex");
+    const captured: DistillOptions[] = [];
+
+    const mockDistill = async (opts: DistillOptions): Promise<DistillResult> => {
+      captured.push(opts);
+      return { toolId: opts.toolId, outDir: opts.outDir };
+    };
+
+    await handleDistill({ docs: docsDir, out: path.join(tmpDir, "skills"), registry: regPath }, undefined, mockDistill);
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0].promptConfig?.sizeLimits?.skill).toBe(4000);
+  });
+
+  it("passes no explicit skill limit to distillFn when complexity is omitted", async () => {
+    const docsDir = setupRawDocs("rg");
+    const regPath = setupRegistry("rg", "rg");
+    const captured: DistillOptions[] = [];
+
+    const mockDistill = async (opts: DistillOptions): Promise<DistillResult> => {
+      captured.push(opts);
+      return { toolId: opts.toolId, outDir: opts.outDir };
+    };
+
+    await handleDistill({ docs: docsDir, out: path.join(tmpDir, "skills"), registry: regPath }, undefined, mockDistill);
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0].promptConfig?.sizeLimits?.skill).toBeUndefined();
+  });
+});
+
 describe("handleDistill with tool-id", () => {
   let tmpDir: string;
 
