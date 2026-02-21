@@ -15,10 +15,10 @@ When `commandHelpArgs` is not specified in the registry (or when running in ad-h
   3. `<binary> help <cmd>`
 - [x] Whichever returns output containing subcommand-like content (has a "Commands" or "Subcommands" section), that's the detected pattern
 - [x] Store the detected pattern as `commandHelpArgs` in the tool's generated `tool.json` so future runs skip probing
-- [ ] If no pattern works (the CLI has no subcommand help), skip gracefully — just use top-level help
-- [ ] Use the detected pattern to generate command docs for ALL top-level commands (same as when `commandHelpArgs` is manually specified)
-- [ ] Add tests: mock a CLI that responds to `<cmd> --help` and verify auto-detection works
-- [ ] Add tests: mock a CLI where no subcommand help pattern works and verify graceful fallback
+- [x] If no pattern works (the CLI has no subcommand help), skip gracefully — just use top-level help
+- [x] Use the detected pattern to generate command docs for ALL top-level commands (same as when `commandHelpArgs` is manually specified)
+- [x] Add tests: mock a CLI that responds to `<cmd> --help` and verify auto-detection works
+- [x] Add tests: mock a CLI where no subcommand help pattern works and verify graceful fallback
 
 ### 2. Switch size limits from bytes to tokens
 

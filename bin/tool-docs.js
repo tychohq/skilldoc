@@ -7707,10 +7707,10 @@ var GENERATED_MARKER = "generated-from: agent-tool-docs";
 var INSUFFICIENT_DOCS_SENTINEL = "Insufficient raw docs — re-run generate after fixing parser";
 var DEFAULT_PROMPT_CONFIG = {
   sizeLimits: {
-    skill: 4000,
-    advanced: 2000,
-    recipes: 2000,
-    troubleshooting: 1000
+    skill: 1000,
+    advanced: 500,
+    recipes: 500,
+    troubleshooting: 250
   },
   priorities: [
     "**Most-used flags/commands first** — the 20% of flags that cover 80% of real-world use",
@@ -7806,12 +7806,15 @@ function checkSizeLimits(files, limits) {
     const limit = limits[name];
     if (limit === undefined)
       continue;
-    const size = new TextEncoder().encode(content).length;
+    const size = estimateTokenCount(content);
     if (size > limit) {
-      warnings.push(`${name} is ${size} bytes (limit: ${limit} bytes)`);
+      warnings.push(`${name} is ${size} tokens (limit: ${limit} tokens)`);
     }
   }
   return warnings;
+}
+function estimateTokenCount(content) {
+  return Math.ceil(new TextEncoder().encode(content).length / 4);
 }
 function buildPrompt(rawDocs, toolId, feedback, config = {}) {
   const sl = resolveSizeLimits(config);
@@ -7835,10 +7838,10 @@ Prioritize across all files:
 ${priorityList}
 
 Per-file size targets (strict — return less content rather than exceed these):
-- "skill": ≤ ${sl["SKILL.md"]} bytes — the essential quick reference every agent needs
-- "advanced": ≤ ${sl["advanced.md"]} bytes — power-user flags and edge cases
-- "recipes": ≤ ${sl["recipes.md"]} bytes — task-oriented examples
-- "troubleshooting": ≤ ${sl["troubleshooting.md"]} bytes — known gotchas and common LLM mistakes
+- "skill": ≤ ${sl["SKILL.md"]} tokens — the essential quick reference every agent needs
+- "advanced": ≤ ${sl["advanced.md"]} tokens — power-user flags and edge cases
+- "recipes": ≤ ${sl["recipes.md"]} tokens — task-oriented examples
+- "troubleshooting": ≤ ${sl["troubleshooting.md"]} tokens — known gotchas and common LLM mistakes
 
 **CRITICAL — Anti-hallucination rule:** You MUST ONLY use information explicitly present in the raw docs provided above. Do NOT draw on your training knowledge about this tool. Do NOT add commands, flags, examples, or behavior from your training knowledge. Do NOT invent flags, subcommands, options, or behaviors that are not documented in the raw docs above. Only distill what appears in the provided documentation.
 
@@ -8965,7 +8968,7 @@ async function handleGenerate(flags, binaryName) {
     const candidateCommands = identifySubcommandCandidates(parsed.commands, tool.binary, runCommand);
     const toolJsonPath = path3.join(outDir, tool.id, "tool.json");
     const storedCommandHelpArgs = tool.commandHelpArgs ? undefined : await readStoredCommandHelpArgs(toolJsonPath);
-    const commandHelpArgs = tool.commandHelpArgs ?? resolveCommandHelpArgs(tool.binary, candidateCommands, storedCommandHelpArgs, runCommand);
+    const commandHelpArgs = tool.commandHelpArgs ?? resolveCommandHelpArgs(tool.binary, candidateCommands, parsed.commands, storedCommandHelpArgs, runCommand);
     const subcommandCandidates = candidateCommands.map((candidate) => ({
       name: candidate.name,
       summary: candidate.summary
@@ -9062,13 +9065,17 @@ function matchesCommandHelpPattern(binary, candidateName, pattern, runFn) {
   const result = runFn(binary, probeArgs);
   return hasSubcommandSection(result.output);
 }
-function resolveCommandHelpArgs(binary, candidates, storedCommandHelpArgs, runFn) {
+function resolveCommandHelpArgs(binary, candidates, commands, storedCommandHelpArgs, runFn) {
+  if (storedCommandHelpArgs) {
+    const probeCommands = candidates.length > 0 ? candidates : commands;
+    for (const probeCommand of probeCommands) {
+      if (matchesCommandHelpPattern(binary, probeCommand.name, storedCommandHelpArgs, runFn)) {
+        return [...storedCommandHelpArgs];
+      }
+    }
+  }
   if (candidates.length === 0)
     return;
-  const candidateName = candidates[0].name;
-  if (storedCommandHelpArgs && matchesCommandHelpPattern(binary, candidateName, storedCommandHelpArgs, runFn)) {
-    return [...storedCommandHelpArgs];
-  }
   return detectCommandHelpArgs(binary, candidates, runFn);
 }
 async function generateCommandDocs(toolId, binary, commandHelpArgs, commands, toolDir, runFn = runCommand, maxDepth = DEFAULT_MAX_DEPTH) {

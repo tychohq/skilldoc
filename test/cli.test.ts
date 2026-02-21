@@ -670,10 +670,12 @@ echo "Usage: orderedcli"
     const doc = JSON.parse(readFileSync(path.join(outDir, "orderedcli", "tool.json"), "utf8"));
     expect(doc.commandHelpArgs).toEqual(["{command}", "-h"]);
     expect(existsSync(path.join(outDir, "orderedcli", "commands", "remote", "command.json"))).toBe(true);
+    expect(existsSync(path.join(outDir, "orderedcli", "commands", "status", "command.json"))).toBe(true);
 
     const calls = readFileSync(callsPath, "utf8").trim().split("\n");
     expect(calls).toContain("remote --help");
     expect(calls).toContain("remote -h");
+    expect(calls).toContain("status -h");
     expect(calls).not.toContain("help remote");
   });
 
@@ -734,6 +736,90 @@ echo "Usage: cachedpatterncli"
     const calls = readFileSync(callsPath, "utf8").trim().split("\n").filter(Boolean);
     expect(calls).not.toContain("remote --help");
     expect(calls).toContain("remote -h");
+  });
+
+  it("uses stored commandHelpArgs to generate docs for all top-level commands when heuristics find no candidates", async () => {
+    const binaryPath = path.join(tmpDir, "storedpatternallcmds");
+    const modePath = path.join(tmpDir, "storedpatternallcmds-mode.txt");
+    writeFileSync(
+      binaryPath,
+      `#!/bin/sh
+MODE="$(cat "${modePath}" 2>/dev/null)"
+if [ "$1" = "--help" ]; then
+  if [ "$MODE" = "neutral" ]; then
+    cat <<'EOF'
+Usage: storedpatternallcmds [command]
+
+Commands:
+  remote  Remote operations
+  status  Show status
+EOF
+  else
+    cat <<'EOF'
+Usage: storedpatternallcmds [command]
+
+Commands:
+  remote  Manage remotes
+  status  Show status
+EOF
+  fi
+  exit 0
+fi
+
+if [ "$1" = "remote" ] && [ "$2" = "--help" ]; then
+  echo "Usage: storedpatternallcmds remote"
+  exit 0
+fi
+
+if [ "$1" = "status" ] && [ "$2" = "--help" ]; then
+  echo "Usage: storedpatternallcmds status"
+  exit 0
+fi
+
+if [ "$1" = "remote" ] && [ "$2" = "-h" ]; then
+  cat <<'EOF'
+Usage: storedpatternallcmds remote [command]
+
+Commands:
+  add  Add remote
+EOF
+  exit 0
+fi
+
+if [ "$1" = "status" ] && [ "$2" = "-h" ]; then
+  echo "Usage: storedpatternallcmds status"
+  exit 0
+fi
+
+if [ "$1" = "remote" ] && [ "$2" = "add" ] && [ "$3" = "--help" ]; then
+  echo "Usage: storedpatternallcmds remote add <name>"
+  exit 0
+fi
+
+echo "Usage: storedpatternallcmds"
+`,
+      { mode: 0o755 }
+    );
+
+    const registryPath = path.join(tmpDir, "registry.yaml");
+    writeFileSync(registryPath, `version: 1\ntools:\n  - id: storedpatternallcmds\n    binary: "${binaryPath}"\n`);
+
+    const outDir = path.join(tmpDir, "out");
+    await handleGenerate({ out: outDir, registry: registryPath });
+
+    const firstDoc = JSON.parse(readFileSync(path.join(outDir, "storedpatternallcmds", "tool.json"), "utf8"));
+    expect(firstDoc.commandHelpArgs).toEqual(["{command}", "-h"]);
+    expect(existsSync(path.join(outDir, "storedpatternallcmds", "commands", "remote", "command.json"))).toBe(true);
+    expect(existsSync(path.join(outDir, "storedpatternallcmds", "commands", "status", "command.json"))).toBe(true);
+
+    writeFileSync(modePath, "neutral\n", "utf8");
+    await handleGenerate({ out: outDir, registry: registryPath });
+
+    const secondDoc = JSON.parse(readFileSync(path.join(outDir, "storedpatternallcmds", "tool.json"), "utf8"));
+    expect(secondDoc.subcommandCandidates).toEqual([]);
+    expect(secondDoc.commandHelpArgs).toEqual(["{command}", "-h"]);
+    expect(existsSync(path.join(outDir, "storedpatternallcmds", "commands", "remote", "command.json"))).toBe(true);
+    expect(existsSync(path.join(outDir, "storedpatternallcmds", "commands", "status", "command.json"))).toBe(true);
   });
 
   it("falls back to top-level help when stored commandHelpArgs no longer work", async () => {
@@ -1040,11 +1126,11 @@ describe("bin/tool-docs.js --help (integration)", () => {
 });
 
 describe("COMPLEXITY_SKILL_LIMITS", () => {
-  it("maps simple to 2000 bytes", () => {
+  it("maps simple to 2000 tokens", () => {
     expect(COMPLEXITY_SKILL_LIMITS.simple).toBe(2000);
   });
 
-  it("maps complex to 4000 bytes", () => {
+  it("maps complex to 4000 tokens", () => {
     expect(COMPLEXITY_SKILL_LIMITS.complex).toBe(4000);
   });
 });
@@ -1338,7 +1424,7 @@ describe("handleDistill with tool-id", () => {
     const mockDistill = async (opts: DistillOptions): Promise<DistillResult> => ({
       toolId: opts.toolId,
       outDir: opts.outDir,
-      sizeWarnings: ["SKILL.md is 4500 bytes (limit: 4000 bytes)"],
+      sizeWarnings: ["SKILL.md is 1100 tokens (limit: 1000 tokens)"],
     });
 
     let consoleOutput = "";

@@ -205,16 +205,16 @@ describe("callLLM", () => {
     expect(capturedInput).toContain("SKILL.md is the most important");
   });
 
-  it("prompt includes per-file byte limits including 4000-byte limit for skill and 1000-byte limit for troubleshooting", () => {
+  it("prompt includes per-file token limits including 1000-token limit for skill and 250-token limit for troubleshooting", () => {
     let capturedInput = "";
     const exec = (_cmd: string, _args: ReadonlyArray<string>, opts: { input: string }) => {
       capturedInput = opts.input;
       return { stdout: validJson, stderr: "", status: 0 };
     };
     callLLM("docs", "tool", "model", exec);
-    expect(capturedInput).toContain("≤ 4000 bytes");
-    expect(capturedInput).toContain("≤ 2000 bytes");
-    expect(capturedInput).toContain("≤ 1000 bytes");
+    expect(capturedInput).toContain("≤ 1000 tokens");
+    expect(capturedInput).toContain("≤ 500 tokens");
+    expect(capturedInput).toContain("≤ 250 tokens");
   });
 
   it("prompt instructs to prioritize most-used flags first with 80/20 rule", () => {
@@ -687,7 +687,7 @@ describe("distillTool - full flow", () => {
     expect(result.sizeWarnings).toBeUndefined();
   });
 
-  it("returns sizeWarnings when SKILL.md exceeds 4000 bytes", async () => {
+  it("returns sizeWarnings when SKILL.md exceeds 1000 tokens", async () => {
     const docsDir = setupDocs("mytool");
     const outDir = path.join(tmpDir, "skills", "mytool");
 
@@ -704,10 +704,10 @@ describe("distillTool - full flow", () => {
 
     expect(result.sizeWarnings).toBeDefined();
     expect(result.sizeWarnings?.some((w) => w.includes("SKILL.md"))).toBe(true);
-    expect(result.sizeWarnings?.some((w) => w.includes("4000"))).toBe(true);
+    expect(result.sizeWarnings?.some((w) => w.includes("1000"))).toBe(true);
   });
 
-  it("returns sizeWarnings when troubleshooting.md exceeds 1000 bytes", async () => {
+  it("returns sizeWarnings when troubleshooting.md exceeds 250 tokens", async () => {
     const docsDir = setupDocs("mytool");
     const outDir = path.join(tmpDir, "skills", "mytool");
 
@@ -724,7 +724,7 @@ describe("distillTool - full flow", () => {
 
     expect(result.sizeWarnings).toBeDefined();
     expect(result.sizeWarnings?.some((w) => w.includes("troubleshooting.md"))).toBe(true);
-    expect(result.sizeWarnings?.some((w) => w.includes("1000"))).toBe(true);
+    expect(result.sizeWarnings?.some((w) => w.includes("250"))).toBe(true);
   });
 
   it("reports multiple size warnings when several files exceed their limits", async () => {
@@ -805,32 +805,32 @@ describe("buildPrompt — config customization", () => {
 
   it("uses default size limits when no config provided", () => {
     const prompt = buildPrompt("raw docs", "tool");
-    expect(prompt).toContain("≤ 4000 bytes");
-    expect(prompt).toContain("≤ 2000 bytes");
-    expect(prompt).toContain("≤ 1000 bytes");
+    expect(prompt).toContain("≤ 1000 tokens");
+    expect(prompt).toContain("≤ 500 tokens");
+    expect(prompt).toContain("≤ 250 tokens");
   });
 
   it("uses custom size limits from config", () => {
     const prompt = buildPrompt("raw docs", "tool", undefined, {
       sizeLimits: { skill: 1500, troubleshooting: 750 },
     });
-    expect(prompt).toContain("≤ 1500 bytes");
-    expect(prompt).toContain("≤ 750 bytes");
+    expect(prompt).toContain("≤ 1500 tokens");
+    expect(prompt).toContain("≤ 750 tokens");
     // skill line uses override; advanced/recipes still use default
-    expect(prompt).toContain('"skill": ≤ 1500 bytes');
-    expect(prompt).not.toContain('"skill": ≤ 4000 bytes');
-    expect(prompt).toContain('"troubleshooting": ≤ 750 bytes');
-    expect(prompt).not.toContain('"troubleshooting": ≤ 1000 bytes');
+    expect(prompt).toContain('"skill": ≤ 1500 tokens');
+    expect(prompt).not.toContain('"skill": ≤ 1000 tokens');
+    expect(prompt).toContain('"troubleshooting": ≤ 750 tokens');
+    expect(prompt).not.toContain('"troubleshooting": ≤ 250 tokens');
   });
 
   it("partial size limit override only changes specified files", () => {
     const prompt = buildPrompt("raw docs", "tool", undefined, {
       sizeLimits: { skill: 1000 },
     });
-    expect(prompt).toContain("≤ 1000 bytes");
+    expect(prompt).toContain("≤ 1000 tokens");
     // advanced and recipes still use defaults
-    const advancedMatch = prompt.match(/"advanced".*?≤ (\d+) bytes/);
-    expect(advancedMatch?.[1]).toBe("2000");
+    const advancedMatch = prompt.match(/"advanced".*?≤ (\d+) tokens/);
+    expect(advancedMatch?.[1]).toBe("500");
   });
 
   it("appends extraInstructions before the feedback section", () => {
@@ -927,9 +927,9 @@ describe("callLLM — config forwarding", () => {
       return { stdout: validJson, stderr: "", status: 0 };
     };
     callLLM("docs", "tool", "model", exec);
-    expect(capturedInput).toContain("≤ 4000 bytes");
-    expect(capturedInput).toContain("≤ 2000 bytes");
-    expect(capturedInput).toContain("≤ 1000 bytes");
+    expect(capturedInput).toContain("≤ 1000 tokens");
+    expect(capturedInput).toContain("≤ 500 tokens");
+    expect(capturedInput).toContain("≤ 250 tokens");
   });
 });
 
@@ -1042,7 +1042,7 @@ describe("distillTool — promptConfig integration", () => {
 
     const mockLLM: LLMCaller = () => ({
       description: "d",
-      skill: "x".repeat(1001), // exceeds custom limit of 1000 but not default 4000
+      skill: "x".repeat(4001), // exceeds custom limit of 1000 tokens
       advanced: "adv",
       recipes: "rec",
       troubleshooting: "trbl",
@@ -1122,10 +1122,10 @@ describe("distillTool — promptConfig integration", () => {
 
 describe("DEFAULT_PROMPT_CONFIG", () => {
   it("has all required size limit fields", () => {
-    expect(DEFAULT_PROMPT_CONFIG.sizeLimits?.skill).toBe(4000);
-    expect(DEFAULT_PROMPT_CONFIG.sizeLimits?.advanced).toBe(2000);
-    expect(DEFAULT_PROMPT_CONFIG.sizeLimits?.recipes).toBe(2000);
-    expect(DEFAULT_PROMPT_CONFIG.sizeLimits?.troubleshooting).toBe(1000);
+    expect(DEFAULT_PROMPT_CONFIG.sizeLimits?.skill).toBe(1000);
+    expect(DEFAULT_PROMPT_CONFIG.sizeLimits?.advanced).toBe(500);
+    expect(DEFAULT_PROMPT_CONFIG.sizeLimits?.recipes).toBe(500);
+    expect(DEFAULT_PROMPT_CONFIG.sizeLimits?.troubleshooting).toBe(250);
   });
 
   it("has 6 default priorities", () => {

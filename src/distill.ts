@@ -47,9 +47,9 @@ export const INSUFFICIENT_DOCS_SENTINEL = "Insufficient raw docs — re-run gene
  */
 export type DistillPromptConfig = {
   /**
-   * Per-file byte limits used in both the LLM prompt and post-generation size checks.
+   * Per-file token limits used in both the LLM prompt and post-generation size checks.
    * Lower values force more aggressive compression from the LLM.
-   * Defaults: skill=2000, advanced=2000, recipes=2000, troubleshooting=1000.
+   * Defaults: skill=1000, advanced=500, recipes=500, troubleshooting=250.
    */
   sizeLimits?: {
     skill?: number;
@@ -75,10 +75,10 @@ export type DistillPromptConfig = {
 /** Default values used when a DistillPromptConfig field is omitted. */
 export const DEFAULT_PROMPT_CONFIG: DistillPromptConfig = {
   sizeLimits: {
-    skill: 4000,
-    advanced: 2000,
-    recipes: 2000,
-    troubleshooting: 1000,
+    skill: 1000,
+    advanced: 500,
+    recipes: 500,
+    troubleshooting: 250,
   },
   priorities: [
     "**Most-used flags/commands first** — the 20% of flags that cover 80% of real-world use",
@@ -230,12 +230,17 @@ function checkSizeLimits(files: Record<string, string>, limits: Record<string, n
   for (const [name, content] of Object.entries(files)) {
     const limit = limits[name];
     if (limit === undefined) continue;
-    const size = new TextEncoder().encode(content).length;
+    const size = estimateTokenCount(content);
     if (size > limit) {
-      warnings.push(`${name} is ${size} bytes (limit: ${limit} bytes)`);
+      warnings.push(`${name} is ${size} tokens (limit: ${limit} tokens)`);
     }
   }
   return warnings;
+}
+
+function estimateTokenCount(content: string): number {
+  // Approximate LLM token count from UTF-8 bytes (about 4 bytes per token).
+  return Math.ceil(new TextEncoder().encode(content).length / 4);
 }
 
 /**
@@ -243,7 +248,7 @@ function checkSizeLimits(files: Record<string, string>, limits: Record<string, n
  *
  * The prompt has three configurable sections via DistillPromptConfig:
  *   1. priorities     — numbered list of what to emphasize across all files
- *   2. sizeLimits     — per-file byte budgets stated in the prompt and enforced post-gen
+ *   2. sizeLimits     — per-file token budgets stated in the prompt and enforced post-gen
  *   3. extraInstructions — appended before the JSON output requirement
  *
  * All other sections (output format specs, JSON key list, feedback injection) are fixed
@@ -272,10 +277,10 @@ Prioritize across all files:
 ${priorityList}
 
 Per-file size targets (strict — return less content rather than exceed these):
-- "skill": ≤ ${sl["SKILL.md"]} bytes — the essential quick reference every agent needs
-- "advanced": ≤ ${sl["advanced.md"]} bytes — power-user flags and edge cases
-- "recipes": ≤ ${sl["recipes.md"]} bytes — task-oriented examples
-- "troubleshooting": ≤ ${sl["troubleshooting.md"]} bytes — known gotchas and common LLM mistakes
+- "skill": ≤ ${sl["SKILL.md"]} tokens — the essential quick reference every agent needs
+- "advanced": ≤ ${sl["advanced.md"]} tokens — power-user flags and edge cases
+- "recipes": ≤ ${sl["recipes.md"]} tokens — task-oriented examples
+- "troubleshooting": ≤ ${sl["troubleshooting.md"]} tokens — known gotchas and common LLM mistakes
 
 **CRITICAL — Anti-hallucination rule:** You MUST ONLY use information explicitly present in the raw docs provided above. Do NOT draw on your training knowledge about this tool. Do NOT add commands, flags, examples, or behavior from your training knowledge. Do NOT invent flags, subcommands, options, or behaviors that are not documented in the raw docs above. Only distill what appears in the provided documentation.
 

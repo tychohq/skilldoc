@@ -221,9 +221,9 @@ export async function handleInit(flags: Record<string, string | boolean>): Promi
 }
 
 /**
- * Derive a skill byte limit from a tool's complexity setting.
- * simple → 2000 bytes (single-command tools like jq, rg)
- * complex → 4000 bytes (multi-subcommand tools like gh, railway, wrangler)
+ * Derive a skill token limit from a tool's complexity setting.
+ * simple → 2000 tokens (single-command tools like jq, rg)
+ * complex → 4000 tokens (multi-subcommand tools like gh, railway, wrangler)
  */
 export const COMPLEXITY_SKILL_LIMITS: Record<ToolComplexity, number> = {
   simple: 2000,
@@ -611,6 +611,7 @@ export async function handleGenerate(flags: Record<string, string | boolean>, bi
     const commandHelpArgs = tool.commandHelpArgs ?? resolveCommandHelpArgs(
       tool.binary,
       candidateCommands,
+      parsed.commands,
       storedCommandHelpArgs,
       runCommand
     );
@@ -762,19 +763,20 @@ function matchesCommandHelpPattern(
 function resolveCommandHelpArgs(
   binary: string,
   candidates: CommandSummary[],
+  commands: CommandSummary[],
   storedCommandHelpArgs: string[] | undefined,
   runFn: RunFn
 ): string[] | undefined {
-  if (candidates.length === 0) return undefined;
-  const candidateName = candidates[0].name;
-
-  if (
-    storedCommandHelpArgs &&
-    matchesCommandHelpPattern(binary, candidateName, storedCommandHelpArgs, runFn)
-  ) {
-    return [...storedCommandHelpArgs];
+  if (storedCommandHelpArgs) {
+    const probeCommands = candidates.length > 0 ? candidates : commands;
+    for (const probeCommand of probeCommands) {
+      if (matchesCommandHelpPattern(binary, probeCommand.name, storedCommandHelpArgs, runFn)) {
+        return [...storedCommandHelpArgs];
+      }
+    }
   }
 
+  if (candidates.length === 0) return undefined;
   return detectCommandHelpArgs(binary, candidates, runFn);
 }
 
