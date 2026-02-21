@@ -7853,6 +7853,9 @@ SKILL.md format:
 
 <one-line description>
 
+## Critical Distinctions
+<If two or more commands could plausibly be confused (similar names, overlapping purposes), add this section at the TOP explaining the differences. Omit entirely if no confusion risk exists.>
+
 ## Quick Reference
 \`\`\`
 <binary> <most common usage>
@@ -7863,9 +7866,6 @@ SKILL.md format:
 
 ## Common Patterns
 <3-5 concrete examples covering the most common use cases>
-
-## Critical Distinctions
-<commands/flags commonly confused with each other — clarify the difference>
 \`\`\`
 
 docs/advanced.md format:

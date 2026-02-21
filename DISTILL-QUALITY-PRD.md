@@ -24,8 +24,8 @@ The `generate` step only captures top-level `--help` output. Tools like `railway
 The hand-written Railway skill has a "Critical Distinctions" section that prevents the most common mistake (using `deploy` instead of `up`). The auto-generated version lists both without explaining the difference.
 
 - [x] Update `buildPrompt()` in `distill.ts` to add a new section to the SKILL.md format template: `## Critical Distinctions` — commands/flags that are easily confused with each other
-- [ ] Add a priority rule: "**Confusion prevention** — call out commands or flags that look similar but do different things, or that have misleading names"
-- [ ] The prompt should instruct the LLM: "If two or more commands could plausibly be confused (similar names, overlapping purposes), add a ## Critical Distinctions section at the TOP of SKILL.md explaining the differences"
+- [x] Add a priority rule: "**Confusion prevention** — call out commands or flags that look similar but do different things, or that have misleading names"
+- [x] The prompt should instruct the LLM: "If two or more commands could plausibly be confused (similar names, overlapping purposes), add a ## Critical Distinctions section at the TOP of SKILL.md explaining the differences"
 - [ ] Add test: verify `buildPrompt` output contains "Critical Distinctions" instruction
 
 ### 3. Include significant flags in subcommand reference table
