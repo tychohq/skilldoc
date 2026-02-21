@@ -42,10 +42,12 @@ export type ToolDoc = {
   description?: string;
   generatedAt: string;
   helpArgs: string[];
+  commandHelpArgs?: string[];
   helpExitCode: number | null;
   helpHash?: string;
   usage: UsageDoc;
   commands: CommandSummary[];
+  subcommandCandidates?: CommandSummary[];
   options: OptionDoc[];
   examples: string[];
   env: EnvDoc[];

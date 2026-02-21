@@ -8962,9 +8962,15 @@ async function handleGenerate(flags, binaryName) {
     }
     const usageTokens = extractUsageTokens(parsed.usageLines, tool.binary);
     const usage = buildUsageDoc(parsed.usageLines, tool.binary);
+    const candidateCommands = identifySubcommandCandidates(parsed.commands, tool.binary, runCommand);
+    const commandHelpArgs = tool.commandHelpArgs ?? detectCommandHelpArgs(tool.binary, candidateCommands, runCommand);
+    const subcommandCandidates = candidateCommands.map((candidate) => ({
+      name: candidate.name,
+      summary: candidate.summary
+    }));
     const commands = parsed.commands.map((command) => ({
       ...command,
-      docPath: tool.commandHelpArgs ? commandDocPath(command) : undefined
+      docPath: commandHelpArgs ? commandDocPath(command) : undefined
     }));
     const optionsFromUsage = parsed.options.length === 0 && usageTokens.flags.length > 0;
     const options = optionsFromUsage ? usageTokens.flags.map((flag) => ({ flags: flag, description: "" })) : parsed.options;
@@ -8982,10 +8988,12 @@ async function handleGenerate(flags, binaryName) {
       description: tool.description,
       generatedAt: new Date().toISOString(),
       helpArgs,
+      commandHelpArgs,
       helpExitCode: helpResult.exitCode,
       helpHash: computeHash(helpResult.output),
       usage,
       commands,
+      subcommandCandidates,
       options,
       examples: parsed.examples,
       env: parsed.env,
@@ -8997,8 +9005,8 @@ async function handleGenerate(flags, binaryName) {
     await writeFileEnsured(path3.join(toolDir, "tool.yaml"), import_yaml3.default.stringify(doc));
     await writeFileEnsured(path3.join(toolDir, "tool.md"), renderToolMarkdown(doc));
     await rm(path3.join(toolDir, "raw.txt"), { force: true });
-    if (tool.commandHelpArgs) {
-      await generateCommandDocs(tool.id, tool.binary, tool.commandHelpArgs, commands, toolDir, runCommand, tool.maxDepth ?? DEFAULT_MAX_DEPTH);
+    if (commandHelpArgs) {
+      await generateCommandDocs(tool.id, tool.binary, commandHelpArgs, commands, toolDir, runCommand, tool.maxDepth ?? DEFAULT_MAX_DEPTH);
     }
     indexLines.push(`| ${tool.id} | ${tool.binary} |`);
   }
@@ -9008,6 +9016,11 @@ async function handleGenerate(flags, binaryName) {
 }
 var DEFAULT_MAX_DEPTH = 2;
 var SUBCOMMAND_KEYWORD_RE = /\b(manage|control)\b/i;
+var COMMAND_HELP_PROBE_PATTERNS = [
+  ["{command}", "--help"],
+  ["{command}", "-h"],
+  ["help", "{command}"]
+];
 function hasSubcommandKeyword(summary) {
   return SUBCOMMAND_KEYWORD_RE.test(summary);
 }
@@ -9022,6 +9035,20 @@ function identifySubcommandCandidates(commands, binary, runFn) {
     }
     return false;
   });
+}
+function detectCommandHelpArgs(binary, candidates, runFn) {
+  if (candidates.length === 0)
+    return;
+  const candidate = candidates[0];
+  for (const pattern of COMMAND_HELP_PROBE_PATTERNS) {
+    const probeArgs = pattern.map((part) => part.replace("{command}", candidate.name));
+    const result = runFn(binary, probeArgs);
+    const parsed = parseHelp(result.output);
+    if (parsed.commands.length > 0) {
+      return [...pattern];
+    }
+  }
+  return;
 }
 async function generateCommandDocs(toolId, binary, commandHelpArgs, commands, toolDir, runFn = runCommand, maxDepth = DEFAULT_MAX_DEPTH) {
   const commandsDir = path3.join(toolDir, "commands");
@@ -9244,6 +9271,7 @@ export {
   getChangedTools,
   generateCommandDocs,
   extractPositionalArgs,
+  detectCommandHelpArgs,
   computeSkillDiff,
   computeHash,
   applyComplexity,

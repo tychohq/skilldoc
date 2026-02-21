@@ -8,7 +8,7 @@ Two improvements to make `tool-docs run <binary>` "just work" without registry c
 
 When `commandHelpArgs` is not specified in the registry (or when running in ad-hoc mode), the generate step should auto-detect how the CLI exposes subcommand help.
 
-- [ ] After parsing top-level `--help`, identify commands that likely have subcommands (heuristic: description contains "Manage", "Control", or the command's own `--help` lists sub-commands)
+- [x] After parsing top-level `--help`, identify commands that likely have subcommands (heuristic: description contains "Manage", "Control", or the command's own `--help` lists sub-commands)
 - [ ] Pick one candidate command and probe these patterns in order:
   1. `<binary> <cmd> --help`
   2. `<binary> <cmd> -h`

@@ -600,9 +600,26 @@ export async function handleGenerate(flags: Record<string, string | boolean>, bi
     const usageTokens = extractUsageTokens(parsed.usageLines, tool.binary);
     const usage = buildUsageDoc(parsed.usageLines, tool.binary);
 
+    const candidateCommands = identifySubcommandCandidates(
+      parsed.commands,
+      tool.binary,
+      runCommand
+    );
+
+    const commandHelpArgs = tool.commandHelpArgs ?? detectCommandHelpArgs(
+      tool.binary,
+      candidateCommands,
+      runCommand
+    );
+
+    const subcommandCandidates = candidateCommands.map((candidate) => ({
+      name: candidate.name,
+      summary: candidate.summary,
+    }));
+
     const commands = parsed.commands.map((command) => ({
       ...command,
-      docPath: tool.commandHelpArgs ? commandDocPath(command) : undefined,
+      docPath: commandHelpArgs ? commandDocPath(command) : undefined,
     }));
 
     const optionsFromUsage = parsed.options.length === 0 && usageTokens.flags.length > 0;
@@ -625,10 +642,12 @@ export async function handleGenerate(flags: Record<string, string | boolean>, bi
       description: tool.description,
       generatedAt: new Date().toISOString(),
       helpArgs,
+      commandHelpArgs,
       helpExitCode: helpResult.exitCode,
       helpHash: computeHash(helpResult.output),
       usage,
       commands,
+      subcommandCandidates,
       options,
       examples: parsed.examples,
       env: parsed.env,
@@ -643,8 +662,8 @@ export async function handleGenerate(flags: Record<string, string | boolean>, bi
     await writeFileEnsured(path.join(toolDir, "tool.md"), renderToolMarkdown(doc));
     await rm(path.join(toolDir, "raw.txt"), { force: true });
 
-    if (tool.commandHelpArgs) {
-      await generateCommandDocs(tool.id, tool.binary, tool.commandHelpArgs, commands, toolDir, runCommand, tool.maxDepth ?? DEFAULT_MAX_DEPTH);
+    if (commandHelpArgs) {
+      await generateCommandDocs(tool.id, tool.binary, commandHelpArgs, commands, toolDir, runCommand, tool.maxDepth ?? DEFAULT_MAX_DEPTH);
     }
 
     indexLines.push(`| ${tool.id} | ${tool.binary} |`);
@@ -659,6 +678,11 @@ export const DEFAULT_MAX_DEPTH = 2;
 export type RunFn = (binary: string, args: string[]) => { output: string; exitCode: number | null; error?: string };
 
 const SUBCOMMAND_KEYWORD_RE = /\b(manage|control)\b/i;
+const COMMAND_HELP_PROBE_PATTERNS: string[][] = [
+  ["{command}", "--help"],
+  ["{command}", "-h"],
+  ["help", "{command}"],
+];
 
 /**
  * Returns true if a command summary likely indicates the command manages sub-resources.
@@ -689,6 +713,30 @@ export function identifySubcommandCandidates(
     }
     return false;
   });
+}
+
+/**
+ * Probe command-help invocation styles using one candidate command.
+ * Returns the matching argument template (with {command}) or undefined.
+ */
+export function detectCommandHelpArgs(
+  binary: string,
+  candidates: CommandSummary[],
+  runFn: RunFn
+): string[] | undefined {
+  if (candidates.length === 0) return undefined;
+  const candidate = candidates[0];
+
+  for (const pattern of COMMAND_HELP_PROBE_PATTERNS) {
+    const probeArgs = pattern.map((part) => part.replace("{command}", candidate.name));
+    const result = runFn(binary, probeArgs);
+    const parsed = parseHelp(result.output);
+    if (parsed.commands.length > 0) {
+      return [...pattern];
+    }
+  }
+
+  return undefined;
 }
 
 export async function generateCommandDocs(

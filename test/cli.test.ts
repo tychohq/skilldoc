@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
-import { parseFlags, extractPositionalArgs, handleAutoRedist, handleGenerate, handleDistill, handleInit, handleRun, handleRunBatch, resolveBinary, lookupRegistryTool, generateCommandDocs, DEFAULT_MAX_DEPTH, applyComplexity, COMPLEXITY_SKILL_LIMITS, hasSubcommandKeyword, identifySubcommandCandidates, type RunFn, type RunDeps, type RunBatchDeps, type RunResult } from "../src/cli.js";
+import { parseFlags, extractPositionalArgs, handleAutoRedist, handleGenerate, handleDistill, handleInit, handleRun, handleRunBatch, resolveBinary, lookupRegistryTool, generateCommandDocs, DEFAULT_MAX_DEPTH, applyComplexity, COMPLEXITY_SKILL_LIMITS, hasSubcommandKeyword, identifySubcommandCandidates, detectCommandHelpArgs, type RunFn, type RunDeps, type RunBatchDeps, type RunResult } from "../src/cli.js";
 import { DEFAULT_MODEL, DEFAULT_SKILLS_DIR, DistillOptions, DistillResult } from "../src/distill.js";
 import { DEFAULT_VALIDATION_MODELS, type MultiModelValidationReport } from "../src/validate.js";
 
@@ -363,6 +363,7 @@ describe("handleGenerate with binary name", () => {
     expect(doc.helpHash.length).toBe(64); // sha256 hex
     expect(doc.usage).toBeDefined();
     expect(Array.isArray(doc.commands)).toBe(true);
+    expect(Array.isArray(doc.subcommandCandidates)).toBe(true);
     expect(Array.isArray(doc.options)).toBe(true);
     expect(Array.isArray(doc.examples)).toBe(true);
     expect(Array.isArray(doc.env)).toBe(true);
@@ -511,6 +512,215 @@ describe("handleGenerate registry precedence", () => {
     await handleGenerate({ out: outDir, registry: registryPath }, "echo");
     // commandHelpArgs presence should trigger command doc generation infrastructure
     expect(existsSync(path.join(outDir, "echo", "commands"))).toBe(true);
+  });
+});
+
+describe("handleGenerate subcommand candidate detection", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = path.join(os.tmpdir(), `generate-subcommand-candidates-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("captures candidates from keyword and command-help heuristics", async () => {
+    const binaryPath = path.join(tmpDir, "fakecli");
+    writeFileSync(
+      binaryPath,
+      `#!/bin/sh
+if [ "$1" = "--help" ]; then
+  cat <<'EOF'
+Usage: fakecli [command]
+
+Commands:
+  remote   Manage remotes
+  plugins  Plugin operations
+  status   Show status
+EOF
+  exit 0
+fi
+
+if [ "$1" = "plugins" ] && [ "$2" = "--help" ]; then
+  cat <<'EOF'
+Usage: fakecli plugins [command]
+
+Commands:
+  add  Add plugin
+EOF
+  exit 0
+fi
+
+echo "Usage: fakecli"
+`,
+      { mode: 0o755 }
+    );
+
+    const registryPath = path.join(tmpDir, "registry.yaml");
+    writeFileSync(registryPath, `version: 1\ntools:\n  - id: fakecli\n    binary: "${binaryPath}"\n`);
+
+    const outDir = path.join(tmpDir, "out");
+    await handleGenerate({ out: outDir, registry: registryPath });
+
+    const doc = JSON.parse(readFileSync(path.join(outDir, "fakecli", "tool.json"), "utf8"));
+    const names = doc.subcommandCandidates.map((c: { name: string }) => c.name);
+    expect(names).toContain("remote");
+    expect(names).toContain("plugins");
+    expect(names).not.toContain("status");
+  });
+
+  it("stores an empty candidate list when no commands look hierarchical", async () => {
+    const binaryPath = path.join(tmpDir, "flatcli");
+    writeFileSync(
+      binaryPath,
+      `#!/bin/sh
+if [ "$1" = "--help" ]; then
+  cat <<'EOF'
+Usage: flatcli [command]
+
+Commands:
+  push  Push changes
+  pull  Pull changes
+EOF
+  exit 0
+fi
+
+echo "Usage: flatcli"
+`,
+      { mode: 0o755 }
+    );
+
+    const registryPath = path.join(tmpDir, "registry.yaml");
+    writeFileSync(registryPath, `version: 1\ntools:\n  - id: flatcli\n    binary: "${binaryPath}"\n`);
+
+    const outDir = path.join(tmpDir, "out");
+    await handleGenerate({ out: outDir, registry: registryPath });
+
+    const doc = JSON.parse(readFileSync(path.join(outDir, "flatcli", "tool.json"), "utf8"));
+    expect(doc.subcommandCandidates).toEqual([]);
+  });
+
+  it("auto-detects commandHelpArgs with ordered probing and stores it in tool.json", async () => {
+    const binaryPath = path.join(tmpDir, "orderedcli");
+    const callsPath = path.join(tmpDir, "orderedcli-calls.log");
+    writeFileSync(
+      binaryPath,
+      `#!/bin/sh
+printf '%s\n' "$*" >> "${callsPath}"
+if [ "$1" = "--help" ]; then
+  cat <<'EOF'
+Usage: orderedcli [command]
+
+Commands:
+  remote  Manage remotes
+  status  Show status
+EOF
+  exit 0
+fi
+
+if [ "$1" = "remote" ] && [ "$2" = "--help" ]; then
+  echo "Usage: orderedcli remote"
+  exit 0
+fi
+
+if [ "$1" = "remote" ] && [ "$2" = "-h" ]; then
+  cat <<'EOF'
+Usage: orderedcli remote [command]
+
+Commands:
+  add  Add remote
+EOF
+  exit 0
+fi
+
+if [ "$1" = "remote" ] && [ "$2" = "add" ] && [ "$3" = "--help" ]; then
+  echo "Usage: orderedcli remote add <name>"
+  exit 0
+fi
+
+if [ "$1" = "status" ] && [ "$2" = "-h" ]; then
+  echo "Usage: orderedcli status"
+  exit 0
+fi
+
+if [ "$1" = "help" ] && [ "$2" = "remote" ]; then
+  cat <<'EOF'
+Usage: orderedcli remote [command]
+
+Commands:
+  add  Add remote
+EOF
+  exit 0
+fi
+
+echo "Usage: orderedcli"
+`,
+      { mode: 0o755 }
+    );
+
+    const registryPath = path.join(tmpDir, "registry.yaml");
+    writeFileSync(registryPath, `version: 1\ntools:\n  - id: orderedcli\n    binary: "${binaryPath}"\n`);
+
+    const outDir = path.join(tmpDir, "out");
+    await handleGenerate({ out: outDir, registry: registryPath });
+
+    const doc = JSON.parse(readFileSync(path.join(outDir, "orderedcli", "tool.json"), "utf8"));
+    expect(doc.commandHelpArgs).toEqual(["{command}", "-h"]);
+    expect(existsSync(path.join(outDir, "orderedcli", "commands", "remote", "command.json"))).toBe(true);
+
+    const calls = readFileSync(callsPath, "utf8").trim().split("\n");
+    expect(calls).toContain("remote --help");
+    expect(calls).toContain("remote -h");
+    expect(calls).not.toContain("help remote");
+  });
+
+  it("falls back gracefully when no command-help pattern works", async () => {
+    const binaryPath = path.join(tmpDir, "nopatterncli");
+    writeFileSync(
+      binaryPath,
+      `#!/bin/sh
+if [ "$1" = "--help" ]; then
+  cat <<'EOF'
+Usage: nopatterncli [command]
+
+Commands:
+  push  Manage pushes
+EOF
+  exit 0
+fi
+
+if [ "$1" = "push" ] && [ "$2" = "--help" ]; then
+  echo "Usage: nopatterncli push"
+  exit 0
+fi
+
+if [ "$1" = "push" ] && [ "$2" = "-h" ]; then
+  echo "Usage: nopatterncli push"
+  exit 0
+fi
+
+if [ "$1" = "help" ] && [ "$2" = "push" ]; then
+  echo "Usage: nopatterncli push"
+  exit 0
+fi
+
+echo "Usage: nopatterncli"
+`,
+      { mode: 0o755 }
+    );
+
+    const registryPath = path.join(tmpDir, "registry.yaml");
+    writeFileSync(registryPath, `version: 1\ntools:\n  - id: nopatterncli\n    binary: "${binaryPath}"\n`);
+
+    const outDir = path.join(tmpDir, "out");
+    await handleGenerate({ out: outDir, registry: registryPath });
+
+    const doc = JSON.parse(readFileSync(path.join(outDir, "nopatterncli", "tool.json"), "utf8"));
+    expect(doc.commandHelpArgs).toBeUndefined();
+    expect(existsSync(path.join(outDir, "nopatterncli", "commands"))).toBe(false);
   });
 });
 
@@ -2235,5 +2445,35 @@ describe("identifySubcommandCandidates — runtime heuristic", () => {
     const runFn: RunFn = (_binary, _args) => ({ output: "", exitCode: 1 });
     const result = identifySubcommandCandidates(commands, "mytool", runFn);
     expect(result).toHaveLength(0);
+  });
+});
+
+describe("detectCommandHelpArgs", () => {
+  it("probes patterns in order and returns the first matching pattern", () => {
+    const calls: string[] = [];
+    const runFn: RunFn = (_binary, args) => {
+      const key = args.join(" ");
+      calls.push(key);
+      if (key === "remote -h") {
+        return { output: "Commands:\n  add  Add remote\n", exitCode: 0 };
+      }
+      return { output: "Usage: mycli", exitCode: 0 };
+    };
+
+    const result = detectCommandHelpArgs("mycli", [{ name: "remote", summary: "Manage remotes" }], runFn);
+    expect(result).toEqual(["{command}", "-h"]);
+    expect(calls).toEqual(["remote --help", "remote -h"]);
+  });
+
+  it("returns undefined when no pattern yields subcommands", () => {
+    const calls: string[] = [];
+    const runFn: RunFn = (_binary, args) => {
+      calls.push(args.join(" "));
+      return { output: "Usage: mycli", exitCode: 0 };
+    };
+
+    const result = detectCommandHelpArgs("mycli", [{ name: "push", summary: "Manage pushes" }], runFn);
+    expect(result).toBeUndefined();
+    expect(calls).toEqual(["push --help", "push -h", "help push"]);
   });
 });
