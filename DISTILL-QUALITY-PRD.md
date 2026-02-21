@@ -15,15 +15,15 @@ The `generate` step only captures top-level `--help` output. Tools like `railway
 
 - [x] In `cli.ts` `generateCommandDocs()`, for each top-level command that has its own subcommands (detected by parsing the command's `--help` output), recursively capture `<binary> <cmd> <subcmd> --help`
 - [x] Store nested command docs at `commands/<cmd>/<subcmd>/command.md` (one level deeper)
-- [ ] In `gatherRawDocs()` (`distill.ts`), recursively read all nested command docs so the LLM sees the full subcommand tree
-- [ ] Add a `maxDepth` option to registry entries (default: 2) to prevent infinite recursion on deeply nested CLIs
-- [ ] Add tests: verify that a tool with 2-level subcommands produces nested command docs
+- [x] In `gatherRawDocs()` (`distill.ts`), recursively read all nested command docs so the LLM sees the full subcommand tree
+- [x] Add a `maxDepth` option to registry entries (default: 2) to prevent infinite recursion on deeply nested CLIs
+- [x] Add tests: verify that a tool with 2-level subcommands produces nested command docs
 
 ### 2. Add "Critical Distinctions" / "Confusion Points" section to distill prompt
 
 The hand-written Railway skill has a "Critical Distinctions" section that prevents the most common mistake (using `deploy` instead of `up`). The auto-generated version lists both without explaining the difference.
 
-- [ ] Update `buildPrompt()` in `distill.ts` to add a new section to the SKILL.md format template: `## Critical Distinctions` — commands/flags that are easily confused with each other
+- [x] Update `buildPrompt()` in `distill.ts` to add a new section to the SKILL.md format template: `## Critical Distinctions` — commands/flags that are easily confused with each other
 - [ ] Add a priority rule: "**Confusion prevention** — call out commands or flags that look similar but do different things, or that have misleading names"
 - [ ] The prompt should instruct the LLM: "If two or more commands could plausibly be confused (similar names, overlapping purposes), add a ## Critical Distinctions section at the TOP of SKILL.md explaining the differences"
 - [ ] Add test: verify `buildPrompt` output contains "Critical Distinctions" instruction
