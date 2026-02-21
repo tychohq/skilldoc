@@ -54,6 +54,11 @@ function normalizeTool(tool: RegistryTool): RegistryTool {
       throw new Error(`Registry tool ${tool.id} useCases must be an array of strings.`);
     }
   }
+  if (tool.maxDepth !== undefined) {
+    if (typeof tool.maxDepth !== "number" || !Number.isInteger(tool.maxDepth) || tool.maxDepth < 1) {
+      throw new Error(`Registry tool ${tool.id} maxDepth must be a positive integer.`);
+    }
+  }
   return {
     enabled: true,
     helpArgs: ["--help"],

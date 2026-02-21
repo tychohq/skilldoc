@@ -7107,6 +7107,11 @@ function normalizeTool(tool) {
       throw new Error(`Registry tool ${tool.id} useCases must be an array of strings.`);
     }
   }
+  if (tool.maxDepth !== undefined) {
+    if (typeof tool.maxDepth !== "number" || !Number.isInteger(tool.maxDepth) || tool.maxDepth < 1) {
+      throw new Error(`Registry tool ${tool.id} maxDepth must be a positive integer.`);
+    }
+  }
   return {
     enabled: true,
     helpArgs: ["--help"],
@@ -8966,7 +8971,7 @@ async function handleGenerate(flags, binaryName) {
     await writeFileEnsured(path3.join(toolDir, "tool.md"), renderToolMarkdown(doc));
     await rm(path3.join(toolDir, "raw.txt"), { force: true });
     if (tool.commandHelpArgs) {
-      await generateCommandDocs(tool.id, tool.binary, tool.commandHelpArgs, commands, toolDir);
+      await generateCommandDocs(tool.id, tool.binary, tool.commandHelpArgs, commands, toolDir, runCommand, tool.maxDepth ?? DEFAULT_MAX_DEPTH);
     }
     indexLines.push(`| ${tool.id} | ${tool.binary} |`);
   }
@@ -8974,16 +8979,16 @@ async function handleGenerate(flags, binaryName) {
 `));
   console.log(`Generated docs for ${tools.length} tool(s) in ${outDir}`);
 }
-var MAX_SUBCOMMAND_DEPTH = 3;
-async function generateCommandDocs(toolId, binary, commandHelpArgs, commands, toolDir, runFn = runCommand) {
+var DEFAULT_MAX_DEPTH = 2;
+async function generateCommandDocs(toolId, binary, commandHelpArgs, commands, toolDir, runFn = runCommand, maxDepth = DEFAULT_MAX_DEPTH) {
   const commandsDir = path3.join(toolDir, "commands");
   await ensureDir(commandsDir);
   for (const command of commands) {
     const args = commandHelpArgs.map((arg) => arg.replace("{command}", command.name));
-    await generateOneCommandDoc(toolId, binary, command, args, commandsDir, [command.name], 0, runFn);
+    await generateOneCommandDoc(toolId, binary, command, args, commandsDir, [command.name], 0, runFn, maxDepth);
   }
 }
-async function generateOneCommandDoc(toolId, binary, command, helpArgs, commandsDir, cmdPath, depth, runFn) {
+async function generateOneCommandDoc(toolId, binary, command, helpArgs, commandsDir, cmdPath, depth, runFn, maxDepth) {
   const helpResult = runFn(binary, helpArgs);
   const parsed = parseHelp(helpResult.output);
   const warnings = [...parsed.warnings];
@@ -9025,10 +9030,10 @@ async function generateOneCommandDoc(toolId, binary, command, helpArgs, commands
   await writeFileEnsured(path3.join(commandDir, "command.json"), JSON.stringify(doc, null, 2));
   await writeFileEnsured(path3.join(commandDir, "command.yaml"), import_yaml3.default.stringify(doc));
   await writeFileEnsured(path3.join(commandDir, "command.md"), renderCommandMarkdown(doc));
-  if (depth < MAX_SUBCOMMAND_DEPTH && parsed.commands.length > 0) {
+  if (depth < maxDepth && parsed.commands.length > 0) {
     for (const subCmd of parsed.commands) {
       const subArgs = [...cmdPath, subCmd.name, "--help"];
-      await generateOneCommandDoc(toolId, binary, subCmd, subArgs, commandDir, [...cmdPath, subCmd.name], depth + 1, runFn);
+      await generateOneCommandDoc(toolId, binary, subCmd, subArgs, commandDir, [...cmdPath, subCmd.name], depth + 1, runFn, maxDepth);
     }
   }
 }
@@ -9195,5 +9200,6 @@ export {
   generateCommandDocs,
   extractPositionalArgs,
   computeSkillDiff,
-  computeHash
+  computeHash,
+  DEFAULT_MAX_DEPTH
 };

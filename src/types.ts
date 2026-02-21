@@ -17,6 +17,7 @@ export type RegistryTool = {
   category?: ToolCategory;
   homepage?: string;
   useCases?: string[];
+  maxDepth?: number;
 };
 
 export type UsageDoc = {

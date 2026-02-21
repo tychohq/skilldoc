@@ -161,6 +161,75 @@ describe("loadRegistry — useCases field", () => {
   });
 });
 
+describe("loadRegistry — maxDepth field", () => {
+  it("accepts a positive integer maxDepth", async () => {
+    const yaml = YAML.stringify({
+      version: 1,
+      tools: [{ id: "rg", binary: "rg", maxDepth: 3 }],
+    });
+    await withTmpRegistry(yaml, async (p) => {
+      const registry = await loadRegistry(p);
+      expect(registry.tools[0].maxDepth).toBe(3);
+    });
+  });
+
+  it("allows maxDepth to be omitted", async () => {
+    const yaml = YAML.stringify({
+      version: 1,
+      tools: [{ id: "rg", binary: "rg" }],
+    });
+    await withTmpRegistry(yaml, async (p) => {
+      const registry = await loadRegistry(p);
+      expect(registry.tools[0].maxDepth).toBeUndefined();
+    });
+  });
+
+  it("throws when maxDepth is zero", async () => {
+    const yaml = YAML.stringify({
+      version: 1,
+      tools: [{ id: "rg", binary: "rg", maxDepth: 0 }],
+    });
+    await withTmpRegistry(yaml, async (p) => {
+      await expect(loadRegistry(p)).rejects.toThrow("maxDepth must be a positive integer");
+    });
+  });
+
+  it("throws when maxDepth is negative", async () => {
+    const yaml = YAML.stringify({
+      version: 1,
+      tools: [{ id: "rg", binary: "rg", maxDepth: -1 }],
+    });
+    await withTmpRegistry(yaml, async (p) => {
+      await expect(loadRegistry(p)).rejects.toThrow("maxDepth must be a positive integer");
+    });
+  });
+
+  it("throws when maxDepth is a non-integer number", async () => {
+    const raw = `version: 1\ntools:\n  - id: rg\n    binary: rg\n    maxDepth: 1.5\n`;
+    await withTmpRegistry(raw, async (p) => {
+      await expect(loadRegistry(p)).rejects.toThrow("maxDepth must be a positive integer");
+    });
+  });
+
+  it("throws when maxDepth is a string", async () => {
+    const raw = `version: 1\ntools:\n  - id: rg\n    binary: rg\n    maxDepth: "two"\n`;
+    await withTmpRegistry(raw, async (p) => {
+      await expect(loadRegistry(p)).rejects.toThrow("maxDepth must be a positive integer");
+    });
+  });
+
+  it("accepts maxDepth: 1 (minimum valid value)", async () => {
+    const yaml = YAML.stringify({
+      version: 1,
+      tools: [{ id: "rg", binary: "rg", maxDepth: 1 }],
+    });
+    await withTmpRegistry(yaml, async (p) => {
+      const registry = await loadRegistry(p);
+      expect(registry.tools[0].maxDepth).toBe(1);
+    });
+  });
+});
+
 describe("loadRegistry — all metadata fields together", () => {
   it("parses all new fields on a single tool entry", async () => {
     const yaml = YAML.stringify({

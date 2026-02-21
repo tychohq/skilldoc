@@ -620,7 +620,7 @@ export async function handleGenerate(flags: Record<string, string | boolean>, bi
     await rm(path.join(toolDir, "raw.txt"), { force: true });
 
     if (tool.commandHelpArgs) {
-      await generateCommandDocs(tool.id, tool.binary, tool.commandHelpArgs, commands, toolDir);
+      await generateCommandDocs(tool.id, tool.binary, tool.commandHelpArgs, commands, toolDir, runCommand, tool.maxDepth ?? DEFAULT_MAX_DEPTH);
     }
 
     indexLines.push(`| ${tool.id} | ${tool.binary} |`);
@@ -630,7 +630,7 @@ export async function handleGenerate(flags: Record<string, string | boolean>, bi
   console.log(`Generated docs for ${tools.length} tool(s) in ${outDir}`);
 }
 
-const MAX_SUBCOMMAND_DEPTH = 3;
+export const DEFAULT_MAX_DEPTH = 2;
 
 type RunFn = (binary: string, args: string[]) => { output: string; exitCode: number | null; error?: string };
 
@@ -640,14 +640,15 @@ export async function generateCommandDocs(
   commandHelpArgs: string[],
   commands: CommandSummary[],
   toolDir: string,
-  runFn: RunFn = runCommand
+  runFn: RunFn = runCommand,
+  maxDepth: number = DEFAULT_MAX_DEPTH
 ): Promise<void> {
   const commandsDir = path.join(toolDir, "commands");
   await ensureDir(commandsDir);
 
   for (const command of commands) {
     const args = commandHelpArgs.map((arg) => arg.replace("{command}", command.name));
-    await generateOneCommandDoc(toolId, binary, command, args, commandsDir, [command.name], 0, runFn);
+    await generateOneCommandDoc(toolId, binary, command, args, commandsDir, [command.name], 0, runFn, maxDepth);
   }
 }
 
@@ -659,7 +660,8 @@ async function generateOneCommandDoc(
   commandsDir: string,
   cmdPath: string[],
   depth: number,
-  runFn: RunFn
+  runFn: RunFn,
+  maxDepth: number
 ): Promise<void> {
   const helpResult = runFn(binary, helpArgs);
   const parsed = parseHelp(helpResult.output);
@@ -715,7 +717,7 @@ async function generateOneCommandDoc(
   await writeFileEnsured(path.join(commandDir, "command.yaml"), YAML.stringify(doc));
   await writeFileEnsured(path.join(commandDir, "command.md"), renderCommandMarkdown(doc));
 
-  if (depth < MAX_SUBCOMMAND_DEPTH && parsed.commands.length > 0) {
+  if (depth < maxDepth && parsed.commands.length > 0) {
     for (const subCmd of parsed.commands) {
       const subArgs = [...cmdPath, subCmd.name, "--help"];
       await generateOneCommandDoc(
@@ -726,7 +728,8 @@ async function generateOneCommandDoc(
         commandDir,
         [...cmdPath, subCmd.name],
         depth + 1,
-        runFn
+        runFn,
+        maxDepth
       );
     }
   }

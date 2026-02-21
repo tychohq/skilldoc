@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
-import { parseFlags, extractPositionalArgs, handleAutoRedist, handleGenerate, handleDistill, handleInit, handleRun, handleRunBatch, resolveBinary, lookupRegistryTool, generateCommandDocs, type RunDeps, type RunBatchDeps, type RunResult } from "../src/cli.js";
+import { parseFlags, extractPositionalArgs, handleAutoRedist, handleGenerate, handleDistill, handleInit, handleRun, handleRunBatch, resolveBinary, lookupRegistryTool, generateCommandDocs, DEFAULT_MAX_DEPTH, type RunDeps, type RunBatchDeps, type RunResult } from "../src/cli.js";
 import { DEFAULT_MODEL, DEFAULT_SKILLS_DIR, DistillOptions, DistillResult } from "../src/distill.js";
 import { DEFAULT_VALIDATION_MODELS, type MultiModelValidationReport } from "../src/validate.js";
 
@@ -1685,7 +1685,7 @@ describe("generateCommandDocs - recursive subcommand detection", () => {
     expect(md).toContain("add");
   });
 
-  it("does not recurse beyond MAX_SUBCOMMAND_DEPTH", async () => {
+  it("does not recurse beyond DEFAULT_MAX_DEPTH", async () => {
     const toolDir = path.join(tmpDir, "mytool");
     mkdirSync(toolDir, { recursive: true });
 
@@ -1704,11 +1704,53 @@ describe("generateCommandDocs - recursive subcommand detection", () => {
       toolDir, runFn
     );
 
-    // With MAX_SUBCOMMAND_DEPTH = 3, we should have exactly 4 calls:
+    // With DEFAULT_MAX_DEPTH = 2, we should have exactly 3 calls:
     // depth 0: "--help cmd"
     // depth 1: "cmd deep --help"
-    // depth 2: "cmd deep deep --help"
-    // depth 3: "cmd deep deep deep --help"  (depth 3 = last level, no further recursion)
-    expect(capturedCalls.length).toBe(4);
+    // depth 2: "cmd deep deep --help"  (depth 2 = last level, no further recursion)
+    expect(capturedCalls.length).toBe(DEFAULT_MAX_DEPTH + 1);
+  });
+
+  it("respects a custom maxDepth from the registry entry", async () => {
+    const toolDir = path.join(tmpDir, "mytool");
+    mkdirSync(toolDir, { recursive: true });
+
+    const capturedCalls: Array<string[]> = [];
+    const runFn = (_binary: string, args: string[]): RunFnResult => {
+      capturedCalls.push(args);
+      return { output: "Commands:\n  deep  Go deeper\n", exitCode: 0 };
+    };
+
+    // maxDepth = 1: depth 0 recurses (0 < 1), depth 1 stops (1 >= 1)
+    // Total calls: 2 (level 0 + level 1 generated, no deeper)
+    await generateCommandDocs(
+      "mytool", "mytool-bin",
+      ["--help", "{command}"],
+      [{ name: "cmd", summary: "A command" }],
+      toolDir, runFn, 1
+    );
+
+    expect(capturedCalls.length).toBe(2);
+  });
+
+  it("allows deeper recursion with maxDepth = 4", async () => {
+    const toolDir = path.join(tmpDir, "mytool-deep");
+    mkdirSync(toolDir, { recursive: true });
+
+    const capturedCalls: Array<string[]> = [];
+    const runFn = (_binary: string, args: string[]): RunFnResult => {
+      capturedCalls.push(args);
+      return { output: "Commands:\n  deep  Go deeper\n", exitCode: 0 };
+    };
+
+    await generateCommandDocs(
+      "mytool", "mytool-bin",
+      ["--help", "{command}"],
+      [{ name: "cmd", summary: "A command" }],
+      toolDir, runFn, 4
+    );
+
+    // depth 0 through depth 4 = 5 calls total
+    expect(capturedCalls.length).toBe(5);
   });
 });
