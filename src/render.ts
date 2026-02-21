@@ -93,6 +93,19 @@ export function renderCommandMarkdown(doc: CommandDoc): string {
 
   renderUsageSection(lines, doc.usage.requiredArgs, doc.usage.optionalArgs);
 
+  if (doc.subcommands && doc.subcommands.length > 0) {
+    lines.push("## Subcommands");
+    lines.push("");
+    lines.push("| Subcommand | Summary |", "| --- | --- |");
+    for (const subCmd of doc.subcommands) {
+      const label = subCmd.docPath
+        ? `[${escapePipes(subCmd.name)}](${subCmd.docPath})`
+        : escapePipes(subCmd.name);
+      lines.push(`| ${label} | ${escapePipes(subCmd.summary)} |`);
+    }
+    lines.push("");
+  }
+
   if (doc.options.length > 0) {
     lines.push("## Flags");
     lines.push("");

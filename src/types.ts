@@ -59,6 +59,7 @@ export type CommandDoc = {
   helpArgs: string[];
   helpExitCode: number | null;
   usage: UsageDoc;
+  subcommands?: CommandSummary[];
   options: OptionDoc[];
   examples: string[];
   env: EnvDoc[];
