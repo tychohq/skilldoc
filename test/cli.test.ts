@@ -677,6 +677,135 @@ echo "Usage: orderedcli"
     expect(calls).not.toContain("help remote");
   });
 
+  it("reuses stored commandHelpArgs from tool.json on subsequent runs", async () => {
+    const binaryPath = path.join(tmpDir, "cachedpatterncli");
+    const callsPath = path.join(tmpDir, "cachedpatterncli-calls.log");
+    writeFileSync(
+      binaryPath,
+      `#!/bin/sh
+printf '%s\n' "$*" >> "${callsPath}"
+if [ "$1" = "--help" ]; then
+  cat <<'EOF'
+Usage: cachedpatterncli [command]
+
+Commands:
+  remote  Manage remotes
+EOF
+  exit 0
+fi
+
+if [ "$1" = "remote" ] && [ "$2" = "--help" ]; then
+  echo "Usage: cachedpatterncli remote"
+  exit 0
+fi
+
+if [ "$1" = "remote" ] && [ "$2" = "-h" ]; then
+  cat <<'EOF'
+Usage: cachedpatterncli remote [command]
+
+Commands:
+  add  Add remote
+EOF
+  exit 0
+fi
+
+if [ "$1" = "remote" ] && [ "$2" = "add" ] && [ "$3" = "--help" ]; then
+  echo "Usage: cachedpatterncli remote add <name>"
+  exit 0
+fi
+
+echo "Usage: cachedpatterncli"
+`,
+      { mode: 0o755 }
+    );
+
+    const registryPath = path.join(tmpDir, "registry.yaml");
+    writeFileSync(registryPath, `version: 1\ntools:\n  - id: cachedpatterncli\n    binary: "${binaryPath}"\n`);
+
+    const outDir = path.join(tmpDir, "out");
+    await handleGenerate({ out: outDir, registry: registryPath });
+
+    const firstDoc = JSON.parse(readFileSync(path.join(outDir, "cachedpatterncli", "tool.json"), "utf8"));
+    expect(firstDoc.commandHelpArgs).toEqual(["{command}", "-h"]);
+
+    writeFileSync(callsPath, "", "utf8");
+    await handleGenerate({ out: outDir, registry: registryPath });
+
+    const calls = readFileSync(callsPath, "utf8").trim().split("\n").filter(Boolean);
+    expect(calls).not.toContain("remote --help");
+    expect(calls).toContain("remote -h");
+  });
+
+  it("falls back to top-level help when stored commandHelpArgs no longer work", async () => {
+    const binaryPath = path.join(tmpDir, "stalepatterncli");
+    const modePath = path.join(tmpDir, "stalepatterncli-mode.txt");
+    writeFileSync(
+      binaryPath,
+      `#!/bin/sh
+MODE="$(cat "${modePath}" 2>/dev/null)"
+if [ "$1" = "--help" ]; then
+  cat <<'EOF'
+Usage: stalepatterncli [command]
+
+Commands:
+  remote  Manage remotes
+EOF
+  exit 0
+fi
+
+if [ "$1" = "remote" ] && [ "$2" = "--help" ]; then
+  echo "Usage: stalepatterncli remote"
+  exit 0
+fi
+
+if [ "$1" = "remote" ] && [ "$2" = "-h" ]; then
+  if [ "$MODE" = "flat" ]; then
+    echo "Usage: stalepatterncli remote"
+  else
+    cat <<'EOF'
+Usage: stalepatterncli remote [command]
+
+Commands:
+  add  Add remote
+EOF
+  fi
+  exit 0
+fi
+
+if [ "$1" = "help" ] && [ "$2" = "remote" ]; then
+  echo "Usage: stalepatterncli remote"
+  exit 0
+fi
+
+if [ "$1" = "remote" ] && [ "$2" = "add" ] && [ "$3" = "--help" ]; then
+  echo "Usage: stalepatterncli remote add <name>"
+  exit 0
+fi
+
+echo "Usage: stalepatterncli"
+`,
+      { mode: 0o755 }
+    );
+
+    const registryPath = path.join(tmpDir, "registry.yaml");
+    writeFileSync(registryPath, `version: 1\ntools:\n  - id: stalepatterncli\n    binary: "${binaryPath}"\n`);
+
+    const outDir = path.join(tmpDir, "out");
+    await handleGenerate({ out: outDir, registry: registryPath });
+
+    const firstDoc = JSON.parse(readFileSync(path.join(outDir, "stalepatterncli", "tool.json"), "utf8"));
+    expect(firstDoc.commandHelpArgs).toEqual(["{command}", "-h"]);
+    expect(existsSync(path.join(outDir, "stalepatterncli", "commands", "remote", "command.json"))).toBe(true);
+
+    writeFileSync(modePath, "flat\n", "utf8");
+    await handleGenerate({ out: outDir, registry: registryPath });
+
+    const secondDoc = JSON.parse(readFileSync(path.join(outDir, "stalepatterncli", "tool.json"), "utf8"));
+    expect(secondDoc.commandHelpArgs).toBeUndefined();
+    expect(secondDoc.commands[0].docPath).toBeUndefined();
+    expect(existsSync(path.join(outDir, "stalepatterncli", "commands"))).toBe(false);
+  });
+
   it("falls back gracefully when no command-help pattern works", async () => {
     const binaryPath = path.join(tmpDir, "nopatterncli");
     writeFileSync(
@@ -2446,6 +2575,26 @@ describe("identifySubcommandCandidates — runtime heuristic", () => {
     const result = identifySubcommandCandidates(commands, "mytool", runFn);
     expect(result).toHaveLength(0);
   });
+
+  it("ignores command-like lines when no Commands/Subcommands section exists", () => {
+    const commands = [{ name: "auth", summary: "Authentication" }];
+    const runFn: RunFn = (_binary, _args) => ({
+      output: "Usage: mytool auth\n  login  Log in\n  logout  Log out\n",
+      exitCode: 0,
+    });
+    expect(identifySubcommandCandidates(commands, "mytool", runFn)).toHaveLength(0);
+  });
+
+  it("accepts Subcommands section in runtime help output", () => {
+    const commands = [{ name: "auth", summary: "Authentication" }];
+    const runFn: RunFn = (_binary, _args) => ({
+      output: "Subcommands:\n  login  Log in\n  logout  Log out\n",
+      exitCode: 0,
+    });
+    const result = identifySubcommandCandidates(commands, "mytool", runFn);
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("auth");
+  });
 });
 
 describe("detectCommandHelpArgs", () => {
@@ -2475,5 +2624,24 @@ describe("detectCommandHelpArgs", () => {
     const result = detectCommandHelpArgs("mycli", [{ name: "push", summary: "Manage pushes" }], runFn);
     expect(result).toBeUndefined();
     expect(calls).toEqual(["push --help", "push -h", "help push"]);
+  });
+
+  it("selects the first pattern with Commands/Subcommands section", () => {
+    const calls: string[] = [];
+    const runFn: RunFn = (_binary, args) => {
+      const key = args.join(" ");
+      calls.push(key);
+      if (key === "remote --help") {
+        return { output: "Usage: mycli remote\n  add  Add remote\n", exitCode: 0 };
+      }
+      if (key === "remote -h") {
+        return { output: "Subcommands:\n  add  Add remote\n", exitCode: 0 };
+      }
+      return { output: "Usage: mycli", exitCode: 0 };
+    };
+
+    const result = detectCommandHelpArgs("mycli", [{ name: "remote", summary: "Manage remotes" }], runFn);
+    expect(result).toEqual(["{command}", "-h"]);
+    expect(calls).toEqual(["remote --help", "remote -h"]);
   });
 });

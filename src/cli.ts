@@ -606,9 +606,12 @@ export async function handleGenerate(flags: Record<string, string | boolean>, bi
       runCommand
     );
 
-    const commandHelpArgs = tool.commandHelpArgs ?? detectCommandHelpArgs(
+    const toolJsonPath = path.join(outDir, tool.id, "tool.json");
+    const storedCommandHelpArgs = tool.commandHelpArgs ? undefined : await readStoredCommandHelpArgs(toolJsonPath);
+    const commandHelpArgs = tool.commandHelpArgs ?? resolveCommandHelpArgs(
       tool.binary,
       candidateCommands,
+      storedCommandHelpArgs,
       runCommand
     );
 
@@ -662,8 +665,11 @@ export async function handleGenerate(flags: Record<string, string | boolean>, bi
     await writeFileEnsured(path.join(toolDir, "tool.md"), renderToolMarkdown(doc));
     await rm(path.join(toolDir, "raw.txt"), { force: true });
 
+    const commandsDir = path.join(toolDir, "commands");
     if (commandHelpArgs) {
       await generateCommandDocs(tool.id, tool.binary, commandHelpArgs, commands, toolDir, runCommand, tool.maxDepth ?? DEFAULT_MAX_DEPTH);
+    } else {
+      await rm(commandsDir, { recursive: true, force: true });
     }
 
     indexLines.push(`| ${tool.id} | ${tool.binary} |`);
@@ -678,11 +684,16 @@ export const DEFAULT_MAX_DEPTH = 2;
 export type RunFn = (binary: string, args: string[]) => { output: string; exitCode: number | null; error?: string };
 
 const SUBCOMMAND_KEYWORD_RE = /\b(manage|control)\b/i;
+const SUBCOMMAND_SECTION_HEADER_RE = /^\s*(?:[A-Z][A-Z0-9 /_-]*\s+)?(?:Subcommands|Commands):?\s*$/im;
 const COMMAND_HELP_PROBE_PATTERNS: string[][] = [
   ["{command}", "--help"],
   ["{command}", "-h"],
   ["help", "{command}"],
 ];
+
+function hasSubcommandSection(output: string): boolean {
+  return SUBCOMMAND_SECTION_HEADER_RE.test(output);
+}
 
 /**
  * Returns true if a command summary likely indicates the command manages sub-resources.
@@ -696,7 +707,7 @@ export function hasSubcommandKeyword(summary: string): boolean {
  * Identifies top-level commands that likely have subcommands.
  * Two heuristics are applied:
  *   1. Description contains "manage" or "control" (text check, no subprocess).
- *   2. Running `<binary> <cmd> --help` returns output with a "Commands" section.
+ *   2. Running `<binary> <cmd> --help` returns output with a commands/subcommands section.
  * When `binary` and `runFn` are omitted, only the text heuristic is applied.
  */
 export function identifySubcommandCandidates(
@@ -708,8 +719,7 @@ export function identifySubcommandCandidates(
     if (hasSubcommandKeyword(cmd.summary)) return true;
     if (binary && runFn) {
       const result = runFn(binary, [cmd.name, "--help"]);
-      const parsed = parseHelp(result.output);
-      return parsed.commands.length > 0;
+      return hasSubcommandSection(result.output);
     }
     return false;
   });
@@ -730,13 +740,42 @@ export function detectCommandHelpArgs(
   for (const pattern of COMMAND_HELP_PROBE_PATTERNS) {
     const probeArgs = pattern.map((part) => part.replace("{command}", candidate.name));
     const result = runFn(binary, probeArgs);
-    const parsed = parseHelp(result.output);
-    if (parsed.commands.length > 0) {
+    if (hasSubcommandSection(result.output)) {
       return [...pattern];
     }
   }
 
   return undefined;
+}
+
+function matchesCommandHelpPattern(
+  binary: string,
+  candidateName: string,
+  pattern: string[],
+  runFn: RunFn
+): boolean {
+  const probeArgs = pattern.map((part) => part.replace("{command}", candidateName));
+  const result = runFn(binary, probeArgs);
+  return hasSubcommandSection(result.output);
+}
+
+function resolveCommandHelpArgs(
+  binary: string,
+  candidates: CommandSummary[],
+  storedCommandHelpArgs: string[] | undefined,
+  runFn: RunFn
+): string[] | undefined {
+  if (candidates.length === 0) return undefined;
+  const candidateName = candidates[0].name;
+
+  if (
+    storedCommandHelpArgs &&
+    matchesCommandHelpPattern(binary, candidateName, storedCommandHelpArgs, runFn)
+  ) {
+    return [...storedCommandHelpArgs];
+  }
+
+  return detectCommandHelpArgs(binary, candidates, runFn);
 }
 
 export async function generateCommandDocs(
@@ -927,6 +966,22 @@ async function readStoredHash(toolJsonPath: string): Promise<string | null> {
     return doc.helpHash ?? null;
   } catch {
     return null;
+  }
+}
+
+async function readStoredCommandHelpArgs(toolJsonPath: string): Promise<string[] | undefined> {
+  try {
+    const content = await readText(toolJsonPath);
+    const doc = JSON.parse(content) as { commandHelpArgs?: unknown };
+    if (!Array.isArray(doc.commandHelpArgs) || doc.commandHelpArgs.length === 0) {
+      return undefined;
+    }
+    if (!doc.commandHelpArgs.every((arg) => typeof arg === "string")) {
+      return undefined;
+    }
+    return [...doc.commandHelpArgs];
+  } catch {
+    return undefined;
   }
 }
 

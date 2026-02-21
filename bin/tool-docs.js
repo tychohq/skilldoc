@@ -8963,7 +8963,9 @@ async function handleGenerate(flags, binaryName) {
     const usageTokens = extractUsageTokens(parsed.usageLines, tool.binary);
     const usage = buildUsageDoc(parsed.usageLines, tool.binary);
     const candidateCommands = identifySubcommandCandidates(parsed.commands, tool.binary, runCommand);
-    const commandHelpArgs = tool.commandHelpArgs ?? detectCommandHelpArgs(tool.binary, candidateCommands, runCommand);
+    const toolJsonPath = path3.join(outDir, tool.id, "tool.json");
+    const storedCommandHelpArgs = tool.commandHelpArgs ? undefined : await readStoredCommandHelpArgs(toolJsonPath);
+    const commandHelpArgs = tool.commandHelpArgs ?? resolveCommandHelpArgs(tool.binary, candidateCommands, storedCommandHelpArgs, runCommand);
     const subcommandCandidates = candidateCommands.map((candidate) => ({
       name: candidate.name,
       summary: candidate.summary
@@ -9005,8 +9007,11 @@ async function handleGenerate(flags, binaryName) {
     await writeFileEnsured(path3.join(toolDir, "tool.yaml"), import_yaml3.default.stringify(doc));
     await writeFileEnsured(path3.join(toolDir, "tool.md"), renderToolMarkdown(doc));
     await rm(path3.join(toolDir, "raw.txt"), { force: true });
+    const commandsDir = path3.join(toolDir, "commands");
     if (commandHelpArgs) {
       await generateCommandDocs(tool.id, tool.binary, commandHelpArgs, commands, toolDir, runCommand, tool.maxDepth ?? DEFAULT_MAX_DEPTH);
+    } else {
+      await rm(commandsDir, { recursive: true, force: true });
     }
     indexLines.push(`| ${tool.id} | ${tool.binary} |`);
   }
@@ -9016,11 +9021,15 @@ async function handleGenerate(flags, binaryName) {
 }
 var DEFAULT_MAX_DEPTH = 2;
 var SUBCOMMAND_KEYWORD_RE = /\b(manage|control)\b/i;
+var SUBCOMMAND_SECTION_HEADER_RE = /^\s*(?:[A-Z][A-Z0-9 /_-]*\s+)?(?:Subcommands|Commands):?\s*$/im;
 var COMMAND_HELP_PROBE_PATTERNS = [
   ["{command}", "--help"],
   ["{command}", "-h"],
   ["help", "{command}"]
 ];
+function hasSubcommandSection(output) {
+  return SUBCOMMAND_SECTION_HEADER_RE.test(output);
+}
 function hasSubcommandKeyword(summary) {
   return SUBCOMMAND_KEYWORD_RE.test(summary);
 }
@@ -9030,8 +9039,7 @@ function identifySubcommandCandidates(commands, binary, runFn) {
       return true;
     if (binary && runFn) {
       const result = runFn(binary, [cmd.name, "--help"]);
-      const parsed = parseHelp(result.output);
-      return parsed.commands.length > 0;
+      return hasSubcommandSection(result.output);
     }
     return false;
   });
@@ -9043,12 +9051,25 @@ function detectCommandHelpArgs(binary, candidates, runFn) {
   for (const pattern of COMMAND_HELP_PROBE_PATTERNS) {
     const probeArgs = pattern.map((part) => part.replace("{command}", candidate.name));
     const result = runFn(binary, probeArgs);
-    const parsed = parseHelp(result.output);
-    if (parsed.commands.length > 0) {
+    if (hasSubcommandSection(result.output)) {
       return [...pattern];
     }
   }
   return;
+}
+function matchesCommandHelpPattern(binary, candidateName, pattern, runFn) {
+  const probeArgs = pattern.map((part) => part.replace("{command}", candidateName));
+  const result = runFn(binary, probeArgs);
+  return hasSubcommandSection(result.output);
+}
+function resolveCommandHelpArgs(binary, candidates, storedCommandHelpArgs, runFn) {
+  if (candidates.length === 0)
+    return;
+  const candidateName = candidates[0].name;
+  if (storedCommandHelpArgs && matchesCommandHelpPattern(binary, candidateName, storedCommandHelpArgs, runFn)) {
+    return [...storedCommandHelpArgs];
+  }
+  return detectCommandHelpArgs(binary, candidates, runFn);
 }
 async function generateCommandDocs(toolId, binary, commandHelpArgs, commands, toolDir, runFn = runCommand, maxDepth = DEFAULT_MAX_DEPTH) {
   const commandsDir = path3.join(toolDir, "commands");
@@ -9183,6 +9204,21 @@ async function readStoredHash(toolJsonPath) {
     return doc.helpHash ?? null;
   } catch {
     return null;
+  }
+}
+async function readStoredCommandHelpArgs(toolJsonPath) {
+  try {
+    const content = await readText(toolJsonPath);
+    const doc = JSON.parse(content);
+    if (!Array.isArray(doc.commandHelpArgs) || doc.commandHelpArgs.length === 0) {
+      return;
+    }
+    if (!doc.commandHelpArgs.every((arg) => typeof arg === "string")) {
+      return;
+    }
+    return [...doc.commandHelpArgs];
+  } catch {
+    return;
   }
 }
 async function getChangedTools(tools, docsDir, runFn) {
