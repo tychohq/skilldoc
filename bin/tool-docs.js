@@ -9007,6 +9007,22 @@ async function handleGenerate(flags, binaryName) {
   console.log(`Generated docs for ${tools.length} tool(s) in ${outDir}`);
 }
 var DEFAULT_MAX_DEPTH = 2;
+var SUBCOMMAND_KEYWORD_RE = /\b(manage|control)\b/i;
+function hasSubcommandKeyword(summary) {
+  return SUBCOMMAND_KEYWORD_RE.test(summary);
+}
+function identifySubcommandCandidates(commands, binary, runFn) {
+  return commands.filter((cmd) => {
+    if (hasSubcommandKeyword(cmd.summary))
+      return true;
+    if (binary && runFn) {
+      const result = runFn(binary, [cmd.name, "--help"]);
+      const parsed = parseHelp(result.output);
+      return parsed.commands.length > 0;
+    }
+    return false;
+  });
+}
 async function generateCommandDocs(toolId, binary, commandHelpArgs, commands, toolDir, runFn = runCommand, maxDepth = DEFAULT_MAX_DEPTH) {
   const commandsDir = path3.join(toolDir, "commands");
   await ensureDir(commandsDir);
@@ -9216,6 +9232,8 @@ export {
   resolveBinary,
   parseFlags,
   lookupRegistryTool,
+  identifySubcommandCandidates,
+  hasSubcommandKeyword,
   handleRunBatch,
   handleRun,
   handleRefresh,

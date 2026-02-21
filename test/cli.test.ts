@@ -2069,3 +2069,171 @@ describe("generateCommandDocs - 2-level nested subcommand docs", () => {
     expect(md).toContain("remote add");
   });
 });
+
+describe("hasSubcommandKeyword", () => {
+  it("returns true for descriptions containing 'Manage'", () => {
+    expect(hasSubcommandKeyword("Manage repositories")).toBe(true);
+  });
+
+  it("returns true for descriptions containing 'manage' (lowercase)", () => {
+    expect(hasSubcommandKeyword("manage authentication")).toBe(true);
+  });
+
+  it("returns true for descriptions containing 'MANAGE' (uppercase)", () => {
+    expect(hasSubcommandKeyword("MANAGE repositories")).toBe(true);
+  });
+
+  it("returns true for descriptions containing 'Control'", () => {
+    expect(hasSubcommandKeyword("Control access settings")).toBe(true);
+  });
+
+  it("returns true for descriptions containing 'control' (lowercase)", () => {
+    expect(hasSubcommandKeyword("control deployments")).toBe(true);
+  });
+
+  it("returns false for unrelated descriptions", () => {
+    expect(hasSubcommandKeyword("Push changes to remote")).toBe(false);
+  });
+
+  it("returns false for empty string", () => {
+    expect(hasSubcommandKeyword("")).toBe(false);
+  });
+
+  it("returns false for 'management' (word boundary — 'manage' not standalone)", () => {
+    expect(hasSubcommandKeyword("management tools")).toBe(false);
+  });
+
+  it("returns false for 'uncontrolled' (word boundary — 'control' not standalone)", () => {
+    expect(hasSubcommandKeyword("uncontrolled input")).toBe(false);
+  });
+
+  it("returns false for descriptions with neither keyword", () => {
+    expect(hasSubcommandKeyword("Clone a repository")).toBe(false);
+    expect(hasSubcommandKeyword("Show current status")).toBe(false);
+  });
+});
+
+describe("identifySubcommandCandidates — text heuristic only", () => {
+  it("returns commands with 'Manage' in description", () => {
+    const commands = [
+      { name: "auth", summary: "Manage authentication" },
+      { name: "push", summary: "Push to remote" },
+    ];
+    const result = identifySubcommandCandidates(commands);
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("auth");
+  });
+
+  it("returns commands with 'Control' in description", () => {
+    const commands = [
+      { name: "access", summary: "Control access settings" },
+      { name: "pull", summary: "Pull changes" },
+    ];
+    const result = identifySubcommandCandidates(commands);
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("access");
+  });
+
+  it("returns all commands matching the text heuristic", () => {
+    const commands = [
+      { name: "auth", summary: "Manage authentication" },
+      { name: "repo", summary: "Manage repositories" },
+      { name: "push", summary: "Push to remote" },
+    ];
+    const result = identifySubcommandCandidates(commands);
+    expect(result).toHaveLength(2);
+    expect(result.map((c) => c.name)).toContain("auth");
+    expect(result.map((c) => c.name)).toContain("repo");
+  });
+
+  it("returns empty array when no commands match", () => {
+    const commands = [
+      { name: "push", summary: "Push changes" },
+      { name: "pull", summary: "Pull changes" },
+    ];
+    expect(identifySubcommandCandidates(commands)).toHaveLength(0);
+  });
+
+  it("returns empty array for empty input", () => {
+    expect(identifySubcommandCandidates([])).toHaveLength(0);
+  });
+});
+
+describe("identifySubcommandCandidates — runtime heuristic", () => {
+  type RunFnResult = { output: string; exitCode: number | null };
+
+  it("returns commands whose --help output lists subcommands", () => {
+    const commands = [
+      { name: "auth", summary: "Authentication commands" },
+      { name: "push", summary: "Push to remote" },
+    ];
+    const runFn: RunFn = (_binary, args) => {
+      if (args[0] === "auth") {
+        return { output: "Commands:\n  login   Log in\n  logout  Log out\n", exitCode: 0 };
+      }
+      return { output: "", exitCode: 0 };
+    };
+    const result = identifySubcommandCandidates(commands, "mytool", runFn);
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("auth");
+  });
+
+  it("combines text and runtime heuristics without duplicates", () => {
+    const commands = [
+      { name: "auth", summary: "Manage authentication" },  // text match
+      { name: "remote", summary: "Remote operations" },    // runtime match
+      { name: "push", summary: "Push changes" },           // no match
+    ];
+    const runFn: RunFn = (_binary, args) => {
+      if (args[0] === "remote") {
+        return { output: "Commands:\n  add  Add a remote\n", exitCode: 0 };
+      }
+      return { output: "", exitCode: 0 };
+    };
+    const result = identifySubcommandCandidates(commands, "mytool", runFn);
+    expect(result).toHaveLength(2);
+    expect(result.map((c) => c.name)).toContain("auth");
+    expect(result.map((c) => c.name)).toContain("remote");
+  });
+
+  it("does not call runFn for commands already matched by text heuristic", () => {
+    const commands = [{ name: "auth", summary: "Manage authentication" }];
+    const calls: string[] = [];
+    const runFn: RunFn = (_binary, args) => {
+      calls.push(args[0]);
+      return { output: "", exitCode: 0 };
+    };
+    identifySubcommandCandidates(commands, "mytool", runFn);
+    // "auth" matched by text heuristic — runFn should not be called for it
+    expect(calls).not.toContain("auth");
+  });
+
+  it("returns empty array when no commands match either heuristic", () => {
+    const commands = [
+      { name: "push", summary: "Push changes" },
+      { name: "pull", summary: "Pull changes" },
+    ];
+    const runFn: RunFn = (_binary, _args) => ({ output: "", exitCode: 0 });
+    expect(identifySubcommandCandidates(commands, "mytool", runFn)).toHaveLength(0);
+  });
+
+  it("invokes runFn with binary and [cmd.name, '--help']", () => {
+    const commands = [{ name: "auth", summary: "Authentication" }];
+    const capturedCalls: Array<{ binary: string; args: string[] }> = [];
+    const runFn: RunFn = (binary, args) => {
+      capturedCalls.push({ binary, args });
+      return { output: "Commands:\n  login  Log in\n", exitCode: 0 };
+    };
+    identifySubcommandCandidates(commands, "mycli", runFn);
+    expect(capturedCalls).toHaveLength(1);
+    expect(capturedCalls[0].binary).toBe("mycli");
+    expect(capturedCalls[0].args).toEqual(["auth", "--help"]);
+  });
+
+  it("falls back gracefully when runFn returns empty output", () => {
+    const commands = [{ name: "push", summary: "Push changes" }];
+    const runFn: RunFn = (_binary, _args) => ({ output: "", exitCode: 1 });
+    const result = identifySubcommandCandidates(commands, "mytool", runFn);
+    expect(result).toHaveLength(0);
+  });
+});
