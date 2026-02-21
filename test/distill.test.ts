@@ -877,6 +877,17 @@ describe("buildPrompt — config customization", () => {
     expect(prompt).toContain("inline");
   });
 
+  it("Key Commands table format shows concrete markdown table with header row", () => {
+    const prompt = buildPrompt("raw docs", "tool");
+    expect(prompt).toContain("| Command | Purpose |");
+    expect(prompt).toContain("|---------|---------|");
+  });
+
+  it("Key Commands concrete example table has a row showing flag inline in Purpose column", () => {
+    const prompt = buildPrompt("raw docs", "tool");
+    expect(prompt).toMatch(/\|.*`--skip-deploys`.*\|/);
+  });
+
   it("extraInstructions appears before validation feedback when both present", () => {
     const prompt = buildPrompt("raw docs", "tool", "agent needed --count flag", {
       extraInstructions: "Prefer POSIX-compatible examples.",

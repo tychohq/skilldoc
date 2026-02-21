@@ -305,7 +305,11 @@ SKILL.md format:
 \`\`\`
 
 ## Key Commands / Flags
-<table of the 5-10 most important commands/subcommands; show key arguments inline in the command column (e.g. \`variable set KEY=VAL\`); note the most important flags per command in the purpose column (e.g. \`--skip-deploys\`)>
+| Command | Purpose |
+|---------|---------|
+| \`variable set KEY=VAL\` | Set env var; use \`--skip-deploys\` to skip redeployment |
+| \`login [-b]\` | Authenticate; \`-b\` for browser |
+(5-10 rows; show key args inline in Command column; include behavior-changing flags inline in Purpose column)
 
 ## Common Patterns
 <3-5 concrete examples covering the most common use cases>
