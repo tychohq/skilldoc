@@ -32,6 +32,16 @@ SKILL.md    →  drop into AGENTS.md, CLAUDE.md, OpenClaw skills
 
 ---
 
+## Prerequisites
+
+The `generate` step only needs the target CLI installed — no LLM required. The `distill` and `validate` steps need an LLM to compress and evaluate docs.
+
+**If you already have [Claude Code](https://claude.ai/claude-code) (`claude`) or [Gemini CLI](https://github.com/google-gemini/gemini-cli) (`gemini`) installed**, it just works — no extra config needed. The tool detects installed CLIs automatically.
+
+Use `--model <model>` to pick which model to use for distillation (default: `claude-haiku-4-5`). For validation, `--models <m1,m2>` accepts a comma-separated list.
+
+---
+
 ## Quick Start
 
 ### Install
@@ -126,7 +136,9 @@ Runs each tool's `--help` (and subcommand help) with `LANG=C NO_COLOR=1 PAGER=ca
 
 ### 2. Distill (`distill`)
 
-Passes raw docs to an LLM (default: `claude-haiku-4-5`) with a task-focused prompt. Output is a `SKILL.md` optimized for agents: quick reference, key flags, common patterns. Target size ~2KB. Skips re-distillation if help output is unchanged.
+Passes raw docs to an LLM with a task-focused prompt. Output is a `SKILL.md` optimized for agents: quick reference, key flags, common patterns. Target size ~2KB. Skips re-distillation if help output is unchanged.
+
+Requires Claude Code (`claude`) or Gemini CLI (`gemini`) installed — see [Prerequisites](#prerequisites). Default model: `claude-haiku-4-5`; override with `--model`.
 
 ### 3. Validate (`validate`)
 
