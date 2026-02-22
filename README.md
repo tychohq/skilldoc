@@ -48,73 +48,82 @@ Use `--model <model>` to pick which model to use for distillation (default: `cla
 
 ```bash
 # npm
-npx agent-tool-docs run jq
+npx agent-tool-docs run railway
 
 # pnpm
-pnpx agent-tool-docs run jq
+pnpx agent-tool-docs run railway
 
 # bun
-bunx agent-tool-docs run jq
+bunx agent-tool-docs run railway
 
 # Homebrew (macOS / Linux)
 brew tap BrennerSpear/tap
 brew install agent-tool-docs
-tool-docs run jq
+tool-docs run railway
 ```
 
 ### Generate a skill
 
 ```bash
 # Full pipeline in one shot: generate → distill → validate
-tool-docs run jq
+tool-docs run railway
 
-# Your agent-optimized skill is at ~/.agents/skills/jq/SKILL.md
+# Your agent-optimized skill is at ~/.agents/skills/railway/SKILL.md
 ```
 
-Drop `~/.agents/skills/jq/SKILL.md` into your `AGENTS.md`, `CLAUDE.md`, or OpenClaw skills directory. Your agent has verified docs instead of guessing from training data.
+Drop `~/.agents/skills/railway/SKILL.md` into your `AGENTS.md`, `CLAUDE.md`, or OpenClaw skills directory. Your agent has verified docs instead of guessing from training data.
 
 You can also run each step individually:
 
 ```bash
-tool-docs generate jq    # extract raw docs from --help
-tool-docs distill jq     # compress into agent-optimized SKILL.md
-tool-docs validate jq    # score quality with multi-model evaluation
+tool-docs generate railway    # extract raw docs from --help
+tool-docs distill railway     # compress into agent-optimized SKILL.md
+tool-docs validate railway    # score quality with multi-model evaluation
 ```
 
 ---
 
 ## Example Output
 
-The `jq` SKILL.md — distilled from 48KB of `--help` into ~1KB:
+Railway v4 overhauled its CLI — models trained on v3 still hallucinate `railway run` for deployments and miss the new `variable set` subcommand syntax. Here's the generated SKILL.md (~1.5KB, distilled from 52KB of `--help`):
 
 ```markdown
-# jq
+# Railway CLI
 
-JSON processor for filtering, transforming, and extracting data.
+Deploy and manage cloud applications with projects, services, environments, and databases.
+
+## Critical Distinctions
+- `up` uploads and deploys your code from the current directory
+- `deploy` provisions a *template* (e.g., Postgres, Redis) — NOT for deploying your code
+- `run` executes a local command with Railway env vars injected — it does NOT deploy anything
 
 ## Quick Reference
-jq '.field' file.json           # Extract field
-jq '.[] | .name' file.json      # Extract from array
-jq -r '.email' file.json        # Raw output (unquoted strings)
-jq -s 'add' file1.json file2.json  # Merge arrays/objects
-jq '.[] | select(.active)' file.json  # Filter elements
+railway up                          # Deploy current directory
+railway up -s my-api                # Deploy to specific service
+railway logs -s my-api              # View deploy logs
+railway variable set KEY=VAL        # Set env var
+railway connect                     # Open database shell (psql, mongosh, etc.)
 
-## Key Flags
-| Flag | Purpose |
-|------|----------|
-| `-r` | Output strings without quotes (raw mode) |
-| `-s` | Slurp: read all inputs into single array |
-| `-n` | Start with null input (no file reading) |
-| `-c` | Compact output (single line) |
-| `--arg x v` | Bind `$x` to string value `v` |
+## Key Commands
+| Command | Purpose |
+|---------|---------|
+| `up [-s service] [-d]` | Deploy from current dir; `-d` to detach from log stream |
+| `variable set KEY=VAL` | Set env var; add `--skip-deploys` to skip redeployment |
+| `variable list [-s svc]` | List variables; `--json` for JSON output |
+| `link [-p project] [-s svc]` | Link current directory to a project/service |
+| `service status` | Show deployment status across services |
+| `logs [-s service]` | View build/deploy logs |
+| `connect` | Open database shell (auto-detects Postgres, MongoDB, Redis) |
+| `domain` | Add custom domain or generate a Railway-provided domain |
 
 ## Common Patterns
-Extract nested field: `jq '.user.address.city'`
-Filter + transform: `jq '.items[] | select(.qty > 0) | .name'`
-Use variables: `jq --arg role admin '.users[] | select(.role == $role)'`
+Deploy with message: `railway up -m "fix auth bug"`
+Set var without redeploying: `railway variable set API_KEY=sk-123 --skip-deploys`
+Stream build logs then exit: `railway up --ci`
+Run local dev with Railway env: `railway run npm start`
 ```
 
-See [`examples/`](examples/) for real generated output for `jq`, `gh`, `curl`, `ffmpeg`, and `rg`.
+See [`examples/`](examples/) for real generated output for `railway`, `jq`, `gh`, `curl`, `ffmpeg`, and `rg`.
 
 ---
 
@@ -145,7 +154,7 @@ Requires Claude Code (`claude`) or Gemini CLI (`gemini`) installed — see [Prer
 Runs scenario-based evaluation across multiple LLM models. Each model attempts realistic tasks using only the SKILL.md, then scores itself 1–10 on accuracy, completeness, and absence of hallucinations. Threshold: 9/10.
 
 ```
-tool-docs validate jq --models claude-sonnet-4-6,claude-opus-4-6 --threshold 9
+tool-docs validate railway --models claude-sonnet-4-6,claude-opus-4-6 --threshold 9
 ```
 
 ### 4. Refresh (`refresh`)
@@ -179,9 +188,10 @@ tool-docs refresh --diff
 | ✅ uv | `uv` | Package management |
 | ✅ uvx | `uvx` | Ephemeral tool runner |
 
-### Deployment
+### Deployment & Infrastructure
 | Tool | Binary | Category |
 |------|--------|----------|
+| ✅ Railway CLI | `railway` | Cloud deployment |
 | ✅ Vercel CLI | `vercel` | Frontend deployment |
 | ✅ Supabase CLI | `supabase` | Database / backend |
 
@@ -205,20 +215,20 @@ Works with any CLI that has `--help` output. Add custom tools via registry entry
 
 Skills are evaluated by asking an LLM to complete realistic tasks using only the generated SKILL.md. Each scenario is graded 1–10 for correctness and absence of hallucinations.
 
-Example report for `jq`:
+Example report for `railway`:
 
 ```
-validate jq (claude-sonnet-4-6, claude-opus-4-6)
+validate railway (claude-sonnet-4-6, claude-opus-4-6)
 
 claude-sonnet-4-6  average: 9.3/10
-  Scenario 1: "extract all .name fields from an array of objects" → 9/10
-  Scenario 2: "filter objects where .active is true, output .email" → 10/10
-  Scenario 3: "merge two JSON files into a single array" → 9/10
+  Scenario 1: "deploy the current directory to a specific service" → 10/10
+  Scenario 2: "set an env var without triggering a redeploy" → 9/10
+  Scenario 3: "connect to the project's Postgres database" → 9/10
 
 claude-opus-4-6    average: 9.7/10
-  Scenario 1: "extract all .name fields from an array of objects" → 10/10
-  Scenario 2: "filter objects where .active is true, output .email" → 9/10
-  Scenario 3: "merge two JSON files into a single array" → 10/10
+  Scenario 1: "deploy the current directory to a specific service" → 10/10
+  Scenario 2: "set an env var without triggering a redeploy" → 10/10
+  Scenario 3: "connect to the project's Postgres database" → 9/10
 
 overall: 9.5/10 — PASSED (threshold: 9)
 ```
