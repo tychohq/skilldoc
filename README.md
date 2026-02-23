@@ -34,14 +34,52 @@ SKILL.md    →  drop into AGENTS.md, CLAUDE.md, OpenClaw skills
 
 ## Prerequisites
 
-You need an LLM to run the full pipeline. Install **one** of these:
+The `generate` step (extracting `--help` output) works without an LLM. The `distill` and `validate` steps require one.
 
-- [**Claude Code**](https://claude.ai/claude-code) — `npm install -g @anthropic-ai/claude-code` (recommended)
-- [**Gemini CLI**](https://github.com/google-gemini/gemini-cli) — `npm install -g @anthropic-ai/gemini-cli`
+### If you have a coding CLI installed
 
-If either `claude` or `gemini` is on your PATH, the tool detects it automatically. The `generate` step (extracting `--help` output) works without an LLM, but `distill` and `validate` require one.
+If any of these are installed and logged in, it just works — no config needed:
 
-Use `--model <model>` to choose the distillation model (default: `claude-haiku-4-5`). For validation, `--models <m1,m2>` accepts a comma-separated list.
+1. [**Claude Code**](https://claude.ai/claude-code) — `npm install -g @anthropic-ai/claude-code` → `claude /login`
+2. [**Codex CLI**](https://github.com/openai/codex) — `npm install -g @openai/codex` → `codex login`
+3. [**Gemini CLI**](https://github.com/google-gemini/gemini-cli) — `npm install -g @google/gemini-cli` → `gemini` (auth on first run)
+
+Verify you're logged in:
+
+```bash
+echo 'say ok' | claude -p --output-format text  # should print "ok"
+echo 'say ok' | codex exec                       # should print "ok"
+gemini -p 'say ok'                                # should print "ok"
+```
+
+The tool tries them in this order: **Claude Code → Codex → Gemini**. The first one found on your PATH is used.
+
+### If you prefer API keys
+
+Set any of these environment variables and the tool will call the API directly:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...     # → uses Anthropic API
+export OPENAI_API_KEY=sk-...            # → uses OpenAI API
+export GEMINI_API_KEY=...               # → uses Google Gemini API
+export OPENROUTER_API_KEY=sk-or-...     # → uses OpenRouter API
+```
+
+API keys are checked only if no CLI is found. Each provider uses a sensible default model (e.g., `claude-sonnet-4-5` for Anthropic, `gpt-4.1` for OpenAI).
+
+### Persistent config (optional)
+
+To pin a specific provider and model, create `~/.agent-tool-docs/config.yaml`:
+
+```yaml
+provider: claude-cli    # claude-cli | codex-cli | gemini-cli | anthropic | openai | gemini | openrouter
+model: claude-haiku-4-5 # optional — overrides the provider's default model
+apiKey: sk-ant-...      # optional — overrides env var for this provider
+```
+
+Config file takes priority over auto-detection. You can also override per-run with `--model <model>`.
+
+For validation, `--models <m1,m2>` accepts a comma-separated list to test across multiple models.
 
 ---
 
