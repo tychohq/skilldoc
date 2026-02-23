@@ -11,6 +11,7 @@ import { parseHelp } from "./parser.js";
 import { renderCommandMarkdown, renderToolMarkdown } from "./render.js";
 import { buildUsageDoc, extractUsageTokens } from "./usage.js";
 import { expandHome, ensureDir, writeFileEnsured, readText } from "./utils.js";
+import { resolveProvider, DEFAULT_LLM_CONFIG_PATH, type ProviderType } from "./llm.js";
 import { CommandDoc, CommandSummary, Registry, RegistryTool, ToolComplexity, ToolDoc } from "./types.js";
 import { distillTool, DEFAULT_SKILLS_DIR, DEFAULT_DOCS_DIR, DEFAULT_MODEL, DEFAULT_DISTILL_CONFIG_PATH, loadDistillConfig, DistillOptions, DistillResult, DistillPromptConfig } from "./distill.js";
 import {
@@ -42,6 +43,9 @@ Usage:
   tool-docs refresh [--registry <path>] [--only <id1,id2>] [--diff]
   tool-docs validate <tool-id> [--skills <path>] [--models <m1,m2>] [--threshold <n>] [--auto-redist]
   tool-docs report [--skills <path>]
+  tool-docs config                             # show current LLM provider config
+  tool-docs config --provider <p> [--model <m>] [--api-key <k>]  # set config
+  tool-docs config --reset                     # delete config file
   tool-docs init [--registry <path>] [--force]
   tool-docs --help
 
@@ -52,6 +56,7 @@ Commands:
   refresh    Re-run generate + distill for tools whose --help output has changed
   validate   Test skill quality using LLM-based scenario evaluation
   report     Show aggregate quality report across all validated tools
+  config     Show or update LLM provider configuration (~/.agent-tool-docs/config.yaml)
   init       Create a starter registry file at ~/.agents/tool-docs/registry.yaml with example
              tool entries (git, ripgrep). Use this to configure batch generation for multiple tools.
 
@@ -132,6 +137,11 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "config") {
+    await handleConfig(flags);
+    return;
+  }
+
   if (command === "--version" || command === "-v") {
     console.log(VERSION);
     return;
@@ -144,6 +154,7 @@ async function main(): Promise<void> {
 const VALUE_FLAGS = new Set([
   "--registry", "--out", "--only", "--docs", "--model",
   "--models", "--skills", "--threshold", "--distill-config",
+  "--provider", "--api-key",
 ]);
 
 export function extractPositionalArgs(args: string[]): string[] {
@@ -164,11 +175,11 @@ export function parseFlags(args: string[]): Record<string, string | boolean> {
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
     if (!arg.startsWith("-")) continue;
-    if (arg === "--force" || arg === "--auto-redist" || arg === "--diff") {
+    if (arg === "--force" || arg === "--auto-redist" || arg === "--diff" || arg === "--reset") {
       flags[arg.replace(/^--/, "")] = true;
       continue;
     }
-    if (arg === "--registry" || arg === "--out" || arg === "--only" || arg === "--docs" || arg === "--model" || arg === "--models" || arg === "--skills" || arg === "--threshold" || arg === "--distill-config") {
+    if (arg === "--registry" || arg === "--out" || arg === "--only" || arg === "--docs" || arg === "--model" || arg === "--models" || arg === "--skills" || arg === "--threshold" || arg === "--distill-config" || arg === "--provider" || arg === "--api-key") {
       const value = args[i + 1];
       if (!value || value.startsWith("-")) {
         throw new Error(`Missing value for ${arg}`);
@@ -359,6 +370,127 @@ async function handleReport(flags: Record<string, string | boolean>): Promise<vo
   } catch (err) {
     console.error(err instanceof Error ? err.message : String(err));
     process.exit(1);
+  }
+}
+
+const VALID_PROVIDERS: ProviderType[] = [
+  "claude-cli", "codex-cli", "gemini-cli",
+  "anthropic", "openai", "gemini", "openrouter",
+];
+
+const CONFIG_TEMPLATE = `# agent-tool-docs LLM configuration
+# Docs: https://github.com/BrennerSpear/agent-tool-docs#prerequisites
+#
+# provider — which LLM backend to use for distill and validate
+#   CLI backends (must be installed and logged in):
+#     claude-cli    — Claude Code CLI (recommended)
+#     codex-cli     — OpenAI Codex CLI
+#     gemini-cli    — Google Gemini CLI
+#   API backends (requires apiKey or env var):
+#     anthropic     — Anthropic Messages API (env: ANTHROPIC_API_KEY)
+#     openai        — OpenAI Chat API (env: OPENAI_API_KEY)
+#     gemini        — Google Gemini API (env: GEMINI_API_KEY)
+#     openrouter    — OpenRouter API (env: OPENROUTER_API_KEY)
+#
+# model — optional model override (each provider has a sensible default)
+#   Examples: claude-sonnet-4-5-20250514, gpt-4.1, gemini-2.5-flash
+#
+# apiKey — optional API key (overrides env var for API providers)
+`;
+
+export async function handleConfig(flags: Record<string, string | boolean>): Promise<void> {
+  const configPath = expandHome(DEFAULT_LLM_CONFIG_PATH);
+  const configDir = path.dirname(configPath);
+
+  // --reset: delete config file
+  if (flags.reset === true) {
+    try {
+      unlinkSync(configPath);
+      console.log("Deleted " + DEFAULT_LLM_CONFIG_PATH);
+    } catch {
+      console.log("No config file found at " + DEFAULT_LLM_CONFIG_PATH);
+    }
+    return;
+  }
+
+  // Setting values: --provider, --model, --api-key
+  const provider = typeof flags.provider === "string" ? flags.provider : undefined;
+  const model = typeof flags.model === "string" ? flags.model : undefined;
+  const apiKey = typeof flags["api-key"] === "string" ? flags["api-key"] : undefined;
+
+  if (provider || model || apiKey) {
+    if (provider && !VALID_PROVIDERS.includes(provider as ProviderType)) {
+      console.error("Invalid provider: " + provider);
+      console.error("Valid providers: " + VALID_PROVIDERS.join(", "));
+      process.exit(1);
+    }
+
+    // Load existing config if present
+    let existing: Record<string, unknown> = {};
+    try {
+      const raw = await readText(configPath);
+      const parsed = YAML.parse(raw);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        existing = parsed as Record<string, unknown>;
+      }
+    } catch {
+      // No existing config, start fresh
+    }
+
+    if (provider) existing.provider = provider;
+    if (model) existing.model = model;
+    if (apiKey) existing.apiKey = apiKey;
+
+    await ensureDir(configDir);
+    const yamlContent = YAML.stringify(existing);
+    await writeFileEnsured(configPath, CONFIG_TEMPLATE + yamlContent);
+
+    console.log("Updated " + DEFAULT_LLM_CONFIG_PATH);
+    for (const [key, val] of Object.entries(existing)) {
+      const display = key === "apiKey" ? (val as string).slice(0, 8) + "..." : String(val);
+      console.log("  " + key + ": " + display);
+    }
+    return;
+  }
+
+  // Show mode: display current resolved config
+  console.log("LLM Provider Configuration");
+  console.log("─".repeat(40));
+
+  // Check config file
+  let configExists = false;
+  try {
+    const raw = await readText(configPath);
+    const parsed = YAML.parse(raw);
+    if (parsed && typeof parsed === "object") {
+      configExists = true;
+      console.log("Config: " + DEFAULT_LLM_CONFIG_PATH);
+      for (const [key, val] of Object.entries(parsed as Record<string, unknown>)) {
+        const display = key === "apiKey" ? String(val).slice(0, 8) + "..." : String(val);
+        console.log("  " + key + ": " + display);
+      }
+    }
+  } catch {
+    console.log("Config: " + DEFAULT_LLM_CONFIG_PATH + " (not found)");
+  }
+
+  console.log("");
+
+  // Show resolved provider
+  try {
+    const resolved = resolveProvider();
+    console.log("Resolved provider: " + resolved.provider);
+    console.log("Model: " + resolved.model);
+    if (resolved.apiKey) {
+      console.log("API key: " + resolved.apiKey.slice(0, 8) + "...");
+    }
+  } catch (err) {
+    console.log("Resolved provider: none");
+    console.log(err instanceof Error ? err.message : String(err));
+  }
+
+  if (!configExists) {
+    console.log("\nTo configure: tool-docs config --provider claude-cli");
   }
 }
 

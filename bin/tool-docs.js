@@ -7693,10 +7693,353 @@ function unique(tokens) {
   return result;
 }
 
-// src/distill.ts
+// src/llm.ts
 var import_yaml2 = __toESM(require_dist(), 1);
-import path from "node:path";
+import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+var DEFAULT_LLM_CONFIG_PATH = "~/.agent-tool-docs/config.yaml";
+var MAX_BUFFER = 10 * 1024 * 1024;
+var DEFAULT_MODEL_BY_PROVIDER = {
+  "claude-cli": "claude-haiku-4-5-20251001",
+  "codex-cli": "o4-mini",
+  "gemini-cli": "gemini",
+  anthropic: "claude-sonnet-4-5-20250514",
+  openai: "gpt-4.1",
+  gemini: "gemini-2.5-flash",
+  openrouter: "anthropic/claude-sonnet-4-5"
+};
+var ENV_BY_PROVIDER = {
+  anthropic: "ANTHROPIC_API_KEY",
+  openai: "OPENAI_API_KEY",
+  gemini: "GEMINI_API_KEY",
+  openrouter: "OPENROUTER_API_KEY"
+};
+var defaultExec = (command, args, options) => spawnSync(command, [...args], options);
+var defaultCheckBinary = (name) => spawnSync("which", [name], { encoding: "utf8" }).status === 0;
+var API_RUNNER_SCRIPT = `
+const provider = process.env.LLM_PROVIDER;
+const model = process.env.LLM_MODEL;
+const apiKey = process.env.LLM_API_KEY;
+
+const readPrompt = async () => {
+  let data = "";
+  process.stdin.setEncoding("utf8");
+  for await (const chunk of process.stdin) data += chunk;
+  return data;
+};
+
+const parseOpenAICompatibleContent = (payload) => {
+  const content = payload?.choices?.[0]?.message?.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    const parts = [];
+    for (const part of content) {
+      if (part && typeof part === "object" && typeof part.text === "string") {
+        parts.push(part.text);
+      }
+    }
+    return parts.join("");
+  }
+  return "";
+};
+
+const getGeminiUrl = (modelName, key) =>
+  "https://generativelanguage.googleapis.com/v1beta/models/" +
+  encodeURIComponent(modelName) +
+  ":generateContent?key=" +
+  encodeURIComponent(key);
+
+const extractText = (backend, payload) => {
+  if (backend === "anthropic") {
+    const content = payload?.content;
+    if (!Array.isArray(content)) return "";
+    for (const item of content) {
+      if (item && typeof item === "object" && item.type === "text" && typeof item.text === "string") {
+        return item.text;
+      }
+    }
+    return "";
+  }
+  if (backend === "openai" || backend === "openrouter") {
+    return parseOpenAICompatibleContent(payload);
+  }
+  if (backend === "gemini") {
+    const candidates = payload?.candidates;
+    if (!Array.isArray(candidates) || candidates.length === 0) return "";
+    const parts = candidates[0]?.content?.parts;
+    if (!Array.isArray(parts)) return "";
+    const out = [];
+    for (const part of parts) {
+      if (part && typeof part === "object" && typeof part.text === "string") {
+        out.push(part.text);
+      }
+    }
+    return out.join("");
+  }
+  return "";
+};
+
+const main = async () => {
+  if (!provider || !model || !apiKey) {
+    throw new Error("Missing API provider configuration");
+  }
+
+  const prompt = await readPrompt();
+  let url = "";
+  let headers = {};
+  let body = {};
+
+  if (provider === "anthropic") {
+    url = "https://api.anthropic.com/v1/messages";
+    headers = {
+      "content-type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    };
+    body = {
+      model,
+      max_tokens: 16000,
+      thinking: { type: "enabled", budget_tokens: 10000 },
+      messages: [{ role: "user", content: prompt }],
+    };
+  } else if (provider === "openai") {
+    url = "https://api.openai.com/v1/chat/completions";
+    headers = {
+      "content-type": "application/json",
+      "authorization": "Bearer " + apiKey,
+    };
+    body = {
+      model,
+      reasoning: { effort: "high" },
+      messages: [{ role: "user", content: prompt }],
+    };
+  } else if (provider === "gemini") {
+    url = getGeminiUrl(model, apiKey);
+    headers = {
+      "content-type": "application/json",
+    };
+    body = {
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        thinkingConfig: { thinkingBudget: 10000 },
+      },
+    };
+  } else if (provider === "openrouter") {
+    url = "https://openrouter.ai/api/v1/chat/completions";
+    headers = {
+      "content-type": "application/json",
+      "authorization": "Bearer " + apiKey,
+    };
+    body = {
+      model,
+      reasoning: { effort: "high" },
+      messages: [{ role: "user", content: prompt }],
+    };
+  } else {
+    throw new Error("Unsupported API provider: " + provider);
+  }
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  const raw = await response.text();
+  if (!response.ok) {
+    process.stderr.write("HTTP " + response.status + ": " + raw.slice(0, 1000));
+    process.exit(2);
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(raw);
+  } catch {
+    process.stderr.write("API returned invalid JSON: " + raw.slice(0, 1000));
+    process.exit(3);
+  }
+
+  const output = extractText(provider, payload);
+  if (!output || !output.trim()) {
+    process.stderr.write("API returned empty output");
+    process.exit(4);
+  }
+
+  process.stdout.write(output);
+};
+
+main().catch((error) => {
+  const msg = error instanceof Error ? error.message : String(error);
+  process.stderr.write(msg);
+  process.exit(1);
+});
+`.trim();
+function parseProvider(raw) {
+  if (raw === "claude-cli" || raw === "codex-cli" || raw === "gemini-cli" || raw === "anthropic" || raw === "openai" || raw === "gemini" || raw === "openrouter") {
+    return raw;
+  }
+  return;
+}
+function loadLLMConfig(configPath) {
+  const resolvedPath = expandHome(configPath);
+  let raw;
+  try {
+    raw = readFileSync(resolvedPath, "utf8");
+  } catch {
+    return {};
+  }
+  let parsed;
+  try {
+    parsed = import_yaml2.default.parse(raw);
+  } catch {
+    return {};
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return {};
+  }
+  const obj = parsed;
+  const provider = parseProvider(obj.provider);
+  const model = typeof obj.model === "string" && obj.model.trim() ? obj.model.trim() : undefined;
+  const apiKey = typeof obj.apiKey === "string" && obj.apiKey.trim() ? obj.apiKey.trim() : undefined;
+  if (obj.provider !== undefined && !provider) {
+    throw new Error("Invalid provider in ~/.agent-tool-docs/config.yaml. Expected one of: claude-cli, codex-cli, gemini-cli, anthropic, openai, gemini, openrouter.");
+  }
+  return { provider, model, apiKey };
+}
+function selectModel(provider, options, config) {
+  return options.model ?? config.model ?? DEFAULT_MODEL_BY_PROVIDER[provider];
+}
+function providerNeedsApiKey(provider) {
+  return provider === "anthropic" || provider === "openai" || provider === "gemini" || provider === "openrouter";
+}
+function getApiKeyForProvider(provider, env, config) {
+  if (!providerNeedsApiKey(provider))
+    return;
+  if (config.provider === provider && config.apiKey) {
+    return config.apiKey;
+  }
+  const envKey = ENV_BY_PROVIDER[provider];
+  return envKey ? env[envKey] : undefined;
+}
+function resolveProviderWithDeps(options, deps) {
+  const checkBinary = deps.checkBinary ?? defaultCheckBinary;
+  const env = deps.env ?? process.env;
+  const configPath = deps.configPath ?? DEFAULT_LLM_CONFIG_PATH;
+  const config = loadLLMConfig(configPath);
+  if (config.provider) {
+    const model = selectModel(config.provider, options, config);
+    const apiKey = getApiKeyForProvider(config.provider, env, config);
+    return { provider: config.provider, model, ...apiKey ? { apiKey } : {} };
+  }
+  for (const [provider, binary] of [
+    ["claude-cli", "claude"],
+    ["codex-cli", "codex"],
+    ["gemini-cli", "gemini"]
+  ]) {
+    if (checkBinary(binary)) {
+      return { provider, model: selectModel(provider, options, config) };
+    }
+  }
+  for (const provider of ["anthropic", "openai", "gemini", "openrouter"]) {
+    const envKey = ENV_BY_PROVIDER[provider];
+    const envValue = env[envKey];
+    if (envValue) {
+      const apiKey = config.apiKey ?? envValue;
+      return { provider, model: selectModel(provider, options, config), apiKey };
+    }
+  }
+  throw new Error("No LLM provider available. Set ~/.agent-tool-docs/config.yaml (provider/model/apiKey), install one CLI (claude, codex, gemini), or set an API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY).");
+}
+function runCliCommand(command, args, prompt, exec) {
+  const result = exec(command, args, {
+    input: prompt,
+    encoding: "utf8",
+    maxBuffer: MAX_BUFFER
+  });
+  if (result.error) {
+    throw new Error(`Failed to run ${command}: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    const stderr = result.stderr ?? "";
+    throw new Error(`${command} exited with code ${result.status}${stderr ? `: ${stderr.slice(0, 200)}` : ""}`);
+  }
+  const output = result.stdout ?? "";
+  if (!output.trim()) {
+    const stderr = result.stderr ?? "";
+    throw new Error(`${command} returned empty output${stderr ? `: ${stderr.slice(0, 200)}` : ""}`);
+  }
+  return output;
+}
+function runApiProvider(provider, prompt, exec) {
+  if (!provider.apiKey) {
+    throw new Error(`Missing API key for ${provider.provider}.`);
+  }
+  const result = exec("node", ["--input-type=module", "-e", API_RUNNER_SCRIPT], {
+    input: prompt,
+    encoding: "utf8",
+    maxBuffer: MAX_BUFFER,
+    env: {
+      ...process.env,
+      LLM_PROVIDER: provider.provider,
+      LLM_MODEL: provider.model,
+      LLM_API_KEY: provider.apiKey
+    }
+  });
+  if (result.error) {
+    throw new Error(`Failed to run API caller for ${provider.provider}: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    const stderr = result.stderr ?? "";
+    throw new Error(`${provider.provider} API call failed${stderr ? `: ${stderr.slice(0, 500)}` : ""}`);
+  }
+  const output = result.stdout ?? "";
+  if (!output.trim()) {
+    const stderr = result.stderr ?? "";
+    throw new Error(`${provider.provider} API returned empty output${stderr ? `: ${stderr.slice(0, 500)}` : ""}`);
+  }
+  return output;
+}
+function callLLMWithDeps(prompt, options, deps) {
+  const resolved = resolveProviderWithDeps(options, deps);
+  const exec = deps.exec ?? defaultExec;
+  if (resolved.provider === "claude-cli") {
+    return runCliCommand("claude", ["-p", "--output-format", "text", "--model", resolved.model, "--no-session-persistence", "--effort", "high"], prompt, exec);
+  }
+  if (resolved.provider === "codex-cli") {
+    return runCliCommand("codex", ["exec", "--effort", "high", "--model", resolved.model], prompt, exec);
+  }
+  if (resolved.provider === "gemini-cli") {
+    return runCliCommand("gemini", ["-p", prompt], "", exec);
+  }
+  return runApiProvider(resolved, prompt, exec);
+}
+function createLLMCaller(options = {}) {
+  return {
+    callLLM: (prompt, callOptions = {}) => callLLMWithDeps(prompt, callOptions, {
+      exec: options.exec,
+      checkBinary: options.checkBinary,
+      env: options.env,
+      configPath: options.configPath
+    }),
+    resolveProvider: (callOptions = {}) => resolveProviderWithDeps(callOptions, {
+      checkBinary: options.checkBinary,
+      env: options.env,
+      configPath: options.configPath
+    })
+  };
+}
+var defaultCaller = createLLMCaller();
+function callLLM(prompt, options = {}) {
+  return defaultCaller.callLLM(prompt, options);
+}
+function resolveProvider(options = {}) {
+  return defaultCaller.resolveProvider(options);
+}
+
+// src/distill.ts
+var import_yaml3 = __toESM(require_dist(), 1);
+import path from "node:path";
+import { spawnSync as spawnSync2 } from "node:child_process";
 import { readFile as readFile2 } from "node:fs/promises";
 import { existsSync, readdirSync, statSync } from "node:fs";
 var DEFAULT_SKILLS_DIR = "~/.agents/skills";
@@ -7726,7 +8069,7 @@ var DEFAULT_PROMPT_CONFIG = {
 };
 async function distillTool(options) {
   const { toolId, binary, docsDir, outDir, model, llmCaller, feedback, promptConfig = {} } = options;
-  const caller = llmCaller ?? ((rawDocs, tid, m, fb) => callLLM(rawDocs, tid, m, defaultExec, fb, promptConfig));
+  const caller = llmCaller ?? ((rawDocs, tid, m, fb) => callLLM2(rawDocs, tid, m, defaultExec2, fb, promptConfig));
   const skillPath = path.join(outDir, "SKILL.md");
   if (existsSync(skillPath)) {
     const existing = await readFile2(skillPath, "utf8");
@@ -7934,8 +8277,8 @@ ${feedback}
 
 Fix the above gaps in your new distillation.` : ""}`;
 }
-var defaultExec = (command, args, options) => spawnSync(command, [...args], options);
-function callLLM(rawDocs, toolId, model, exec = defaultExec, feedback, promptConfig) {
+var defaultExec2 = (command, args, options) => spawnSync2(command, [...args], options);
+function callLLM2(rawDocs, toolId, model, exec = defaultExec2, feedback, promptConfig) {
   const prompt = buildPrompt(rawDocs, toolId, feedback, promptConfig);
   const result = exec("claude", ["-p", "--output-format", "text", "--model", model, "--no-session-persistence"], {
     input: prompt,
@@ -7982,7 +8325,7 @@ function parseDistilledOutput(output) {
     troubleshooting: obj.troubleshooting
   };
 }
-function detectVersion(toolId, exec = defaultExec) {
+function detectVersion(toolId, exec = defaultExec2) {
   for (const flag of ["--version", "-V"]) {
     const result = exec(toolId, [flag], { input: "", encoding: "utf8", maxBuffer: 1024 * 1024 });
     if (result.status === 0 && result.stdout) {
@@ -8019,7 +8362,7 @@ async function loadDistillConfig(configPath) {
   }
   let parsed;
   try {
-    parsed = import_yaml2.default.parse(raw);
+    parsed = import_yaml3.default.parse(raw);
   } catch {
     return {};
   }
@@ -8052,342 +8395,6 @@ import path2 from "node:path";
 import { existsSync as existsSync2 } from "node:fs";
 import { readFile as readFile3, readdir } from "node:fs/promises";
 import { spawnSync as spawnSync3 } from "node:child_process";
-
-// src/llm.ts
-var import_yaml3 = __toESM(require_dist(), 1);
-import { readFileSync } from "node:fs";
-import { spawnSync as spawnSync2 } from "node:child_process";
-var DEFAULT_LLM_CONFIG_PATH = "~/.agent-tool-docs/config.yaml";
-var MAX_BUFFER = 10 * 1024 * 1024;
-var DEFAULT_MODEL_BY_PROVIDER = {
-  "claude-cli": "claude-haiku-4-5-20251001",
-  "codex-cli": "o4-mini",
-  "gemini-cli": "gemini",
-  anthropic: "claude-sonnet-4-5-20250514",
-  openai: "gpt-4.1",
-  gemini: "gemini-2.5-flash",
-  openrouter: "anthropic/claude-sonnet-4-5"
-};
-var ENV_BY_PROVIDER = {
-  anthropic: "ANTHROPIC_API_KEY",
-  openai: "OPENAI_API_KEY",
-  gemini: "GEMINI_API_KEY",
-  openrouter: "OPENROUTER_API_KEY"
-};
-var defaultExec2 = (command, args, options) => spawnSync2(command, [...args], options);
-var defaultCheckBinary = (name) => spawnSync2("which", [name], { encoding: "utf8" }).status === 0;
-var API_RUNNER_SCRIPT = `
-const provider = process.env.LLM_PROVIDER;
-const model = process.env.LLM_MODEL;
-const apiKey = process.env.LLM_API_KEY;
-
-const readPrompt = async () => {
-  let data = "";
-  process.stdin.setEncoding("utf8");
-  for await (const chunk of process.stdin) data += chunk;
-  return data;
-};
-
-const parseOpenAICompatibleContent = (payload) => {
-  const content = payload?.choices?.[0]?.message?.content;
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    const parts = [];
-    for (const part of content) {
-      if (part && typeof part === "object" && typeof part.text === "string") {
-        parts.push(part.text);
-      }
-    }
-    return parts.join("");
-  }
-  return "";
-};
-
-const getGeminiUrl = (modelName, key) =>
-  "https://generativelanguage.googleapis.com/v1beta/models/" +
-  encodeURIComponent(modelName) +
-  ":generateContent?key=" +
-  encodeURIComponent(key);
-
-const extractText = (backend, payload) => {
-  if (backend === "anthropic") {
-    const content = payload?.content;
-    if (!Array.isArray(content)) return "";
-    for (const item of content) {
-      if (item && typeof item === "object" && item.type === "text" && typeof item.text === "string") {
-        return item.text;
-      }
-    }
-    return "";
-  }
-  if (backend === "openai" || backend === "openrouter") {
-    return parseOpenAICompatibleContent(payload);
-  }
-  if (backend === "gemini") {
-    const candidates = payload?.candidates;
-    if (!Array.isArray(candidates) || candidates.length === 0) return "";
-    const parts = candidates[0]?.content?.parts;
-    if (!Array.isArray(parts)) return "";
-    const out = [];
-    for (const part of parts) {
-      if (part && typeof part === "object" && typeof part.text === "string") {
-        out.push(part.text);
-      }
-    }
-    return out.join("");
-  }
-  return "";
-};
-
-const main = async () => {
-  if (!provider || !model || !apiKey) {
-    throw new Error("Missing API provider configuration");
-  }
-
-  const prompt = await readPrompt();
-  let url = "";
-  let headers = {};
-  let body = {};
-
-  if (provider === "anthropic") {
-    url = "https://api.anthropic.com/v1/messages";
-    headers = {
-      "content-type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    };
-    body = {
-      model,
-      max_tokens: 4096,
-      messages: [{ role: "user", content: prompt }],
-    };
-  } else if (provider === "openai") {
-    url = "https://api.openai.com/v1/chat/completions";
-    headers = {
-      "content-type": "application/json",
-      "authorization": "Bearer " + apiKey,
-    };
-    body = {
-      model,
-      messages: [{ role: "user", content: prompt }],
-    };
-  } else if (provider === "gemini") {
-    url = getGeminiUrl(model, apiKey);
-    headers = {
-      "content-type": "application/json",
-    };
-    body = {
-      contents: [{ parts: [{ text: prompt }] }],
-    };
-  } else if (provider === "openrouter") {
-    url = "https://openrouter.ai/api/v1/chat/completions";
-    headers = {
-      "content-type": "application/json",
-      "authorization": "Bearer " + apiKey,
-    };
-    body = {
-      model,
-      messages: [{ role: "user", content: prompt }],
-    };
-  } else {
-    throw new Error("Unsupported API provider: " + provider);
-  }
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
-
-  const raw = await response.text();
-  if (!response.ok) {
-    process.stderr.write("HTTP " + response.status + ": " + raw.slice(0, 1000));
-    process.exit(2);
-  }
-
-  let payload;
-  try {
-    payload = JSON.parse(raw);
-  } catch {
-    process.stderr.write("API returned invalid JSON: " + raw.slice(0, 1000));
-    process.exit(3);
-  }
-
-  const output = extractText(provider, payload);
-  if (!output || !output.trim()) {
-    process.stderr.write("API returned empty output");
-    process.exit(4);
-  }
-
-  process.stdout.write(output);
-};
-
-main().catch((error) => {
-  const msg = error instanceof Error ? error.message : String(error);
-  process.stderr.write(msg);
-  process.exit(1);
-});
-`.trim();
-function parseProvider(raw) {
-  if (raw === "claude-cli" || raw === "codex-cli" || raw === "gemini-cli" || raw === "anthropic" || raw === "openai" || raw === "gemini" || raw === "openrouter") {
-    return raw;
-  }
-  return;
-}
-function loadLLMConfig(configPath) {
-  const resolvedPath = expandHome(configPath);
-  let raw;
-  try {
-    raw = readFileSync(resolvedPath, "utf8");
-  } catch {
-    return {};
-  }
-  let parsed;
-  try {
-    parsed = import_yaml3.default.parse(raw);
-  } catch {
-    return {};
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return {};
-  }
-  const obj = parsed;
-  const provider = parseProvider(obj.provider);
-  const model = typeof obj.model === "string" && obj.model.trim() ? obj.model.trim() : undefined;
-  const apiKey = typeof obj.apiKey === "string" && obj.apiKey.trim() ? obj.apiKey.trim() : undefined;
-  if (obj.provider !== undefined && !provider) {
-    throw new Error("Invalid provider in ~/.agent-tool-docs/config.yaml. Expected one of: claude-cli, codex-cli, gemini-cli, anthropic, openai, gemini, openrouter.");
-  }
-  return { provider, model, apiKey };
-}
-function selectModel(provider, options, config) {
-  return options.model ?? config.model ?? DEFAULT_MODEL_BY_PROVIDER[provider];
-}
-function providerNeedsApiKey(provider) {
-  return provider === "anthropic" || provider === "openai" || provider === "gemini" || provider === "openrouter";
-}
-function getApiKeyForProvider(provider, env, config) {
-  if (!providerNeedsApiKey(provider))
-    return;
-  if (config.provider === provider && config.apiKey) {
-    return config.apiKey;
-  }
-  const envKey = ENV_BY_PROVIDER[provider];
-  return envKey ? env[envKey] : undefined;
-}
-function resolveProviderWithDeps(options, deps) {
-  const checkBinary = deps.checkBinary ?? defaultCheckBinary;
-  const env = deps.env ?? process.env;
-  const configPath = deps.configPath ?? DEFAULT_LLM_CONFIG_PATH;
-  const config = loadLLMConfig(configPath);
-  if (config.provider) {
-    const model = selectModel(config.provider, options, config);
-    const apiKey = getApiKeyForProvider(config.provider, env, config);
-    return { provider: config.provider, model, ...apiKey ? { apiKey } : {} };
-  }
-  for (const [provider, binary] of [
-    ["claude-cli", "claude"],
-    ["codex-cli", "codex"],
-    ["gemini-cli", "gemini"]
-  ]) {
-    if (checkBinary(binary)) {
-      return { provider, model: selectModel(provider, options, config) };
-    }
-  }
-  for (const provider of ["anthropic", "openai", "gemini", "openrouter"]) {
-    const envKey = ENV_BY_PROVIDER[provider];
-    const envValue = env[envKey];
-    if (envValue) {
-      const apiKey = config.apiKey ?? envValue;
-      return { provider, model: selectModel(provider, options, config), apiKey };
-    }
-  }
-  throw new Error("No LLM provider available. Set ~/.agent-tool-docs/config.yaml (provider/model/apiKey), install one CLI (claude, codex, gemini), or set an API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY).");
-}
-function runCliCommand(command, args, prompt, exec) {
-  const result = exec(command, args, {
-    input: prompt,
-    encoding: "utf8",
-    maxBuffer: MAX_BUFFER
-  });
-  if (result.error) {
-    throw new Error(`Failed to run ${command}: ${result.error.message}`);
-  }
-  if (result.status !== 0) {
-    const stderr = result.stderr ?? "";
-    throw new Error(`${command} exited with code ${result.status}${stderr ? `: ${stderr.slice(0, 200)}` : ""}`);
-  }
-  const output = result.stdout ?? "";
-  if (!output.trim()) {
-    const stderr = result.stderr ?? "";
-    throw new Error(`${command} returned empty output${stderr ? `: ${stderr.slice(0, 200)}` : ""}`);
-  }
-  return output;
-}
-function runApiProvider(provider, prompt, exec) {
-  if (!provider.apiKey) {
-    throw new Error(`Missing API key for ${provider.provider}.`);
-  }
-  const result = exec("node", ["--input-type=module", "-e", API_RUNNER_SCRIPT], {
-    input: prompt,
-    encoding: "utf8",
-    maxBuffer: MAX_BUFFER,
-    env: {
-      ...process.env,
-      LLM_PROVIDER: provider.provider,
-      LLM_MODEL: provider.model,
-      LLM_API_KEY: provider.apiKey
-    }
-  });
-  if (result.error) {
-    throw new Error(`Failed to run API caller for ${provider.provider}: ${result.error.message}`);
-  }
-  if (result.status !== 0) {
-    const stderr = result.stderr ?? "";
-    throw new Error(`${provider.provider} API call failed${stderr ? `: ${stderr.slice(0, 500)}` : ""}`);
-  }
-  const output = result.stdout ?? "";
-  if (!output.trim()) {
-    const stderr = result.stderr ?? "";
-    throw new Error(`${provider.provider} API returned empty output${stderr ? `: ${stderr.slice(0, 500)}` : ""}`);
-  }
-  return output;
-}
-function callLLMWithDeps(prompt, options, deps) {
-  const resolved = resolveProviderWithDeps(options, deps);
-  const exec = deps.exec ?? defaultExec2;
-  if (resolved.provider === "claude-cli") {
-    return runCliCommand("claude", ["-p", "--output-format", "text", "--model", resolved.model, "--no-session-persistence"], prompt, exec);
-  }
-  if (resolved.provider === "codex-cli") {
-    return runCliCommand("codex", ["exec", "--model", resolved.model], prompt, exec);
-  }
-  if (resolved.provider === "gemini-cli") {
-    return runCliCommand("gemini", ["-p", prompt], "", exec);
-  }
-  return runApiProvider(resolved, prompt, exec);
-}
-function createLLMCaller(options = {}) {
-  return {
-    callLLM: (prompt, callOptions = {}) => callLLMWithDeps(prompt, callOptions, {
-      exec: options.exec,
-      checkBinary: options.checkBinary,
-      env: options.env,
-      configPath: options.configPath
-    }),
-    resolveProvider: (callOptions = {}) => resolveProviderWithDeps(callOptions, {
-      checkBinary: options.checkBinary,
-      env: options.env,
-      configPath: options.configPath
-    })
-  };
-}
-var defaultCaller = createLLMCaller();
-function callLLM2(prompt, options = {}) {
-  return defaultCaller.callLLM(prompt, options);
-}
-
-// src/validate.ts
 var DEFAULT_THRESHOLD = 9;
 var DEFAULT_VALIDATION_MODELS = ["claude-sonnet-4-6", "claude-opus-4-6"];
 var NUM_SCENARIOS = 4;
@@ -8519,7 +8526,7 @@ function checkGroundedness(skillContent, rawDocs, model, exec = defaultExec3) {
 }
 function runLLM(prompt, model, exec) {
   if (exec === defaultExec3) {
-    return callLLM2(prompt, { model });
+    return callLLM(prompt, { model });
   }
   const caller = createLLMCaller({
     exec,
@@ -8846,6 +8853,9 @@ Usage:
   tool-docs refresh [--registry <path>] [--only <id1,id2>] [--diff]
   tool-docs validate <tool-id> [--skills <path>] [--models <m1,m2>] [--threshold <n>] [--auto-redist]
   tool-docs report [--skills <path>]
+  tool-docs config                             # show current LLM provider config
+  tool-docs config --provider <p> [--model <m>] [--api-key <k>]  # set config
+  tool-docs config --reset                     # delete config file
   tool-docs init [--registry <path>] [--force]
   tool-docs --help
 
@@ -8856,6 +8866,7 @@ Commands:
   refresh    Re-run generate + distill for tools whose --help output has changed
   validate   Test skill quality using LLM-based scenario evaluation
   report     Show aggregate quality report across all validated tools
+  config     Show or update LLM provider configuration (~/.agent-tool-docs/config.yaml)
   init       Create a starter registry file at ~/.agents/tool-docs/registry.yaml with example
              tool entries (git, ripgrep). Use this to configure batch generation for multiple tools.
 
@@ -8926,6 +8937,10 @@ async function main() {
     await handleReport(flags);
     return;
   }
+  if (command === "config") {
+    await handleConfig(flags);
+    return;
+  }
   if (command === "--version" || command === "-v") {
     console.log(VERSION);
     return;
@@ -8942,7 +8957,9 @@ var VALUE_FLAGS = new Set([
   "--models",
   "--skills",
   "--threshold",
-  "--distill-config"
+  "--distill-config",
+  "--provider",
+  "--api-key"
 ]);
 function extractPositionalArgs(args) {
   const positional = [];
@@ -8963,11 +8980,11 @@ function parseFlags(args) {
     const arg = args[i];
     if (!arg.startsWith("-"))
       continue;
-    if (arg === "--force" || arg === "--auto-redist" || arg === "--diff") {
+    if (arg === "--force" || arg === "--auto-redist" || arg === "--diff" || arg === "--reset") {
       flags[arg.replace(/^--/, "")] = true;
       continue;
     }
-    if (arg === "--registry" || arg === "--out" || arg === "--only" || arg === "--docs" || arg === "--model" || arg === "--models" || arg === "--skills" || arg === "--threshold" || arg === "--distill-config") {
+    if (arg === "--registry" || arg === "--out" || arg === "--only" || arg === "--docs" || arg === "--model" || arg === "--models" || arg === "--skills" || arg === "--threshold" || arg === "--distill-config" || arg === "--provider" || arg === "--api-key") {
       const value = args[i + 1];
       if (!value || value.startsWith("-")) {
         throw new Error(`Missing value for ${arg}`);
@@ -9125,6 +9142,113 @@ async function handleReport(flags) {
   } catch (err) {
     console.error(err instanceof Error ? err.message : String(err));
     process.exit(1);
+  }
+}
+var VALID_PROVIDERS = [
+  "claude-cli",
+  "codex-cli",
+  "gemini-cli",
+  "anthropic",
+  "openai",
+  "gemini",
+  "openrouter"
+];
+var CONFIG_TEMPLATE = `# agent-tool-docs LLM configuration
+# Docs: https://github.com/BrennerSpear/agent-tool-docs#prerequisites
+#
+# provider — which LLM backend to use for distill and validate
+#   CLI backends (must be installed and logged in):
+#     claude-cli    — Claude Code CLI (recommended)
+#     codex-cli     — OpenAI Codex CLI
+#     gemini-cli    — Google Gemini CLI
+#   API backends (requires apiKey or env var):
+#     anthropic     — Anthropic Messages API (env: ANTHROPIC_API_KEY)
+#     openai        — OpenAI Chat API (env: OPENAI_API_KEY)
+#     gemini        — Google Gemini API (env: GEMINI_API_KEY)
+#     openrouter    — OpenRouter API (env: OPENROUTER_API_KEY)
+#
+# model — optional model override (each provider has a sensible default)
+#   Examples: claude-sonnet-4-5-20250514, gpt-4.1, gemini-2.5-flash
+#
+# apiKey — optional API key (overrides env var for API providers)
+`;
+async function handleConfig(flags) {
+  const configPath = expandHome(DEFAULT_LLM_CONFIG_PATH);
+  const configDir = path3.dirname(configPath);
+  if (flags.reset === true) {
+    try {
+      unlinkSync(configPath);
+      console.log("Deleted " + DEFAULT_LLM_CONFIG_PATH);
+    } catch {
+      console.log("No config file found at " + DEFAULT_LLM_CONFIG_PATH);
+    }
+    return;
+  }
+  const provider = typeof flags.provider === "string" ? flags.provider : undefined;
+  const model = typeof flags.model === "string" ? flags.model : undefined;
+  const apiKey = typeof flags["api-key"] === "string" ? flags["api-key"] : undefined;
+  if (provider || model || apiKey) {
+    if (provider && !VALID_PROVIDERS.includes(provider)) {
+      console.error("Invalid provider: " + provider);
+      console.error("Valid providers: " + VALID_PROVIDERS.join(", "));
+      process.exit(1);
+    }
+    let existing = {};
+    try {
+      const raw = await readText(configPath);
+      const parsed = import_yaml4.default.parse(raw);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        existing = parsed;
+      }
+    } catch {}
+    if (provider)
+      existing.provider = provider;
+    if (model)
+      existing.model = model;
+    if (apiKey)
+      existing.apiKey = apiKey;
+    await ensureDir(configDir);
+    const yamlContent = import_yaml4.default.stringify(existing);
+    await writeFileEnsured(configPath, CONFIG_TEMPLATE + yamlContent);
+    console.log("Updated " + DEFAULT_LLM_CONFIG_PATH);
+    for (const [key, val] of Object.entries(existing)) {
+      const display = key === "apiKey" ? val.slice(0, 8) + "..." : String(val);
+      console.log("  " + key + ": " + display);
+    }
+    return;
+  }
+  console.log("LLM Provider Configuration");
+  console.log("─".repeat(40));
+  let configExists = false;
+  try {
+    const raw = await readText(configPath);
+    const parsed = import_yaml4.default.parse(raw);
+    if (parsed && typeof parsed === "object") {
+      configExists = true;
+      console.log("Config: " + DEFAULT_LLM_CONFIG_PATH);
+      for (const [key, val] of Object.entries(parsed)) {
+        const display = key === "apiKey" ? String(val).slice(0, 8) + "..." : String(val);
+        console.log("  " + key + ": " + display);
+      }
+    }
+  } catch {
+    console.log("Config: " + DEFAULT_LLM_CONFIG_PATH + " (not found)");
+  }
+  console.log("");
+  try {
+    const resolved = resolveProvider();
+    console.log("Resolved provider: " + resolved.provider);
+    console.log("Model: " + resolved.model);
+    if (resolved.apiKey) {
+      console.log("API key: " + resolved.apiKey.slice(0, 8) + "...");
+    }
+  } catch (err) {
+    console.log("Resolved provider: none");
+    console.log(err instanceof Error ? err.message : String(err));
+  }
+  if (!configExists) {
+    console.log(`
+To configure: tool-docs config --provider claude-cli`);
   }
 }
 async function handleRun(toolId, flags, {
@@ -9655,6 +9779,7 @@ export {
   handleInit,
   handleGenerate,
   handleDistill,
+  handleConfig,
   handleAutoRedist,
   getChangedTools,
   generateCommandDocs,

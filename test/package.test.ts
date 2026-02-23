@@ -96,7 +96,9 @@ describe("npm publish readiness", () => {
 
   it("npm pack includes only expected files", () => {
     const npmCache = mkdtempSync(path.join(os.tmpdir(), "npm-cache-"));
-    const result = spawnSync("npm", ["pack", "--dry-run", "--json"], {
+    // Use npm-real if available (macOS wrapper redirects npm → bun), fall back to npm
+    const npmBin = spawnSync("which", ["npm-real"], { encoding: "utf8" }).status === 0 ? "npm-real" : "npm";
+    const result = spawnSync(npmBin, ["pack", "--dry-run", "--json"], {
       encoding: "utf8",
       cwd: ROOT,
       env: { ...process.env, npm_config_cache: npmCache },
