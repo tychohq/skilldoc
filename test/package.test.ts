@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import { readFileSync, existsSync, accessSync, constants } from "node:fs";
+import { readFileSync, existsSync, accessSync, constants, mkdtempSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
+import os from "node:os";
 
 const ROOT = path.resolve(import.meta.dir, "..");
 const pkgPath = path.join(ROOT, "package.json");
@@ -94,10 +95,14 @@ describe("npm publish readiness", () => {
   });
 
   it("npm pack includes only expected files", () => {
+    const npmCache = mkdtempSync(path.join(os.tmpdir(), "npm-cache-"));
     const result = spawnSync("npm", ["pack", "--dry-run", "--json"], {
       encoding: "utf8",
       cwd: ROOT,
+      env: { ...process.env, npm_config_cache: npmCache },
     });
+    rmSync(npmCache, { recursive: true, force: true });
+    expect(result.status).toBe(0);
     const packInfo = JSON.parse(result.stdout);
     const filePaths = packInfo[0].files.map((f: { path: string }) => f.path);
     expect(filePaths).toContain("bin/tool-docs.js");

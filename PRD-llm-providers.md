@@ -169,6 +169,6 @@ Use Node built-in `fetch()` for HTTP. Use existing `yaml` devDependency for conf
 
   Update the help text in `src/cli.ts` to include the `config` command.
 
-- [ ] **Task 8: Verify all tests pass and build succeeds**
+- [x] **Task 8: Verify all tests pass and build succeeds**
 
   Run `bun test`, `bun run build`, and `bun typecheck`. Fix any failures. This is the final validation step.

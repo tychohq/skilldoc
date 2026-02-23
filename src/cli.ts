@@ -1,7 +1,7 @@
 import path from "node:path";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
-import { rm } from "node:fs/promises";
+import { readdir, rm } from "node:fs/promises";
 import { writeFileSync, unlinkSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import YAML from "yaml";
@@ -582,10 +582,6 @@ export async function handleGenerate(flags: Record<string, string | boolean>, bi
 
   await ensureDir(outDir);
 
-  const indexLines: string[] = [];
-  indexLines.push("# Tool Docs", "", `Generated: ${new Date().toISOString()}`, "");
-  indexLines.push("| Tool | Binary |", "| --- | --- |");
-
   for (const tool of tools) {
     const helpArgs = tool.helpArgs ?? ["--help"];
     const helpResult = runCommand(tool.binary, helpArgs);
@@ -672,12 +668,40 @@ export async function handleGenerate(flags: Record<string, string | boolean>, bi
     } else {
       await rm(commandsDir, { recursive: true, force: true });
     }
-
-    indexLines.push(`| ${tool.id} | ${tool.binary} |`);
   }
-
+  const indexLines = await buildIndexLines(outDir);
   await writeFileEnsured(path.join(outDir, "index.md"), indexLines.join("\n"));
   console.log(`Generated docs for ${tools.length} tool(s) in ${outDir}`);
+}
+
+async function buildIndexLines(outDir: string): Promise<string[]> {
+  const lines: string[] = [];
+  lines.push("# Tool Docs", "", `Generated: ${new Date().toISOString()}`, "");
+  lines.push("| Tool | Binary |", "| --- | --- |");
+
+  const dirents = await readdir(outDir, { withFileTypes: true });
+  const rows: Array<{ id: string; binary: string }> = [];
+
+  for (const dirent of dirents) {
+    if (!dirent.isDirectory()) continue;
+    const toolJsonPath = path.join(outDir, dirent.name, "tool.json");
+    if (!existsSync(toolJsonPath)) continue;
+    try {
+      const raw = await readText(toolJsonPath);
+      const doc = JSON.parse(raw) as Partial<ToolDoc>;
+      if (typeof doc.id !== "string" || typeof doc.binary !== "string") continue;
+      rows.push({ id: doc.id, binary: doc.binary });
+    } catch {
+      // Skip malformed tool docs when rebuilding index.
+    }
+  }
+
+  rows.sort((a, b) => a.id.localeCompare(b.id));
+  for (const row of rows) {
+    lines.push(`| ${row.id} | ${row.binary} |`);
+  }
+
+  return lines;
 }
 
 export const DEFAULT_MAX_DEPTH = 2;

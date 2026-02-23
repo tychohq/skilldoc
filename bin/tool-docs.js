@@ -6975,7 +6975,7 @@ var import_yaml4 = __toESM(require_dist(), 1);
 import path3 from "node:path";
 import os2 from "node:os";
 import { spawnSync as spawnSync4 } from "node:child_process";
-import { rm } from "node:fs/promises";
+import { readdir as readdir2, rm } from "node:fs/promises";
 import { writeFileSync, unlinkSync, existsSync as existsSync3 } from "node:fs";
 import { createHash } from "node:crypto";
 // package.json
@@ -9274,9 +9274,6 @@ async function handleGenerate(flags, binaryName) {
     tools = registry.tools.filter((tool) => tool.enabled !== false).filter((tool) => only ? only.has(tool.id) : true).sort((a, b) => a.id.localeCompare(b.id));
   }
   await ensureDir(outDir);
-  const indexLines = [];
-  indexLines.push("# Tool Docs", "", `Generated: ${new Date().toISOString()}`, "");
-  indexLines.push("| Tool | Binary |", "| --- | --- |");
   for (const tool of tools) {
     const helpArgs = tool.helpArgs ?? ["--help"];
     const helpResult = runCommand(tool.binary, helpArgs);
@@ -9338,11 +9335,37 @@ async function handleGenerate(flags, binaryName) {
     } else {
       await rm(commandsDir, { recursive: true, force: true });
     }
-    indexLines.push(`| ${tool.id} | ${tool.binary} |`);
   }
+  const indexLines = await buildIndexLines(outDir);
   await writeFileEnsured(path3.join(outDir, "index.md"), indexLines.join(`
 `));
   console.log(`Generated docs for ${tools.length} tool(s) in ${outDir}`);
+}
+async function buildIndexLines(outDir) {
+  const lines = [];
+  lines.push("# Tool Docs", "", `Generated: ${new Date().toISOString()}`, "");
+  lines.push("| Tool | Binary |", "| --- | --- |");
+  const dirents = await readdir2(outDir, { withFileTypes: true });
+  const rows = [];
+  for (const dirent of dirents) {
+    if (!dirent.isDirectory())
+      continue;
+    const toolJsonPath = path3.join(outDir, dirent.name, "tool.json");
+    if (!existsSync3(toolJsonPath))
+      continue;
+    try {
+      const raw = await readText(toolJsonPath);
+      const doc = JSON.parse(raw);
+      if (typeof doc.id !== "string" || typeof doc.binary !== "string")
+        continue;
+      rows.push({ id: doc.id, binary: doc.binary });
+    } catch {}
+  }
+  rows.sort((a, b) => a.id.localeCompare(b.id));
+  for (const row of rows) {
+    lines.push(`| ${row.id} | ${row.binary} |`);
+  }
+  return lines;
 }
 var DEFAULT_MAX_DEPTH = 2;
 var SUBCOMMAND_KEYWORD_RE = /\b(manage|control)\b/i;

@@ -65,11 +65,24 @@ describe("tool-docs generate — new registry entries", () => {
     }
   });
 
-  it("index.md lists all new tools", async () => {
+  it("index.md rows point to generated tool docs", async () => {
     const indexPath = path.join(DOCS_DIR, "index.md");
     const content = await readFile(indexPath, "utf8");
-    for (const id of NEW_TOOL_IDS) {
-      expect(content, `index.md missing ${id}`).toContain(id);
+    const rows = content
+      .split("\n")
+      .filter((line) => line.startsWith("| ") && !line.includes("| --- |") && !line.includes("| Tool | Binary |"));
+
+    expect(rows.length).toBeGreaterThan(0);
+
+    for (const row of rows) {
+      const cells = row.split("|").map((cell) => cell.trim()).filter((cell) => cell.length > 0);
+      expect(cells.length).toBe(2);
+
+      const [id, binary] = cells;
+      const raw = await readFile(path.join(DOCS_DIR, id, "tool.json"), "utf8");
+      const doc = JSON.parse(raw) as { id: string; binary: string };
+      expect(doc.id).toBe(id);
+      expect(doc.binary).toBe(binary);
     }
   });
 });

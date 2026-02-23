@@ -331,6 +331,15 @@ describe("handleGenerate with binary name", () => {
     expect(content).toContain("echo");
   });
 
+  it("preserves prior index entries when generating another ad-hoc binary", async () => {
+    await handleGenerate({ out: tmpDir }, "echo");
+    await handleGenerate({ out: tmpDir }, "ls");
+    const indexMd = path.join(tmpDir, "index.md");
+    const content = readFileSync(indexMd, "utf8");
+    expect(content).toContain("| echo | echo |");
+    expect(content).toContain("| ls | ls |");
+  });
+
   it("uses --help as default helpArgs for ad-hoc binary", async () => {
     const noRegistry = path.join(tmpDir, "no-registry.yaml");
     await handleGenerate({ out: tmpDir, registry: noRegistry }, "jq");

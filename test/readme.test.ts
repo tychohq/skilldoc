@@ -23,17 +23,17 @@ describe("Quick Start uses ad-hoc flow", () => {
   const quickStart = getSection(content, "## Quick Start");
 
   it("shows run as the recommended first command", () => {
-    expect(quickStart).toContain("tool-docs run jq");
+    expect(quickStart).toContain("tool-docs run railway");
     // run should appear before individual commands
-    const runIndex = quickStart.indexOf("tool-docs run jq");
-    const generateIndex = quickStart.indexOf("tool-docs generate jq");
+    const runIndex = quickStart.indexOf("tool-docs run railway");
+    const generateIndex = quickStart.indexOf("tool-docs generate railway");
     expect(runIndex).toBeLessThan(generateIndex);
   });
 
   it("shows ad-hoc positional arg commands", () => {
-    expect(quickStart).toContain("tool-docs generate jq");
-    expect(quickStart).toContain("tool-docs distill jq");
-    expect(quickStart).toContain("tool-docs validate jq");
+    expect(quickStart).toContain("tool-docs generate railway");
+    expect(quickStart).toContain("tool-docs distill railway");
+    expect(quickStart).toContain("tool-docs validate railway");
   });
 
   it("does not contain init or --only flags", () => {
