@@ -308,6 +308,16 @@ describe("generateScenarios", () => {
     expect(capturedArgs).toContain("my-model");
   });
 
+  it("uses a single LLM invocation with injected exec (no PATH probing calls)", () => {
+    const commands: string[] = [];
+    const exec: ExecFn = (cmd) => {
+      commands.push(cmd);
+      return { stdout: validScenariosJson, stderr: "", status: 0 };
+    };
+    generateScenarios("docs", "tool", "my-model", exec);
+    expect(commands).toEqual(["claude"]);
+  });
+
   it("throws when claude binary fails", () => {
     const exec: ExecFn = () => ({ error: new Error("spawn ENOENT"), stdout: null, stderr: null, status: null });
     expect(() => generateScenarios("docs", "tool", "model", exec)).toThrow("Failed to run claude");

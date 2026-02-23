@@ -113,7 +113,7 @@ Use Node built-in `fetch()` for HTTP. Use existing `yaml` devDependency for conf
 
   The key change: `distill.ts`'s `callLLM` currently builds the prompt and shells out to claude. After this task, it builds the prompt and calls `llm.callLLM(prompt, { model })`.
 
-- [ ] **Task 4: Wire `src/validate.ts` to use the new LLM module**
+- [x] **Task 4: Wire `src/validate.ts` to use the new LLM module**
 
   Replace `getModelCommand` and `callLLM` in validate.ts:
   - Import from `src/llm.ts`
@@ -122,7 +122,7 @@ Use Node built-in `fetch()` for HTTP. Use existing `yaml` devDependency for conf
   - Keep the `ExecFn` type for test injection — the LLM module's factory should accept it
   - When `--models` specifies multiple models, each model string is passed to the LLM module which resolves it
 
-- [ ] **Task 5: Add `test/llm.test.ts`**
+- [x] **Task 5: Add `test/llm.test.ts`**
 
   Test the provider resolution logic thoroughly:
   - Config file present with provider → uses config provider
@@ -141,7 +141,7 @@ Use Node built-in `fetch()` for HTTP. Use existing `yaml` devDependency for conf
 
   Use dependency injection (mock exec, mock binary checker, mock env) — no real API calls in tests.
 
-- [ ] **Task 6: Update `test/distill.test.ts` and `test/validate.test.ts`**
+- [x] **Task 6: Update `test/distill.test.ts` and `test/validate.test.ts`**
 
   Update existing tests to work with the new LLM module:
   - Tests that pass mock `LLMCaller` or mock `ExecFn` should still work unchanged
@@ -149,7 +149,7 @@ Use Node built-in `fetch()` for HTTP. Use existing `yaml` devDependency for conf
   - If any test references `getModelCommand`, remove those references
   - All existing tests must pass — zero regressions
 
-- [ ] **Task 7: Add `tool-docs config` command**
+- [x] **Task 7: Add `tool-docs config` command**
 
   Add a `config` subcommand to the CLI:
   ```

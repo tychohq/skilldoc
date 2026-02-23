@@ -4,16 +4,13 @@ import { readFile, readdir } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { expandHome, writeFileEnsured } from "./utils.js";
 import { DEFAULT_SKILLS_DIR, DEFAULT_DOCS_DIR, DEFAULT_MODEL, gatherRawDocs } from "./distill.js";
+import { callLLM as callSharedLLM, createLLMCaller, type ExecFn } from "./llm.js";
+
+export type { ExecFn } from "./llm.js";
 
 export const DEFAULT_THRESHOLD = 9;
 export const DEFAULT_VALIDATION_MODELS = ["claude-sonnet-4-6", "claude-opus-4-6"];
 const NUM_SCENARIOS = 4;
-
-export type ExecFn = (
-  command: string,
-  args: ReadonlyArray<string>,
-  options: { input: string; encoding: "utf8"; maxBuffer: number }
-) => { error?: Error; stdout: string | null; stderr: string | null; status: number | null };
 
 const defaultExec: ExecFn = (command, args, options) =>
   spawnSync(command, [...args], options) as ReturnType<typeof spawnSync>;
@@ -198,40 +195,21 @@ export function checkGroundedness(
   exec: ExecFn = defaultExec
 ): GroundednessResult {
   const prompt = buildGroundednessPrompt(skillContent, rawDocs);
-  const output = callLLM(prompt, model, exec);
+  const output = runLLM(prompt, model, exec);
   return parseGroundednessResult(output);
 }
 
-function getModelCommand(model: string): { command: string; args: string[] } {
-  if (model === "gemini" || model.startsWith("gemini-")) {
-    return { command: "gemini", args: ["-p"] };
-  }
-  return {
-    command: "claude",
-    args: ["-p", "--output-format", "text", "--model", model, "--no-session-persistence"],
-  };
-}
-
-function callLLM(prompt: string, model: string, exec: ExecFn): string {
-  const { command, args } = getModelCommand(model);
-  const result = exec(command, args, { input: prompt, encoding: "utf8", maxBuffer: 10 * 1024 * 1024 });
-
-  if (result.error) {
-    throw new Error(`Failed to run ${command}: ${result.error.message}`);
+function runLLM(prompt: string, model: string, exec: ExecFn): string {
+  if (exec === defaultExec) {
+    return callSharedLLM(prompt, { model });
   }
 
-  if (result.status !== 0) {
-    const stderr = result.stderr ?? "";
-    throw new Error(`${command} exited with code ${result.status}${stderr ? `: ${stderr.slice(0, 200)}` : ""}`);
-  }
-
-  const output = result.stdout ?? "";
-  if (!output.trim()) {
-    const stderr = result.stderr ?? "";
-    throw new Error(`${command} returned empty output${stderr ? `: ${stderr.slice(0, 200)}` : ""}`);
-  }
-
-  return output;
+  // Keep test-injected exec deterministic and independent of host PATH.
+  const caller = createLLMCaller({
+    exec,
+    checkBinary: (name: string) => name === "claude",
+  });
+  return caller.callLLM(prompt, { model });
 }
 
 function stripFences(output: string): string {
@@ -312,7 +290,7 @@ export function generateScenarios(
   exec: ExecFn = defaultExec
 ): ValidationScenario[] {
   const prompt = buildScenariosPrompt(skillContent, toolId);
-  const output = callLLM(prompt, model, exec);
+  const output = runLLM(prompt, model, exec);
   return parseScenarios(output);
 }
 
@@ -323,7 +301,7 @@ export function evaluateScenario(
   exec: ExecFn = defaultExec
 ): ValidationScorecard {
   const prompt = buildEvaluationPrompt(skillContent, task);
-  const output = callLLM(prompt, model, exec);
+  const output = runLLM(prompt, model, exec);
   return parseScorecard(task, output);
 }
 

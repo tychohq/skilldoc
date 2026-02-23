@@ -6971,10 +6971,10 @@ var require_dist = __commonJS((exports) => {
 });
 
 // src/cli.ts
-var import_yaml3 = __toESM(require_dist(), 1);
+var import_yaml4 = __toESM(require_dist(), 1);
 import path3 from "node:path";
 import os2 from "node:os";
-import { spawnSync as spawnSync3 } from "node:child_process";
+import { spawnSync as spawnSync4 } from "node:child_process";
 import { rm } from "node:fs/promises";
 import { writeFileSync, unlinkSync, existsSync as existsSync3 } from "node:fs";
 import { createHash } from "node:crypto";
@@ -8051,11 +8051,347 @@ function extractDistillConfig(raw) {
 import path2 from "node:path";
 import { existsSync as existsSync2 } from "node:fs";
 import { readFile as readFile3, readdir } from "node:fs/promises";
+import { spawnSync as spawnSync3 } from "node:child_process";
+
+// src/llm.ts
+var import_yaml3 = __toESM(require_dist(), 1);
+import { readFileSync } from "node:fs";
 import { spawnSync as spawnSync2 } from "node:child_process";
+var DEFAULT_LLM_CONFIG_PATH = "~/.agent-tool-docs/config.yaml";
+var MAX_BUFFER = 10 * 1024 * 1024;
+var DEFAULT_MODEL_BY_PROVIDER = {
+  "claude-cli": "claude-haiku-4-5-20251001",
+  "codex-cli": "o4-mini",
+  "gemini-cli": "gemini",
+  anthropic: "claude-sonnet-4-5-20250514",
+  openai: "gpt-4.1",
+  gemini: "gemini-2.5-flash",
+  openrouter: "anthropic/claude-sonnet-4-5"
+};
+var ENV_BY_PROVIDER = {
+  anthropic: "ANTHROPIC_API_KEY",
+  openai: "OPENAI_API_KEY",
+  gemini: "GEMINI_API_KEY",
+  openrouter: "OPENROUTER_API_KEY"
+};
+var defaultExec2 = (command, args, options) => spawnSync2(command, [...args], options);
+var defaultCheckBinary = (name) => spawnSync2("which", [name], { encoding: "utf8" }).status === 0;
+var API_RUNNER_SCRIPT = `
+const provider = process.env.LLM_PROVIDER;
+const model = process.env.LLM_MODEL;
+const apiKey = process.env.LLM_API_KEY;
+
+const readPrompt = async () => {
+  let data = "";
+  process.stdin.setEncoding("utf8");
+  for await (const chunk of process.stdin) data += chunk;
+  return data;
+};
+
+const parseOpenAICompatibleContent = (payload) => {
+  const content = payload?.choices?.[0]?.message?.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    const parts = [];
+    for (const part of content) {
+      if (part && typeof part === "object" && typeof part.text === "string") {
+        parts.push(part.text);
+      }
+    }
+    return parts.join("");
+  }
+  return "";
+};
+
+const getGeminiUrl = (modelName, key) =>
+  "https://generativelanguage.googleapis.com/v1beta/models/" +
+  encodeURIComponent(modelName) +
+  ":generateContent?key=" +
+  encodeURIComponent(key);
+
+const extractText = (backend, payload) => {
+  if (backend === "anthropic") {
+    const content = payload?.content;
+    if (!Array.isArray(content)) return "";
+    for (const item of content) {
+      if (item && typeof item === "object" && item.type === "text" && typeof item.text === "string") {
+        return item.text;
+      }
+    }
+    return "";
+  }
+  if (backend === "openai" || backend === "openrouter") {
+    return parseOpenAICompatibleContent(payload);
+  }
+  if (backend === "gemini") {
+    const candidates = payload?.candidates;
+    if (!Array.isArray(candidates) || candidates.length === 0) return "";
+    const parts = candidates[0]?.content?.parts;
+    if (!Array.isArray(parts)) return "";
+    const out = [];
+    for (const part of parts) {
+      if (part && typeof part === "object" && typeof part.text === "string") {
+        out.push(part.text);
+      }
+    }
+    return out.join("");
+  }
+  return "";
+};
+
+const main = async () => {
+  if (!provider || !model || !apiKey) {
+    throw new Error("Missing API provider configuration");
+  }
+
+  const prompt = await readPrompt();
+  let url = "";
+  let headers = {};
+  let body = {};
+
+  if (provider === "anthropic") {
+    url = "https://api.anthropic.com/v1/messages";
+    headers = {
+      "content-type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    };
+    body = {
+      model,
+      max_tokens: 4096,
+      messages: [{ role: "user", content: prompt }],
+    };
+  } else if (provider === "openai") {
+    url = "https://api.openai.com/v1/chat/completions";
+    headers = {
+      "content-type": "application/json",
+      "authorization": "Bearer " + apiKey,
+    };
+    body = {
+      model,
+      messages: [{ role: "user", content: prompt }],
+    };
+  } else if (provider === "gemini") {
+    url = getGeminiUrl(model, apiKey);
+    headers = {
+      "content-type": "application/json",
+    };
+    body = {
+      contents: [{ parts: [{ text: prompt }] }],
+    };
+  } else if (provider === "openrouter") {
+    url = "https://openrouter.ai/api/v1/chat/completions";
+    headers = {
+      "content-type": "application/json",
+      "authorization": "Bearer " + apiKey,
+    };
+    body = {
+      model,
+      messages: [{ role: "user", content: prompt }],
+    };
+  } else {
+    throw new Error("Unsupported API provider: " + provider);
+  }
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  const raw = await response.text();
+  if (!response.ok) {
+    process.stderr.write("HTTP " + response.status + ": " + raw.slice(0, 1000));
+    process.exit(2);
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(raw);
+  } catch {
+    process.stderr.write("API returned invalid JSON: " + raw.slice(0, 1000));
+    process.exit(3);
+  }
+
+  const output = extractText(provider, payload);
+  if (!output || !output.trim()) {
+    process.stderr.write("API returned empty output");
+    process.exit(4);
+  }
+
+  process.stdout.write(output);
+};
+
+main().catch((error) => {
+  const msg = error instanceof Error ? error.message : String(error);
+  process.stderr.write(msg);
+  process.exit(1);
+});
+`.trim();
+function parseProvider(raw) {
+  if (raw === "claude-cli" || raw === "codex-cli" || raw === "gemini-cli" || raw === "anthropic" || raw === "openai" || raw === "gemini" || raw === "openrouter") {
+    return raw;
+  }
+  return;
+}
+function loadLLMConfig(configPath) {
+  const resolvedPath = expandHome(configPath);
+  let raw;
+  try {
+    raw = readFileSync(resolvedPath, "utf8");
+  } catch {
+    return {};
+  }
+  let parsed;
+  try {
+    parsed = import_yaml3.default.parse(raw);
+  } catch {
+    return {};
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return {};
+  }
+  const obj = parsed;
+  const provider = parseProvider(obj.provider);
+  const model = typeof obj.model === "string" && obj.model.trim() ? obj.model.trim() : undefined;
+  const apiKey = typeof obj.apiKey === "string" && obj.apiKey.trim() ? obj.apiKey.trim() : undefined;
+  if (obj.provider !== undefined && !provider) {
+    throw new Error("Invalid provider in ~/.agent-tool-docs/config.yaml. Expected one of: claude-cli, codex-cli, gemini-cli, anthropic, openai, gemini, openrouter.");
+  }
+  return { provider, model, apiKey };
+}
+function selectModel(provider, options, config) {
+  return options.model ?? config.model ?? DEFAULT_MODEL_BY_PROVIDER[provider];
+}
+function providerNeedsApiKey(provider) {
+  return provider === "anthropic" || provider === "openai" || provider === "gemini" || provider === "openrouter";
+}
+function getApiKeyForProvider(provider, env, config) {
+  if (!providerNeedsApiKey(provider))
+    return;
+  if (config.provider === provider && config.apiKey) {
+    return config.apiKey;
+  }
+  const envKey = ENV_BY_PROVIDER[provider];
+  return envKey ? env[envKey] : undefined;
+}
+function resolveProviderWithDeps(options, deps) {
+  const checkBinary = deps.checkBinary ?? defaultCheckBinary;
+  const env = deps.env ?? process.env;
+  const configPath = deps.configPath ?? DEFAULT_LLM_CONFIG_PATH;
+  const config = loadLLMConfig(configPath);
+  if (config.provider) {
+    const model = selectModel(config.provider, options, config);
+    const apiKey = getApiKeyForProvider(config.provider, env, config);
+    return { provider: config.provider, model, ...apiKey ? { apiKey } : {} };
+  }
+  for (const [provider, binary] of [
+    ["claude-cli", "claude"],
+    ["codex-cli", "codex"],
+    ["gemini-cli", "gemini"]
+  ]) {
+    if (checkBinary(binary)) {
+      return { provider, model: selectModel(provider, options, config) };
+    }
+  }
+  for (const provider of ["anthropic", "openai", "gemini", "openrouter"]) {
+    const envKey = ENV_BY_PROVIDER[provider];
+    const envValue = env[envKey];
+    if (envValue) {
+      const apiKey = config.apiKey ?? envValue;
+      return { provider, model: selectModel(provider, options, config), apiKey };
+    }
+  }
+  throw new Error("No LLM provider available. Set ~/.agent-tool-docs/config.yaml (provider/model/apiKey), install one CLI (claude, codex, gemini), or set an API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY).");
+}
+function runCliCommand(command, args, prompt, exec) {
+  const result = exec(command, args, {
+    input: prompt,
+    encoding: "utf8",
+    maxBuffer: MAX_BUFFER
+  });
+  if (result.error) {
+    throw new Error(`Failed to run ${command}: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    const stderr = result.stderr ?? "";
+    throw new Error(`${command} exited with code ${result.status}${stderr ? `: ${stderr.slice(0, 200)}` : ""}`);
+  }
+  const output = result.stdout ?? "";
+  if (!output.trim()) {
+    const stderr = result.stderr ?? "";
+    throw new Error(`${command} returned empty output${stderr ? `: ${stderr.slice(0, 200)}` : ""}`);
+  }
+  return output;
+}
+function runApiProvider(provider, prompt, exec) {
+  if (!provider.apiKey) {
+    throw new Error(`Missing API key for ${provider.provider}.`);
+  }
+  const result = exec("node", ["--input-type=module", "-e", API_RUNNER_SCRIPT], {
+    input: prompt,
+    encoding: "utf8",
+    maxBuffer: MAX_BUFFER,
+    env: {
+      ...process.env,
+      LLM_PROVIDER: provider.provider,
+      LLM_MODEL: provider.model,
+      LLM_API_KEY: provider.apiKey
+    }
+  });
+  if (result.error) {
+    throw new Error(`Failed to run API caller for ${provider.provider}: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    const stderr = result.stderr ?? "";
+    throw new Error(`${provider.provider} API call failed${stderr ? `: ${stderr.slice(0, 500)}` : ""}`);
+  }
+  const output = result.stdout ?? "";
+  if (!output.trim()) {
+    const stderr = result.stderr ?? "";
+    throw new Error(`${provider.provider} API returned empty output${stderr ? `: ${stderr.slice(0, 500)}` : ""}`);
+  }
+  return output;
+}
+function callLLMWithDeps(prompt, options, deps) {
+  const resolved = resolveProviderWithDeps(options, deps);
+  const exec = deps.exec ?? defaultExec2;
+  if (resolved.provider === "claude-cli") {
+    return runCliCommand("claude", ["-p", "--output-format", "text", "--model", resolved.model, "--no-session-persistence"], prompt, exec);
+  }
+  if (resolved.provider === "codex-cli") {
+    return runCliCommand("codex", ["exec", "--model", resolved.model], prompt, exec);
+  }
+  if (resolved.provider === "gemini-cli") {
+    return runCliCommand("gemini", ["-p", prompt], "", exec);
+  }
+  return runApiProvider(resolved, prompt, exec);
+}
+function createLLMCaller(options = {}) {
+  return {
+    callLLM: (prompt, callOptions = {}) => callLLMWithDeps(prompt, callOptions, {
+      exec: options.exec,
+      checkBinary: options.checkBinary,
+      env: options.env,
+      configPath: options.configPath
+    }),
+    resolveProvider: (callOptions = {}) => resolveProviderWithDeps(callOptions, {
+      checkBinary: options.checkBinary,
+      env: options.env,
+      configPath: options.configPath
+    })
+  };
+}
+var defaultCaller = createLLMCaller();
+function callLLM2(prompt, options = {}) {
+  return defaultCaller.callLLM(prompt, options);
+}
+
+// src/validate.ts
 var DEFAULT_THRESHOLD = 9;
 var DEFAULT_VALIDATION_MODELS = ["claude-sonnet-4-6", "claude-opus-4-6"];
 var NUM_SCENARIOS = 4;
-var defaultExec2 = (command, args, options) => spawnSync2(command, [...args], options);
+var defaultExec3 = (command, args, options) => spawnSync3(command, [...args], options);
 function buildScenariosPrompt(skillContent, toolId) {
   return `You are evaluating skill documentation quality for an AI agent. Given the following CLI skill documentation for "${toolId}", generate exactly ${NUM_SCENARIOS} test scenarios that would test whether an AI agent could effectively use this documentation.
 
@@ -8176,36 +8512,20 @@ function parseGroundednessResult(output) {
     reasoning: String(obj.reasoning ?? "")
   };
 }
-function checkGroundedness(skillContent, rawDocs, model, exec = defaultExec2) {
+function checkGroundedness(skillContent, rawDocs, model, exec = defaultExec3) {
   const prompt = buildGroundednessPrompt(skillContent, rawDocs);
-  const output = callLLM2(prompt, model, exec);
+  const output = runLLM(prompt, model, exec);
   return parseGroundednessResult(output);
 }
-function getModelCommand(model) {
-  if (model === "gemini" || model.startsWith("gemini-")) {
-    return { command: "gemini", args: ["-p"] };
+function runLLM(prompt, model, exec) {
+  if (exec === defaultExec3) {
+    return callLLM2(prompt, { model });
   }
-  return {
-    command: "claude",
-    args: ["-p", "--output-format", "text", "--model", model, "--no-session-persistence"]
-  };
-}
-function callLLM2(prompt, model, exec) {
-  const { command, args } = getModelCommand(model);
-  const result = exec(command, args, { input: prompt, encoding: "utf8", maxBuffer: 10 * 1024 * 1024 });
-  if (result.error) {
-    throw new Error(`Failed to run ${command}: ${result.error.message}`);
-  }
-  if (result.status !== 0) {
-    const stderr = result.stderr ?? "";
-    throw new Error(`${command} exited with code ${result.status}${stderr ? `: ${stderr.slice(0, 200)}` : ""}`);
-  }
-  const output = result.stdout ?? "";
-  if (!output.trim()) {
-    const stderr = result.stderr ?? "";
-    throw new Error(`${command} returned empty output${stderr ? `: ${stderr.slice(0, 200)}` : ""}`);
-  }
-  return output;
+  const caller = createLLMCaller({
+    exec,
+    checkBinary: (name) => name === "claude"
+  });
+  return caller.callLLM(prompt, { model });
 }
 function stripFences(output) {
   return output.trim().replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "").trim();
@@ -8267,14 +8587,14 @@ function parseScorecard(task, output) {
     reasoning: String(obj.reasoning ?? "")
   };
 }
-function generateScenarios(skillContent, toolId, model, exec = defaultExec2) {
+function generateScenarios(skillContent, toolId, model, exec = defaultExec3) {
   const prompt = buildScenariosPrompt(skillContent, toolId);
-  const output = callLLM2(prompt, model, exec);
+  const output = runLLM(prompt, model, exec);
   return parseScenarios(output);
 }
-function evaluateScenario(skillContent, task, model, exec = defaultExec2) {
+function evaluateScenario(skillContent, task, model, exec = defaultExec3) {
   const prompt = buildEvaluationPrompt(skillContent, task);
-  const output = callLLM2(prompt, model, exec);
+  const output = runLLM(prompt, model, exec);
   return parseScorecard(task, output);
 }
 async function validateSkillMultiModel(options) {
@@ -8284,7 +8604,7 @@ async function validateSkillMultiModel(options) {
     docsDir,
     models = DEFAULT_VALIDATION_MODELS,
     threshold = DEFAULT_THRESHOLD,
-    exec = defaultExec2
+    exec = defaultExec3
   } = options;
   if (models.length === 0) {
     throw new Error("At least one model must be specified");
@@ -9009,7 +9329,7 @@ async function handleGenerate(flags, binaryName) {
     const toolDir = path3.join(outDir, tool.id);
     await ensureDir(toolDir);
     await writeFileEnsured(path3.join(toolDir, "tool.json"), JSON.stringify(doc, null, 2));
-    await writeFileEnsured(path3.join(toolDir, "tool.yaml"), import_yaml3.default.stringify(doc));
+    await writeFileEnsured(path3.join(toolDir, "tool.yaml"), import_yaml4.default.stringify(doc));
     await writeFileEnsured(path3.join(toolDir, "tool.md"), renderToolMarkdown(doc));
     await rm(path3.join(toolDir, "raw.txt"), { force: true });
     const commandsDir = path3.join(toolDir, "commands");
@@ -9128,7 +9448,7 @@ async function generateOneCommandDoc(toolId, binary, command, helpArgs, commands
   const commandDir = path3.join(commandsDir, slugify(command.name));
   await ensureDir(commandDir);
   await writeFileEnsured(path3.join(commandDir, "command.json"), JSON.stringify(doc, null, 2));
-  await writeFileEnsured(path3.join(commandDir, "command.yaml"), import_yaml3.default.stringify(doc));
+  await writeFileEnsured(path3.join(commandDir, "command.yaml"), import_yaml4.default.stringify(doc));
   await writeFileEnsured(path3.join(commandDir, "command.md"), renderCommandMarkdown(doc));
   if (depth < maxDepth && parsed.commands.length > 0) {
     for (const subCmd of parsed.commands) {
@@ -9152,7 +9472,7 @@ async function lookupRegistryTool(registryPath, binaryName) {
   }
 }
 function resolveBinary(name) {
-  const result = spawnSync3("which", [name], { encoding: "utf8" });
+  const result = spawnSync4("which", [name], { encoding: "utf8" });
   if (result.status !== 0)
     return null;
   return result.stdout.trim();
@@ -9170,7 +9490,7 @@ function runCommand(binary, args) {
     MANPAGER: "cat",
     LESS: "FRX"
   };
-  const result = spawnSync3(binary, args, {
+  const result = spawnSync4(binary, args, {
     encoding: "utf8",
     env
   });
@@ -9195,7 +9515,7 @@ function computeSkillDiff(oldContent, newContent, label) {
   try {
     writeFileSync(tmpA, oldContent, "utf8");
     writeFileSync(tmpB, newContent, "utf8");
-    const result = spawnSync3("diff", ["-u", tmpA, tmpB], { encoding: "utf8" });
+    const result = spawnSync4("diff", ["-u", tmpA, tmpB], { encoding: "utf8" });
     return (result.stdout ?? "").replace(tmpA, `a/${label}`).replace(tmpB, `b/${label}`);
   } finally {
     try {

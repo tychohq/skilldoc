@@ -156,6 +156,19 @@ describe("llm provider resolution", () => {
     expect(resolved.apiKey).toBe("sk-openai");
   });
 
+  it("falls through to GEMINI_API_KEY when Anthropic and OpenAI keys are absent", () => {
+    const caller = createLLMCaller({
+      configPath: path.join(tmpDir, "missing.yaml"),
+      checkBinary: () => false,
+      env: { GEMINI_API_KEY: "sk-gemini" },
+      exec: makeExec("ok"),
+    });
+
+    const resolved = caller.resolveProvider();
+    expect(resolved.provider).toBe("gemini");
+    expect(resolved.apiKey).toBe("sk-gemini");
+  });
+
   it("falls through to OPENROUTER_API_KEY when earlier env keys are absent", () => {
     const caller = createLLMCaller({
       configPath: path.join(tmpDir, "missing.yaml"),
