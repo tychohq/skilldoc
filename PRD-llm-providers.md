@@ -2,14 +2,14 @@
 
 **Goal:** Implement the provider resolution chain documented in README Prerequisites. Create a unified `src/llm.ts` module that supports CLI backends (Claude Code, Codex, Gemini) and direct API calls (Anthropic, OpenAI, Gemini, OpenRouter), with config file support.
 
-**Repo:** `~/projects/agent-tool-docs`
+**Repo:** `~/projects/skilldoc`
 
 ---
 
 ## Context
 
 The README now documents a full provider resolution chain:
-1. Config file (`~/.agent-tool-docs/config.yaml`) — if set, use it
+1. Config file (`~/.skilldoc/config.yaml`) — if set, use it
 2. CLIs on PATH — Claude Code → Codex → Gemini (first found wins)
 3. Environment variables — `ANTHROPIC_API_KEY` → `OPENAI_API_KEY` → `GEMINI_API_KEY` → `OPENROUTER_API_KEY`
 
@@ -48,7 +48,7 @@ Use Node built-in `fetch()` for HTTP. Use existing `yaml` devDependency for conf
   ```
 
   **Provider resolution order** (first match wins):
-  1. Config file at `~/.agent-tool-docs/config.yaml` — if `provider` field is set
+  1. Config file at `~/.skilldoc/config.yaml` — if `provider` field is set
   2. CLIs on PATH (check with `which`): `claude` → `codex` → `gemini`
   3. Env vars: `ANTHROPIC_API_KEY` → `OPENAI_API_KEY` → `GEMINI_API_KEY` → `OPENROUTER_API_KEY`
   4. Throw descriptive error listing all options
@@ -90,7 +90,7 @@ Use Node built-in `fetch()` for HTTP. Use existing `yaml` devDependency for conf
 
 - [x] **Task 2: Add config file loading**
 
-  In `src/llm.ts` (or a helper), add config loading from `~/.agent-tool-docs/config.yaml`:
+  In `src/llm.ts` (or a helper), add config loading from `~/.skilldoc/config.yaml`:
 
   ```yaml
   provider: claude-cli
@@ -164,7 +164,7 @@ Use Node built-in `fetch()` for HTTP. Use existing `yaml` devDependency for conf
   ```
   Provider: claude-cli (auto-detected)
   Model: claude-haiku-4-5-20251001 (default)
-  Config: ~/.agent-tool-docs/config.yaml (not found)
+  Config: ~/.skilldoc/config.yaml (not found)
   ```
 
   Update the help text in `src/cli.ts` to include the `config` command.

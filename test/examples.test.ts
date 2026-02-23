@@ -24,7 +24,7 @@ describe("examples/", () => {
       it("SKILL.md has generated-from marker", () => {
         const p = path.join(EXAMPLES_DIR, tool, "SKILL.md");
         const content = readFileSync(p, "utf8");
-        expect(content).toContain("generated-from: agent-tool-docs");
+        expect(content).toContain("generated-from: skilldoc");
       });
 
       for (const doc of DOCS) {

@@ -35,7 +35,7 @@ async function fileExists(p: string): Promise<boolean> {
   }
 }
 
-describe("tool-docs generate — new registry entries", () => {
+describe("skilldoc generate — new registry entries", () => {
   it("tool.json exists for every new tool", async () => {
     for (const id of NEW_TOOL_IDS) {
       const toolJson = path.join(DOCS_DIR, id, "tool.json");
@@ -100,7 +100,7 @@ type ToolDocShape = {
   warnings: string[];
 };
 
-describe("tool-docs generate — previously-failing tools produce non-empty docs", () => {
+describe("skilldoc generate — previously-failing tools produce non-empty docs", () => {
   it("tool.json has non-empty content for each previously-failing tool", async () => {
     for (const id of PREVIOUSLY_FAILING_TOOL_IDS) {
       const toolJson = path.join(DOCS_DIR, id, "tool.json");

@@ -1,7 +1,7 @@
 ---
 name: uvx
 description: Run Python tools without installing them permanently
-generated-from: agent-tool-docs
+generated-from: skilldoc
 tool-id: uvx
 tool-binary: uvx
 tool-version: uvx 0.10.1 (Homebrew 2026-02-10)

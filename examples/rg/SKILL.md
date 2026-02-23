@@ -1,7 +1,7 @@
 ---
 name: rg
 description: Fast, parallel grep-like search tool with regex support
-generated-from: agent-tool-docs
+generated-from: skilldoc
 tool-id: rg
 tool-binary: rg
 tool-version: ripgrep 15.1.0

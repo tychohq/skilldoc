@@ -405,7 +405,7 @@ describe("distillTool - skip logic", () => {
     // YAML frontmatter format with generated-from marker
     writeFileSync(
       path.join(outDir, "SKILL.md"),
-      "---\nname: mytool\ndescription: Old desc\ngenerated-from: agent-tool-docs\ntool-id: mytool\ngenerated-at: 2024-01-01T00:00:00.000Z\n---\n# mytool"
+      "---\nname: mytool\ndescription: Old desc\ngenerated-from: skilldoc\ntool-id: mytool\ngenerated-at: 2024-01-01T00:00:00.000Z\n---\n# mytool"
     );
 
     const mockLLM: LLMCaller = () => ({
@@ -488,7 +488,7 @@ describe("distillTool - full flow", () => {
     expect(content).toMatch(/^---\n/);
     expect(content).toContain("name: mytool");
     expect(content).toContain("description: A description of mytool");
-    expect(content).toContain("generated-from: agent-tool-docs");
+    expect(content).toContain("generated-from: skilldoc");
     expect(content).toContain("tool-id: mytool");
     expect(content).toContain("generated-at:");
     expect(content).toContain("# mytool");

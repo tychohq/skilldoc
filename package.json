@@ -1,7 +1,7 @@
 {
-  "name": "agent-tool-docs",
+  "name": "skilldoc",
   "version": "0.2.0",
-  "description": "Auto-generate agent-optimized CLI docs from --help output — verified, compressed, ready for AGENTS.md",
+  "description": "Auto-generate agent-optimized CLI skill docs from --help output — verified, compressed, ready for AGENTS.md",
   "keywords": [
     "ai-agents",
     "cli",
@@ -9,21 +9,21 @@
     "agents-md",
     "claude-code",
     "llm",
-    "skill-generation"
+    "skill-generation",
+    "skilldoc"
   ],
-  "homepage": "https://github.com/BrennerSpear/agent-tool-docs",
+  "homepage": "https://github.com/tychohq/skilldoc",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/BrennerSpear/agent-tool-docs.git"
+    "url": "git+https://github.com/tychohq/skilldoc.git"
   },
   "license": "MIT",
   "type": "module",
   "bin": {
-    "agent-tool-docs": "bin/tool-docs.js",
-    "tool-docs": "bin/tool-docs.js"
+    "skilldoc": "bin/skilldoc.js"
   },
   "files": [
-    "bin/tool-docs.js",
+    "bin/skilldoc.js",
     "README.md",
     "LICENSE"
   ],
@@ -31,8 +31,8 @@
     "node": ">=18"
   },
   "scripts": {
-    "build": "bun build src/cli.ts --outfile bin/tool-docs.js --target node --banner '#!/usr/bin/env node'",
-    "postbuild": "chmod +x bin/tool-docs.js",
+    "build": "bun build src/cli.ts --outfile bin/skilldoc.js --target node --banner '#!/usr/bin/env node'",
+    "postbuild": "chmod +x bin/skilldoc.js",
     "prepublishOnly": "bun run build",
     "test": "bun test",
     "check": "bun run build",

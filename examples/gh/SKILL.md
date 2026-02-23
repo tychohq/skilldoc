@@ -1,7 +1,7 @@
 ---
 name: gh
 description: GitHub CLI for managing repositories, issues, pull requests, and workflows
-generated-from: agent-tool-docs
+generated-from: skilldoc
 tool-id: gh
 tool-binary: gh
 tool-version: gh version 2.86.0 (2026-01-21)

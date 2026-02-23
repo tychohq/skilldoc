@@ -10,7 +10,7 @@ const DEFAULT_DOCS_DIR = "~/.agents/docs/tool-docs";
 const DEFAULT_MODEL = "claude-opus-4-6";
 const DEFAULT_DISTILL_CONFIG_PATH = "~/.agents/tool-docs/distill-config.yaml";
 
-const GENERATED_MARKER = "generated-from: agent-tool-docs";
+const GENERATED_MARKER = "generated-from: skilldoc";
 
 /**
  * Sentinel value returned (in all text fields) by the LLM when raw docs are

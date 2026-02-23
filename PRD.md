@@ -1,9 +1,9 @@
-# agent-tool-docs — PRD
+# skilldoc — PRD
 
 **Goal:** Auto-generate agent-optimized skill documentation from CLI tools, producing lean (~2-5KB) SKILL.md files that any AI agent can consume with minimal token cost.
 
-**Repo:** `~/projects/agent-tool-docs`
-**Discord:** `#agent-tool-docs` (Projects category)
+**Repo:** `~/projects/skilldoc`
+**Discord:** `#skilldoc` (Projects category)
 
 ---
 
@@ -50,7 +50,7 @@ The SKILL.md is the entry point. The `docs/` folder has deeper sections that age
 - [x] Output distilled skills to `~/.agents/skills/<tool-id>/` by default (with `--out` override)
 - [x] Generate proper SKILL.md with description header that matches OpenClaw/ClawHub skill format
 - [x] Include metadata block in SKILL.md: tool binary, version detected, generation date, source (auto-generated)
-- [x] Add a `generated-from: agent-tool-docs` marker so hand-edited skills aren't overwritten
+- [x] Add a `generated-from: skilldoc` marker so hand-edited skills aren't overwritten
 
 ### Phase 3: Registry Expansion
 - [x] Expand the registry.yaml to support richer tool metadata: category (cli/sdk/api), homepage URL, typical use cases

@@ -31,23 +31,23 @@ const DEFAULT_OUT_DIR = "~/.agents/docs/tool-docs";
 
 const DEFAULT_SKILLS_OUT_DIR = DEFAULT_SKILLS_DIR;
 
-const HELP_TEXT = `tool-docs
+const HELP_TEXT = `skilldoc
 
 Usage:
-  tool-docs run <tool>                         # generate + distill + validate in one shot
-  tool-docs run [--registry <path>] ...        # full pipeline for all registry tools
-  tool-docs generate <tool>                    # generate docs for a single tool
-  tool-docs generate [--registry <path>] ...   # generate from registry
-  tool-docs distill <tool>                     # distill a single tool
-  tool-docs distill [--registry <path>] ...    # distill from registry
-  tool-docs refresh [--registry <path>] [--only <id1,id2>] [--diff]
-  tool-docs validate <tool-id> [--skills <path>] [--models <m1,m2>] [--threshold <n>] [--auto-redist]
-  tool-docs report [--skills <path>]
-  tool-docs config                             # show current LLM provider config
-  tool-docs config --provider <p> [--model <m>] [--api-key <k>]  # set config
-  tool-docs config --reset                     # delete config file
-  tool-docs init [--registry <path>] [--force]
-  tool-docs --help
+  skilldoc run <tool>                         # generate + distill + validate in one shot
+  skilldoc run [--registry <path>] ...        # full pipeline for all registry tools
+  skilldoc generate <tool>                    # generate docs for a single tool
+  skilldoc generate [--registry <path>] ...   # generate from registry
+  skilldoc distill <tool>                     # distill a single tool
+  skilldoc distill [--registry <path>] ...    # distill from registry
+  skilldoc refresh [--registry <path>] [--only <id1,id2>] [--diff]
+  skilldoc validate <tool-id> [--skills <path>] [--models <m1,m2>] [--threshold <n>] [--auto-redist]
+  skilldoc report [--skills <path>]
+  skilldoc config                             # show current LLM provider config
+  skilldoc config --provider <p> [--model <m>] [--api-key <k>]  # set config
+  skilldoc config --reset                     # delete config file
+  skilldoc init [--registry <path>] [--force]
+  skilldoc --help
 
 Commands:
   run        Run full pipeline: generate → distill → validate (recommended start here)
@@ -56,7 +56,7 @@ Commands:
   refresh    Re-run generate + distill for tools whose --help output has changed
   validate   Test skill quality using LLM-based scenario evaluation
   report     Show aggregate quality report across all validated tools
-  config     Show or update LLM provider configuration (~/.agent-tool-docs/config.yaml)
+  config     Show or update LLM provider configuration (~/.skilldoc/config.yaml)
   init       Create a starter registry file at ~/.agents/tool-docs/registry.yaml with example
              tool entries (git, ripgrep). Use this to configure batch generation for multiple tools.
 
@@ -226,7 +226,7 @@ export async function handleInit(flags: Record<string, string | boolean>): Promi
     `Next steps:`,
     `  1. Edit the registry to add your tools`,
     `  2. Run the pipeline:`,
-    `     tool-docs run --registry ${displayPath}`,
+    `     skilldoc run --registry ${displayPath}`,
   ];
   console.log(lines.join("\n"));
 }
@@ -276,7 +276,7 @@ export async function handleDistill(
     // Ad-hoc mode: distill a single tool by id
     const rawDocsPath = path.join(docsDir, toolId, "tool.md");
     if (!existsSync(rawDocsPath)) {
-      console.error(`Error: no raw docs found for "${toolId}". Run "tool-docs generate ${toolId}" first.`);
+      console.error(`Error: no raw docs found for "${toolId}". Run "skilldoc generate ${toolId}" first.`);
       process.exit(1);
     }
     tools = [{ id: toolId, binary: toolId }];
@@ -349,7 +349,7 @@ async function handleValidate(toolId: string, flags: Record<string, string | boo
     if (!report.passed) {
       console.log(`\nValidation failed (score: ${report.overallAverageScore.toFixed(1)}, threshold: ${threshold})`);
       if (!autoRedist) {
-        console.log(`Tip: re-run with --auto-redist to improve: tool-docs validate ${toolId} --auto-redist`);
+        console.log(`Tip: re-run with --auto-redist to improve: skilldoc validate ${toolId} --auto-redist`);
       }
       process.exit(1);
     }
@@ -378,8 +378,8 @@ const VALID_PROVIDERS: ProviderType[] = [
   "anthropic", "openai", "gemini", "openrouter",
 ];
 
-const CONFIG_TEMPLATE = `# agent-tool-docs LLM configuration
-# Docs: https://github.com/BrennerSpear/agent-tool-docs#prerequisites
+const CONFIG_TEMPLATE = `# skilldoc LLM configuration
+# Docs: https://github.com/tychohq/skilldoc#prerequisites
 #
 # provider — which LLM backend to use for distill and validate
 #   CLI backends (must be installed and logged in):
@@ -490,7 +490,7 @@ export async function handleConfig(flags: Record<string, string | boolean>): Pro
   }
 
   if (!configExists) {
-    console.log("\nTo configure: tool-docs config --provider claude-cli");
+    console.log("\nTo configure: skilldoc config --provider claude-cli");
   }
 }
 
@@ -574,7 +574,7 @@ export async function handleRun(
   } else {
     console.log(`\nValidation failed (score: ${report.overallAverageScore.toFixed(1)}, threshold: ${threshold})`);
     if (!autoRedist) {
-      console.log(`Tip: re-run with --auto-redist to improve: tool-docs run ${toolId} --auto-redist`);
+      console.log(`Tip: re-run with --auto-redist to improve: skilldoc run ${toolId} --auto-redist`);
     }
   }
 
@@ -597,7 +597,7 @@ export async function handleRunBatch(
   try {
     registry = await loadRegistryFn(registryPath);
   } catch {
-    console.error(`No registry found at ${registryPath}. Use: tool-docs run <tool> or create a registry with: tool-docs init`);
+    console.error(`No registry found at ${registryPath}. Use: skilldoc run <tool> or create a registry with: skilldoc init`);
     return process.exit(1);
   }
 

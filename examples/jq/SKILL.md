@@ -1,7 +1,7 @@
 ---
 name: jq
 description: JSON processor for filtering, transforming, and extracting data
-generated-from: agent-tool-docs
+generated-from: skilldoc
 tool-id: jq
 tool-binary: jq
 tool-version: jq-1.8.1

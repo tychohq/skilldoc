@@ -1,7 +1,7 @@
 ---
 name: bird
 description: X/Twitter CLI for posting, reading, searching, and interacting with tweets
-generated-from: agent-tool-docs
+generated-from: skilldoc
 tool-id: bird
 tool-binary: bird
 tool-version: 0.8.0

@@ -1,7 +1,7 @@
 ---
 name: claude
 description: Claude Code command-line interface for AI-assisted development with session management, model selection, and tool control
-generated-from: agent-tool-docs
+generated-from: skilldoc
 tool-id: claude
 tool-binary: claude
 tool-version: 2.1.49 (Claude Code)

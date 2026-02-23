@@ -12,7 +12,7 @@ describe("llm provider resolution", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(path.join(os.tmpdir(), "tool-docs-llm-test-"));
+    tmpDir = mkdtempSync(path.join(os.tmpdir(), "skilldoc-llm-test-"));
   });
 
   afterEach(() => {
@@ -232,7 +232,7 @@ describe("llm unified caller", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(path.join(os.tmpdir(), "tool-docs-llm-call-test-"));
+    tmpDir = mkdtempSync(path.join(os.tmpdir(), "skilldoc-llm-call-test-"));
   });
 
   afterEach(() => {

@@ -1,7 +1,7 @@
 ---
 name: gog
 description: CLI for Google Workspace (Gmail, Calendar, Drive, Docs, Sheets, etc.) with account-based auth and JSON/text output
-generated-from: agent-tool-docs
+generated-from: skilldoc
 tool-id: gog
 tool-binary: gog
 tool-version: v0.10.0 (a92bd63 2026-02-14T03:32:49Z)

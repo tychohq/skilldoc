@@ -1,7 +1,7 @@
 ---
 name: remindctl
 description: Command-line interface to Apple Reminders app for creating, editing, and managing reminders
-generated-from: agent-tool-docs
+generated-from: skilldoc
 tool-id: remindctl
 tool-binary: remindctl
 tool-version: 0.1.1

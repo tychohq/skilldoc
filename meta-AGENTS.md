@@ -157,7 +157,7 @@ Generated SKILL.md files get a YAML frontmatter marker:
 
 ```yaml
 ---
-generated-from: agent-tool-docs
+generated-from: skilldoc
 ---
 ```
 

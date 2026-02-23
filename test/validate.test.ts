@@ -1330,7 +1330,7 @@ describe("formatQualityReport", () => {
 
   it("includes a hint to run validate when empty", () => {
     const output = formatQualityReport(emptyReport);
-    expect(output).toContain("tool-docs validate");
+    expect(output).toContain("skilldoc validate");
   });
 
   it("shows tool count in header", () => {

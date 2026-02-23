@@ -1,7 +1,7 @@
 ---
 name: uv
 description: Fast Python package manager and script runner with built-in dependency resolution
-generated-from: agent-tool-docs
+generated-from: skilldoc
 tool-id: uv
 tool-binary: uv
 tool-version: uv 0.10.1 (Homebrew 2026-02-10)

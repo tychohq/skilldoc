@@ -1,7 +1,7 @@
 ---
 name: curl
 description: Transfer data and files using URLs, supporting HTTP, HTTPS, and other protocols
-generated-from: agent-tool-docs
+generated-from: skilldoc
 tool-id: curl
 tool-binary: curl
 tool-version: curl 8.16.0 (Darwin) libcurl/8.16.0 OpenSSL/3.0.18 zlib/1.3.1 zstd/1.5.7 libidn2/2.3.8 libssh2/1.11.1 nghttp2/1.67.1

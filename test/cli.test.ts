@@ -1056,8 +1056,8 @@ describe("handleGenerate --only (batch registry)", () => {
   });
 });
 
-describe("bin/tool-docs.js generate <binary> (integration)", () => {
-  const binPath = path.resolve(import.meta.dir, "../bin/tool-docs.js");
+describe("bin/skilldoc.js generate <binary> (integration)", () => {
+  const binPath = path.resolve(import.meta.dir, "../bin/skilldoc.js");
   let tmpDir: string;
 
   beforeEach(() => {
@@ -1103,13 +1103,13 @@ describe("bin/tool-docs.js generate <binary> (integration)", () => {
   });
 });
 
-describe("bin/tool-docs.js --help (integration)", () => {
-  const binPath = path.resolve(import.meta.dir, "../bin/tool-docs.js");
+describe("bin/skilldoc.js --help (integration)", () => {
+  const binPath = path.resolve(import.meta.dir, "../bin/skilldoc.js");
 
   it("exits with code 0 and prints help text for --help", () => {
     const result = spawnSync("node", [binPath, "--help"], { encoding: "utf8" });
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain("tool-docs");
+    expect(result.stdout).toContain("skilldoc");
     expect(result.stdout).toContain("generate");
     expect(result.stdout).toContain("distill");
     expect(result.stdout).toContain("--registry");
@@ -1118,13 +1118,13 @@ describe("bin/tool-docs.js --help (integration)", () => {
   it("exits with code 0 and prints help text for -h", () => {
     const result = spawnSync("node", [binPath, "-h"], { encoding: "utf8" });
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain("tool-docs");
+    expect(result.stdout).toContain("skilldoc");
   });
 
   it("exits with code 0 and prints help text when called with no args", () => {
     const result = spawnSync("node", [binPath], { encoding: "utf8" });
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain("tool-docs");
+    expect(result.stdout).toContain("skilldoc");
   });
 
   it("exits with code 1 for unknown command", () => {
@@ -1310,7 +1310,7 @@ describe("handleDistill with tool-id", () => {
 
     expect(exitCode).toBe(1);
     expect(errorOutput).toContain('no raw docs found for "nonexistent"');
-    expect(errorOutput).toContain("tool-docs generate nonexistent");
+    expect(errorOutput).toContain("skilldoc generate nonexistent");
   });
 
   it("does not require a registry when tool-id is provided", async () => {
@@ -1481,8 +1481,8 @@ describe("handleDistill with tool-id", () => {
   });
 });
 
-describe("bin/tool-docs.js distill <tool-id> (integration)", () => {
-  const binPath = path.resolve(import.meta.dir, "../bin/tool-docs.js");
+describe("bin/skilldoc.js distill <tool-id> (integration)", () => {
+  const binPath = path.resolve(import.meta.dir, "../bin/skilldoc.js");
   let tmpDir: string;
 
   beforeEach(() => {
@@ -1501,7 +1501,7 @@ describe("bin/tool-docs.js distill <tool-id> (integration)", () => {
     const result = spawnSync("node", [binPath, "distill", "nonexistent-tool", "--docs", docsDir, "--out", path.join(tmpDir, "skills")], { encoding: "utf8" });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('no raw docs found for "nonexistent-tool"');
-    expect(result.stderr).toContain("tool-docs generate nonexistent-tool");
+    expect(result.stderr).toContain("skilldoc generate nonexistent-tool");
   });
 
   it("tool-id positional arg works when placed after flags", () => {
@@ -1516,22 +1516,22 @@ describe("bin/tool-docs.js distill <tool-id> (integration)", () => {
   it("help text shows ad-hoc and registry modes for generate", () => {
     const result = spawnSync("node", [binPath, "--help"], { encoding: "utf8" });
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain("tool-docs generate <tool>");
-    expect(result.stdout).toContain("tool-docs generate [--registry");
+    expect(result.stdout).toContain("skilldoc generate <tool>");
+    expect(result.stdout).toContain("skilldoc generate [--registry");
   });
 
   it("help text shows ad-hoc and registry modes for distill", () => {
     const result = spawnSync("node", [binPath, "--help"], { encoding: "utf8" });
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain("tool-docs distill <tool>");
-    expect(result.stdout).toContain("tool-docs distill [--registry");
+    expect(result.stdout).toContain("skilldoc distill <tool>");
+    expect(result.stdout).toContain("skilldoc distill [--registry");
   });
 
   it("help text shows the run command with batch mode", () => {
     const result = spawnSync("node", [binPath, "--help"], { encoding: "utf8" });
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain("tool-docs run <tool>");
-    expect(result.stdout).toContain("tool-docs run [--registry");
+    expect(result.stdout).toContain("skilldoc run <tool>");
+    expect(result.stdout).toContain("skilldoc run [--registry");
     expect(result.stdout).toContain("run        Run full pipeline");
   });
 
@@ -1552,7 +1552,7 @@ describe("bin/tool-docs.js distill <tool-id> (integration)", () => {
 });
 
 describe("handleInit", () => {
-  const binPath = path.resolve(import.meta.dir, "../bin/tool-docs.js");
+  const binPath = path.resolve(import.meta.dir, "../bin/skilldoc.js");
   let tmpDir: string;
 
   beforeEach(() => {
@@ -1572,7 +1572,7 @@ describe("handleInit", () => {
     expect(result.stdout).toContain("git, rg (2 example entries)");
     expect(result.stdout).toContain("Next steps:");
     expect(result.stdout).toContain("Edit the registry to add your tools");
-    expect(result.stdout).toContain(`tool-docs run --registry ${registryPath}`);
+    expect(result.stdout).toContain(`skilldoc run --registry ${registryPath}`);
   });
 
   it("creates the registry file on disk", () => {
@@ -1593,7 +1593,7 @@ describe("handleInit", () => {
       const output = logs.join("\n");
       expect(output).toContain("Created:");
       expect(output).toContain("Next steps:");
-      expect(output).toContain("tool-docs run --registry");
+      expect(output).toContain("skilldoc run --registry");
     } finally {
       console.log = origLog;
     }
@@ -1828,8 +1828,8 @@ describe("handleRun", () => {
   });
 });
 
-describe("bin/tool-docs.js run (integration)", () => {
-  const binPath = path.resolve(import.meta.dir, "../bin/tool-docs.js");
+describe("bin/skilldoc.js run (integration)", () => {
+  const binPath = path.resolve(import.meta.dir, "../bin/skilldoc.js");
 
   it("batch mode exits with code 1 when no registry exists", () => {
     const result = spawnSync("node", [binPath, "run", "--registry", "/tmp/nonexistent-registry.yaml"], { encoding: "utf8" });

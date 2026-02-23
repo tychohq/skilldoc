@@ -34,7 +34,7 @@ async function fileExists(p: string): Promise<boolean> {
   }
 }
 
-describe("tool-docs distill — new registry entries", () => {
+describe("skilldoc distill — new registry entries", () => {
   it("SKILL.md exists for every new tool", async () => {
     for (const id of DISTILLED_TOOL_IDS) {
       const skillMd = path.join(SKILLS_DIR, id, "SKILL.md");
@@ -48,7 +48,7 @@ describe("tool-docs distill — new registry entries", () => {
       const skillMd = path.join(SKILLS_DIR, id, "SKILL.md");
       const content = await readFile(skillMd, "utf8");
       expect(content, `${id} SKILL.md missing generated-from marker`).toContain(
-        "generated-from: agent-tool-docs"
+        "generated-from: skilldoc"
       );
     }
   });

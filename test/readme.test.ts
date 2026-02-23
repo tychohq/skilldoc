@@ -23,21 +23,21 @@ describe("Quick Start uses ad-hoc flow", () => {
   const quickStart = getSection(content, "## Quick Start");
 
   it("shows run as the recommended first command", () => {
-    expect(quickStart).toContain("tool-docs run railway");
+    expect(quickStart).toContain("skilldoc run railway");
     // run should appear before individual commands
-    const runIndex = quickStart.indexOf("tool-docs run railway");
-    const generateIndex = quickStart.indexOf("tool-docs generate railway");
+    const runIndex = quickStart.indexOf("skilldoc run railway");
+    const generateIndex = quickStart.indexOf("skilldoc generate railway");
     expect(runIndex).toBeLessThan(generateIndex);
   });
 
   it("shows ad-hoc positional arg commands", () => {
-    expect(quickStart).toContain("tool-docs generate railway");
-    expect(quickStart).toContain("tool-docs distill railway");
-    expect(quickStart).toContain("tool-docs validate railway");
+    expect(quickStart).toContain("skilldoc generate railway");
+    expect(quickStart).toContain("skilldoc distill railway");
+    expect(quickStart).toContain("skilldoc validate railway");
   });
 
   it("does not contain init or --only flags", () => {
-    expect(quickStart).not.toContain("tool-docs init");
+    expect(quickStart).not.toContain("skilldoc init");
     expect(quickStart).not.toContain("--only");
   });
 
@@ -50,9 +50,9 @@ describe("Configuration section has batch/registry flow", () => {
   const config = getSection(content, "## Configuration");
 
   it("shows batch commands", () => {
-    expect(config).toContain("tool-docs init");
-    expect(config).toContain("tool-docs generate");
-    expect(config).toContain("tool-docs distill");
+    expect(config).toContain("skilldoc init");
+    expect(config).toContain("skilldoc generate");
+    expect(config).toContain("skilldoc distill");
   });
 
   it("explains registry purpose", () => {

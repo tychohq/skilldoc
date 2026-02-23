@@ -6980,9 +6980,9 @@ import { writeFileSync, unlinkSync, existsSync as existsSync3 } from "node:fs";
 import { createHash } from "node:crypto";
 // package.json
 var package_default = {
-  name: "agent-tool-docs",
+  name: "skilldoc",
   version: "0.2.0",
-  description: "Auto-generate agent-optimized CLI docs from --help output — verified, compressed, ready for AGENTS.md",
+  description: "Auto-generate agent-optimized CLI skill docs from --help output — verified, compressed, ready for AGENTS.md",
   keywords: [
     "ai-agents",
     "cli",
@@ -6990,21 +6990,21 @@ var package_default = {
     "agents-md",
     "claude-code",
     "llm",
-    "skill-generation"
+    "skill-generation",
+    "skilldoc"
   ],
-  homepage: "https://github.com/BrennerSpear/agent-tool-docs",
+  homepage: "https://github.com/tychohq/skilldoc",
   repository: {
     type: "git",
-    url: "git+https://github.com/BrennerSpear/agent-tool-docs.git"
+    url: "git+https://github.com/tychohq/skilldoc.git"
   },
   license: "MIT",
   type: "module",
   bin: {
-    "agent-tool-docs": "bin/tool-docs.js",
-    "tool-docs": "bin/tool-docs.js"
+    skilldoc: "bin/skilldoc.js"
   },
   files: [
-    "bin/tool-docs.js",
+    "bin/skilldoc.js",
     "README.md",
     "LICENSE"
   ],
@@ -7012,8 +7012,8 @@ var package_default = {
     node: ">=18"
   },
   scripts: {
-    build: "bun build src/cli.ts --outfile bin/tool-docs.js --target node --banner '#!/usr/bin/env node'",
-    postbuild: "chmod +x bin/tool-docs.js",
+    build: "bun build src/cli.ts --outfile bin/skilldoc.js --target node --banner '#!/usr/bin/env node'",
+    postbuild: "chmod +x bin/skilldoc.js",
     prepublishOnly: "bun run build",
     test: "bun test",
     check: "bun run build",
@@ -7697,7 +7697,7 @@ function unique(tokens) {
 var import_yaml2 = __toESM(require_dist(), 1);
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-var DEFAULT_LLM_CONFIG_PATH = "~/.agent-tool-docs/config.yaml";
+var DEFAULT_LLM_CONFIG_PATH = "~/.skilldoc/config.yaml";
 var MAX_BUFFER = 10 * 1024 * 1024;
 var DEFAULT_MODEL_BY_PROVIDER = {
   "claude-cli": "claude-opus-4-6",
@@ -7902,7 +7902,7 @@ function loadLLMConfig(configPath) {
   const model = typeof obj.model === "string" && obj.model.trim() ? obj.model.trim() : undefined;
   const apiKey = typeof obj.apiKey === "string" && obj.apiKey.trim() ? obj.apiKey.trim() : undefined;
   if (obj.provider !== undefined && !provider) {
-    throw new Error("Invalid provider in ~/.agent-tool-docs/config.yaml. Expected one of: claude-cli, codex-cli, gemini-cli, anthropic, openai, gemini, openrouter.");
+    throw new Error("Invalid provider in ~/.skilldoc/config.yaml. Expected one of: claude-cli, codex-cli, gemini-cli, anthropic, openai, gemini, openrouter.");
   }
   return { provider, model, apiKey };
 }
@@ -7948,7 +7948,7 @@ function resolveProviderWithDeps(options, deps) {
       return { provider, model: selectModel(provider, options, config), apiKey };
     }
   }
-  throw new Error("No LLM provider available. Set ~/.agent-tool-docs/config.yaml (provider/model/apiKey), install one CLI (claude, codex, gemini), or set an API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY).");
+  throw new Error("No LLM provider available. Set ~/.skilldoc/config.yaml (provider/model/apiKey), install one CLI (claude, codex, gemini), or set an API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY).");
 }
 function runCliCommand(command, args, prompt, exec) {
   const result = exec(command, args, {
@@ -8046,7 +8046,7 @@ var DEFAULT_SKILLS_DIR = "~/.agents/skills";
 var DEFAULT_DOCS_DIR = "~/.agents/docs/tool-docs";
 var DEFAULT_MODEL = "claude-opus-4-6";
 var DEFAULT_DISTILL_CONFIG_PATH = "~/.agents/tool-docs/distill-config.yaml";
-var GENERATED_MARKER = "generated-from: agent-tool-docs";
+var GENERATED_MARKER = "generated-from: skilldoc";
 var INSUFFICIENT_DOCS_SENTINEL = "Insufficient raw docs — re-run generate after fixing parser";
 var DEFAULT_SIZE_LIMITS_TOKENS = {
   skill: 1000,
@@ -8795,7 +8795,7 @@ function formatQualityReport(report) {
   const lines = [];
   if (report.entries.length === 0) {
     lines.push("No validation reports found.");
-    lines.push(`Run 'tool-docs validate <tool-id>' to generate reports.`);
+    lines.push(`Run 'skilldoc validate <tool-id>' to generate reports.`);
     return lines.join(`
 `);
   }
@@ -8831,7 +8831,7 @@ function formatQualityReport(report) {
   }
   if (failing > 0) {
     lines.push("");
-    lines.push(`${failing} tool(s) below threshold — run 'tool-docs validate <tool-id> --auto-redist' to improve.`);
+    lines.push(`${failing} tool(s) below threshold — run 'skilldoc validate <tool-id> --auto-redist' to improve.`);
   }
   return lines.join(`
 `);
@@ -8841,23 +8841,23 @@ function formatQualityReport(report) {
 var DEFAULT_REGISTRY = "~/.agents/tool-docs/registry.yaml";
 var DEFAULT_OUT_DIR = "~/.agents/docs/tool-docs";
 var DEFAULT_SKILLS_OUT_DIR = DEFAULT_SKILLS_DIR;
-var HELP_TEXT = `tool-docs
+var HELP_TEXT = `skilldoc
 
 Usage:
-  tool-docs run <tool>                         # generate + distill + validate in one shot
-  tool-docs run [--registry <path>] ...        # full pipeline for all registry tools
-  tool-docs generate <tool>                    # generate docs for a single tool
-  tool-docs generate [--registry <path>] ...   # generate from registry
-  tool-docs distill <tool>                     # distill a single tool
-  tool-docs distill [--registry <path>] ...    # distill from registry
-  tool-docs refresh [--registry <path>] [--only <id1,id2>] [--diff]
-  tool-docs validate <tool-id> [--skills <path>] [--models <m1,m2>] [--threshold <n>] [--auto-redist]
-  tool-docs report [--skills <path>]
-  tool-docs config                             # show current LLM provider config
-  tool-docs config --provider <p> [--model <m>] [--api-key <k>]  # set config
-  tool-docs config --reset                     # delete config file
-  tool-docs init [--registry <path>] [--force]
-  tool-docs --help
+  skilldoc run <tool>                         # generate + distill + validate in one shot
+  skilldoc run [--registry <path>] ...        # full pipeline for all registry tools
+  skilldoc generate <tool>                    # generate docs for a single tool
+  skilldoc generate [--registry <path>] ...   # generate from registry
+  skilldoc distill <tool>                     # distill a single tool
+  skilldoc distill [--registry <path>] ...    # distill from registry
+  skilldoc refresh [--registry <path>] [--only <id1,id2>] [--diff]
+  skilldoc validate <tool-id> [--skills <path>] [--models <m1,m2>] [--threshold <n>] [--auto-redist]
+  skilldoc report [--skills <path>]
+  skilldoc config                             # show current LLM provider config
+  skilldoc config --provider <p> [--model <m>] [--api-key <k>]  # set config
+  skilldoc config --reset                     # delete config file
+  skilldoc init [--registry <path>] [--force]
+  skilldoc --help
 
 Commands:
   run        Run full pipeline: generate → distill → validate (recommended start here)
@@ -8866,7 +8866,7 @@ Commands:
   refresh    Re-run generate + distill for tools whose --help output has changed
   validate   Test skill quality using LLM-based scenario evaluation
   report     Show aggregate quality report across all validated tools
-  config     Show or update LLM provider configuration (~/.agent-tool-docs/config.yaml)
+  config     Show or update LLM provider configuration (~/.skilldoc/config.yaml)
   init       Create a starter registry file at ~/.agents/tool-docs/registry.yaml with example
              tool entries (git, ripgrep). Use this to configure batch generation for multiple tools.
 
@@ -9043,7 +9043,7 @@ tools:
     `Next steps:`,
     `  1. Edit the registry to add your tools`,
     `  2. Run the pipeline:`,
-    `     tool-docs run --registry ${displayPath}`
+    `     skilldoc run --registry ${displayPath}`
   ];
   console.log(lines.join(`
 `));
@@ -9070,7 +9070,7 @@ async function handleDistill(flags, toolId, distillFn = distillTool) {
   if (toolId) {
     const rawDocsPath = path3.join(docsDir, toolId, "tool.md");
     if (!existsSync3(rawDocsPath)) {
-      console.error(`Error: no raw docs found for "${toolId}". Run "tool-docs generate ${toolId}" first.`);
+      console.error(`Error: no raw docs found for "${toolId}". Run "skilldoc generate ${toolId}" first.`);
       process.exit(1);
     }
     tools = [{ id: toolId, binary: toolId }];
@@ -9125,7 +9125,7 @@ async function handleValidate(toolId, flags) {
       console.log(`
 Validation failed (score: ${report.overallAverageScore.toFixed(1)}, threshold: ${threshold})`);
       if (!autoRedist) {
-        console.log(`Tip: re-run with --auto-redist to improve: tool-docs validate ${toolId} --auto-redist`);
+        console.log(`Tip: re-run with --auto-redist to improve: skilldoc validate ${toolId} --auto-redist`);
       }
       process.exit(1);
     }
@@ -9153,8 +9153,8 @@ var VALID_PROVIDERS = [
   "gemini",
   "openrouter"
 ];
-var CONFIG_TEMPLATE = `# agent-tool-docs LLM configuration
-# Docs: https://github.com/BrennerSpear/agent-tool-docs#prerequisites
+var CONFIG_TEMPLATE = `# skilldoc LLM configuration
+# Docs: https://github.com/tychohq/skilldoc#prerequisites
 #
 # provider — which LLM backend to use for distill and validate
 #   CLI backends (must be installed and logged in):
@@ -9248,7 +9248,7 @@ async function handleConfig(flags) {
   }
   if (!configExists) {
     console.log(`
-To configure: tool-docs config --provider claude-cli`);
+To configure: skilldoc config --provider claude-cli`);
   }
 }
 async function handleRun(toolId, flags, {
@@ -9301,7 +9301,7 @@ Pipeline complete — ${skillPath} (score: ${report.overallAverageScore.toFixed(
     console.log(`
 Validation failed (score: ${report.overallAverageScore.toFixed(1)}, threshold: ${threshold})`);
     if (!autoRedist) {
-      console.log(`Tip: re-run with --auto-redist to improve: tool-docs run ${toolId} --auto-redist`);
+      console.log(`Tip: re-run with --auto-redist to improve: skilldoc run ${toolId} --auto-redist`);
     }
   }
   return { toolId, passed: report.passed, score: report.overallAverageScore, skillPath };
@@ -9316,7 +9316,7 @@ async function handleRunBatch(flags, {
   try {
     registry = await loadRegistryFn(registryPath);
   } catch {
-    console.error(`No registry found at ${registryPath}. Use: tool-docs run <tool> or create a registry with: tool-docs init`);
+    console.error(`No registry found at ${registryPath}. Use: skilldoc run <tool> or create a registry with: skilldoc init`);
     return process.exit(1);
   }
   const tools = registry.tools.filter((tool) => tool.enabled !== false).filter((tool) => only ? only.has(tool.id) : true).sort((a, b) => a.id.localeCompare(b.id));

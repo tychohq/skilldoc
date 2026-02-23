@@ -1,7 +1,7 @@
 ---
 name: vercel
 description: Deploy and manage applications on Vercel from the command line
-generated-from: agent-tool-docs
+generated-from: skilldoc
 tool-id: vercel
 tool-binary: vercel
 tool-version: 50.9.5

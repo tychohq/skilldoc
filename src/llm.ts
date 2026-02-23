@@ -48,7 +48,7 @@ type LLMConfig = {
   apiKey?: string;
 };
 
-const DEFAULT_LLM_CONFIG_PATH = "~/.agent-tool-docs/config.yaml";
+const DEFAULT_LLM_CONFIG_PATH = "~/.skilldoc/config.yaml";
 const MAX_BUFFER = 10 * 1024 * 1024;
 
 const DEFAULT_MODEL_BY_PROVIDER: Record<ProviderType, string> = {
@@ -276,7 +276,7 @@ function loadLLMConfig(configPath: string): LLMConfig {
 
   if (obj.provider !== undefined && !provider) {
     throw new Error(
-      "Invalid provider in ~/.agent-tool-docs/config.yaml. Expected one of: claude-cli, codex-cli, gemini-cli, anthropic, openai, gemini, openrouter."
+      "Invalid provider in ~/.skilldoc/config.yaml. Expected one of: claude-cli, codex-cli, gemini-cli, anthropic, openai, gemini, openrouter."
     );
   }
 
@@ -341,7 +341,7 @@ function resolveProviderWithDeps(
   }
 
   throw new Error(
-    "No LLM provider available. Set ~/.agent-tool-docs/config.yaml (provider/model/apiKey), install one CLI (claude, codex, gemini), or set an API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY)."
+    "No LLM provider available. Set ~/.skilldoc/config.yaml (provider/model/apiKey), install one CLI (claude, codex, gemini), or set an API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY)."
   );
 }
 

@@ -1,7 +1,7 @@
 ---
 name: ffmpeg
 description: Powerful multimedia framework for converting, streaming, and processing audio/video files
-generated-from: agent-tool-docs
+generated-from: skilldoc
 tool-id: ffmpeg
 tool-binary: ffmpeg
 generated-at: 2026-02-20T05:29:48.133Z

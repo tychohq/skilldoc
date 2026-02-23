@@ -1,4 +1,4 @@
-# agent-tool-docs
+# skilldoc
 
 [![version](https://img.shields.io/badge/version-0.2.0-blue)](package.json)
 [![license](https://img.shields.io/badge/license-MIT-green)](#license)
@@ -69,7 +69,7 @@ API keys are checked only if no CLI is found. Each provider uses a sensible defa
 
 ### Persistent config (optional)
 
-To pin a specific provider and model, create `~/.agent-tool-docs/config.yaml`:
+To pin a specific provider and model, create `~/.skilldoc/config.yaml`:
 
 ```yaml
 provider: claude-cli    # claude-cli | codex-cli | gemini-cli | anthropic | openai | gemini | openrouter
@@ -89,25 +89,25 @@ For validation, `--models <m1,m2>` accepts a comma-separated list to test across
 
 ```bash
 # npm
-npx agent-tool-docs run railway
+npx skilldoc run railway
 
 # pnpm
-pnpx agent-tool-docs run railway
+pnpx skilldoc run railway
 
 # bun
-bunx agent-tool-docs run railway
+bunx skilldoc run railway
 
 # Homebrew (macOS / Linux)
-brew tap BrennerSpear/tap
-brew install agent-tool-docs
-tool-docs run railway
+brew tap tychohq/tap
+brew install skilldoc
+skilldoc run railway
 ```
 
 ### Generate a skill
 
 ```bash
 # Full pipeline in one shot: generate → distill → validate
-tool-docs run railway
+skilldoc run railway
 
 # Your agent-optimized skill is at ~/.agents/skills/railway/SKILL.md
 ```
@@ -117,9 +117,9 @@ Drop `~/.agents/skills/railway/SKILL.md` into your `AGENTS.md`, `CLAUDE.md`, or 
 You can also run each step individually:
 
 ```bash
-tool-docs generate railway    # extract raw docs from --help
-tool-docs distill railway     # compress into agent-optimized SKILL.md
-tool-docs validate railway    # score quality with multi-model evaluation
+skilldoc generate railway    # extract raw docs from --help
+skilldoc distill railway     # compress into agent-optimized SKILL.md
+skilldoc validate railway    # score quality with multi-model evaluation
 ```
 
 ---
@@ -175,7 +175,7 @@ See [`examples/`](examples/) for real generated output for `railway`, `jq`, `gh`
 Runs each tool's `--help` (and subcommand help) with `LANG=C NO_COLOR=1 PAGER=cat` for stable, deterministic output. Parses usage lines, flags, subcommands, examples, and env vars into structured JSON + Markdown. Stores a SHA-256 hash for change detection.
 
 ```
-~/.agents/docs/tool-docs/<tool-id>/
+~/.agents/docs/skilldoc/<tool-id>/
   tool.json        # structured parse
   tool.md          # rendered markdown
   commands/        # per-subcommand docs
@@ -195,7 +195,7 @@ Requires Claude Code (`claude`) or Gemini CLI (`gemini`) installed — see [Prer
 Runs scenario-based evaluation across multiple LLM models. Each model attempts realistic tasks using only the SKILL.md, then scores itself 1–10 on accuracy, completeness, and absence of hallucinations. Threshold: 9/10.
 
 ```
-tool-docs validate railway --models claude-sonnet-4-6,claude-opus-4-6 --threshold 9
+skilldoc validate railway --models claude-sonnet-4-6,claude-opus-4-6 --threshold 9
 ```
 
 ### 4. Refresh (`refresh`)
@@ -203,7 +203,7 @@ tool-docs validate railway --models claude-sonnet-4-6,claude-opus-4-6 --threshol
 Re-runs generate + distill only for tools whose `--help` output has changed (by hash). Use `--diff` to see what changed in the SKILL.md.
 
 ```bash
-tool-docs refresh --diff
+skilldoc refresh --diff
 ```
 
 ---
@@ -295,18 +295,18 @@ If validation fails, `--auto-redist` re-runs distillation with feedback and you 
 
 ## Configuration
 
-For batch operations across many tools, use a registry file at `~/.agents/tool-docs/registry.yaml`:
+For batch operations across many tools, use a registry file at `~/.agents/skilldoc/registry.yaml`:
 
 ```bash
-tool-docs init        # create a starter registry with common tools
-tool-docs run         # full pipeline for all registry tools
+skilldoc init        # create a starter registry with common tools
+skilldoc run         # full pipeline for all registry tools
 ```
 
 You can also run individual steps across the registry:
 
 ```bash
-tool-docs generate    # extract docs for all registry tools
-tool-docs distill     # distill all into agent-optimized skills
+skilldoc generate    # extract docs for all registry tools
+skilldoc distill     # distill all into agent-optimized skills
 ```
 
 Registry format:
@@ -343,7 +343,7 @@ tools:
 | `useCases` | no | Hints for distillation prompt |
 | `enabled` | no | Set `false` to skip a tool without removing it |
 
-Run `tool-docs generate --only jq` to process a single tool.
+Run `skilldoc generate --only jq` to process a single tool.
 
 ---
 
@@ -352,10 +352,10 @@ Run `tool-docs generate --only jq` to process a single tool.
 ### Add a tool
 
 ```bash
-tool-docs run <binary>   # full pipeline, score must be ≥ 9/10
+skilldoc run <binary>   # full pipeline, score must be ≥ 9/10
 ```
 
-Or add an entry to `~/.agents/tool-docs/registry.yaml` for batch operations with custom `helpArgs`.
+Or add an entry to `~/.agents/skilldoc/registry.yaml` for batch operations with custom `helpArgs`.
 
 ### Run tests
 
@@ -366,7 +366,7 @@ bun test
 ### Build
 
 ```bash
-bun run build   # outputs bin/tool-docs.js
+bun run build   # outputs bin/skilldoc.js
 ```
 
 ---

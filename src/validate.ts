@@ -661,7 +661,7 @@ export function formatQualityReport(report: QualityReport): string {
 
   if (report.entries.length === 0) {
     lines.push("No validation reports found.");
-    lines.push(`Run 'tool-docs validate <tool-id>' to generate reports.`);
+    lines.push(`Run 'skilldoc validate <tool-id>' to generate reports.`);
     return lines.join("\n");
   }
 
@@ -707,7 +707,7 @@ export function formatQualityReport(report: QualityReport): string {
 
   if (failing > 0) {
     lines.push("");
-    lines.push(`${failing} tool(s) below threshold — run 'tool-docs validate <tool-id> --auto-redist' to improve.`);
+    lines.push(`${failing} tool(s) below threshold — run 'skilldoc validate <tool-id> --auto-redist' to improve.`);
   }
 
   return lines.join("\n");
