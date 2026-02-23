@@ -49,11 +49,33 @@ skillsDir: '.claude/skills'          # project-level
 globalSkillsDir: '~/.claude/skills'  # user-level (--global)
 ```
 
-For skilldoc:
-- `skilldoc add jq` → generates to `.skills/jq/SKILL.md` + symlinks to detected agents
-- `skilldoc add jq --global` → generates to `~/.skills/jq/SKILL.md` + symlinks to `~/.claude/skills/`, etc.
-- `skilldoc add jq --agent claude-code` → target specific agent only
-- `skilldoc install --dir ~/projects/myapp/.claude/skills` → copy/link into specific project
+For skilldoc, the interface should be:
+
+```bash
+# Generate skill to ~/.skills/jq/ (always — this is the source of truth)
+skilldoc add jq
+
+# Also symlink into specific agent(s) global skill dirs
+skilldoc add jq --claude          # → ~/.claude/skills/jq → ~/.skills/jq
+skilldoc add jq --cursor          # → ~/.cursor/rules/jq → ~/.skills/jq
+skilldoc add jq --claude --cursor --codex  # all three
+
+# Symlink into a specific project directory (per-tool, not all tools)
+skilldoc add jq --dir ~/projects/myapp/.claude/skills
+
+# Symlink into OpenClaw's skill system
+skilldoc add jq --openclaw        # → ~/.openclaw/workspace/skills/jq → ~/.skills/jq
+
+# Global flag puts skill + symlinks for ALL detected agents
+skilldoc add jq --global          # ~/.skills/jq + symlinks to every detected agent
+```
+
+Key design decisions:
+- `~/.skills/` is ALWAYS the canonical location. Generated skill goes there.
+- Agent flags (`--claude`, `--cursor`, `--openclaw`, etc.) create symlinks FROM the agent's skill dir TO `~/.skills/<tool>/`
+- `--dir` is for arbitrary project-level skill dirs (e.g. a specific project's `.claude/skills/`)
+- Symlinks are per-tool, not bulk — you choose which tools go where
+- `--global` is the "just put it everywhere" convenience flag
 
 ### 5. `skilldoc search` — Dynamic Context Loading (Not Dynamic Skills)
 
