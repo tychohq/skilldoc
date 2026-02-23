@@ -52,13 +52,13 @@ const DEFAULT_LLM_CONFIG_PATH = "~/.agent-tool-docs/config.yaml";
 const MAX_BUFFER = 10 * 1024 * 1024;
 
 const DEFAULT_MODEL_BY_PROVIDER: Record<ProviderType, string> = {
-  "claude-cli": "claude-haiku-4-5-20251001",
-  "codex-cli": "o4-mini",
-  "gemini-cli": "gemini",
-  anthropic: "claude-sonnet-4-5-20250514",
-  openai: "gpt-4.1",
-  gemini: "gemini-2.5-flash",
-  openrouter: "anthropic/claude-sonnet-4-5",
+  "claude-cli": "claude-opus-4-6",
+  "codex-cli": "gpt-5.3-codex",
+  "gemini-cli": "gemini-3.1-pro-preview",
+  anthropic: "claude-opus-4-6",
+  openai: "gpt-5.2",
+  gemini: "gemini-3.1-pro-preview",
+  openrouter: "anthropic/claude-opus-4-6",
 };
 
 const ENV_BY_PROVIDER: Partial<Record<ProviderType, string>> = {
@@ -157,7 +157,7 @@ const main = async () => {
     body = {
       model,
       max_tokens: 16000,
-      thinking: { type: "enabled", budget_tokens: 10000 },
+      thinking: { type: "adaptive", effort: "high" },
       messages: [{ role: "user", content: prompt }],
     };
   } else if (provider === "openai") {

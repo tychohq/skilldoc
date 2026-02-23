@@ -7700,13 +7700,13 @@ import { spawnSync } from "node:child_process";
 var DEFAULT_LLM_CONFIG_PATH = "~/.agent-tool-docs/config.yaml";
 var MAX_BUFFER = 10 * 1024 * 1024;
 var DEFAULT_MODEL_BY_PROVIDER = {
-  "claude-cli": "claude-haiku-4-5-20251001",
-  "codex-cli": "o4-mini",
-  "gemini-cli": "gemini",
-  anthropic: "claude-sonnet-4-5-20250514",
-  openai: "gpt-4.1",
-  gemini: "gemini-2.5-flash",
-  openrouter: "anthropic/claude-sonnet-4-5"
+  "claude-cli": "claude-opus-4-6",
+  "codex-cli": "gpt-5.3-codex",
+  "gemini-cli": "gemini-3.1-pro-preview",
+  anthropic: "claude-opus-4-6",
+  openai: "gpt-5.2",
+  gemini: "gemini-3.1-pro-preview",
+  openrouter: "anthropic/claude-opus-4-6"
 };
 var ENV_BY_PROVIDER = {
   anthropic: "ANTHROPIC_API_KEY",
@@ -7799,7 +7799,7 @@ const main = async () => {
     body = {
       model,
       max_tokens: 16000,
-      thinking: { type: "enabled", budget_tokens: 10000 },
+      thinking: { type: "adaptive", effort: "high" },
       messages: [{ role: "user", content: prompt }],
     };
   } else if (provider === "openai") {
@@ -8044,7 +8044,7 @@ import { readFile as readFile2 } from "node:fs/promises";
 import { existsSync, readdirSync, statSync } from "node:fs";
 var DEFAULT_SKILLS_DIR = "~/.agents/skills";
 var DEFAULT_DOCS_DIR = "~/.agents/docs/tool-docs";
-var DEFAULT_MODEL = "claude-haiku-4-5-20251001";
+var DEFAULT_MODEL = "claude-opus-4-6";
 var DEFAULT_DISTILL_CONFIG_PATH = "~/.agents/tool-docs/distill-config.yaml";
 var GENERATED_MARKER = "generated-from: agent-tool-docs";
 var INSUFFICIENT_DOCS_SENTINEL = "Insufficient raw docs — re-run generate after fixing parser";
@@ -9168,7 +9168,7 @@ var CONFIG_TEMPLATE = `# agent-tool-docs LLM configuration
 #     openrouter    — OpenRouter API (env: OPENROUTER_API_KEY)
 #
 # model — optional model override (each provider has a sensible default)
-#   Examples: claude-sonnet-4-5-20250514, gpt-4.1, gemini-2.5-flash
+#   Examples: claude-opus-4-6, gpt-5.2, gemini-3.1-pro-preview
 #
 # apiKey — optional API key (overrides env var for API providers)
 `;

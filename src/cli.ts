@@ -393,7 +393,7 @@ const CONFIG_TEMPLATE = `# agent-tool-docs LLM configuration
 #     openrouter    — OpenRouter API (env: OPENROUTER_API_KEY)
 #
 # model — optional model override (each provider has a sensible default)
-#   Examples: claude-sonnet-4-5-20250514, gpt-4.1, gemini-2.5-flash
+#   Examples: claude-opus-4-6, gpt-5.2, gemini-3.1-pro-preview
 #
 # apiKey — optional API key (overrides env var for API providers)
 `;

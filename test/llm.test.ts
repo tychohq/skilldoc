@@ -47,7 +47,7 @@ describe("llm provider resolution", () => {
 
     const resolved = caller.resolveProvider();
     expect(resolved.provider).toBe("codex-cli");
-    expect(resolved.model).toBe("o4-mini");
+    expect(resolved.model).toBe("gpt-5.3-codex");
   });
 
   it("falls through to CLI detection when config YAML is invalid", () => {
@@ -293,7 +293,7 @@ describe("llm unified caller", () => {
     const output = caller.callLLM("prompt");
     expect(output).toBe("codex output");
     expect(capturedCommand).toBe("codex");
-    expect(capturedArgs).toEqual(["exec", "--effort", "high", "--model", "o4-mini"]);
+    expect(capturedArgs).toEqual(["exec", "--effort", "high", "--model", "gpt-5.3-codex"]);
     expect(capturedInput).toBe("prompt");
   });
 

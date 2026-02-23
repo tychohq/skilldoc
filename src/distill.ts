@@ -7,7 +7,7 @@ import { writeFileEnsured, ensureDir, expandHome } from "./utils.js";
 
 const DEFAULT_SKILLS_DIR = "~/.agents/skills";
 const DEFAULT_DOCS_DIR = "~/.agents/docs/tool-docs";
-const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
+const DEFAULT_MODEL = "claude-opus-4-6";
 const DEFAULT_DISTILL_CONFIG_PATH = "~/.agents/tool-docs/distill-config.yaml";
 
 const GENERATED_MARKER = "generated-from: agent-tool-docs";

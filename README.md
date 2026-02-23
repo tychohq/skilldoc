@@ -65,7 +65,7 @@ export GEMINI_API_KEY=...               # → uses Google Gemini API
 export OPENROUTER_API_KEY=sk-or-...     # → uses OpenRouter API
 ```
 
-API keys are checked only if no CLI is found. Each provider uses a sensible default model (e.g., `claude-sonnet-4-5` for Anthropic, `gpt-4.1` for OpenAI).
+API keys are checked only if no CLI is found. Each provider uses a sensible default model (e.g., `claude-opus-4-6` for Anthropic, `gpt-5.2` for OpenAI).
 
 ### Persistent config (optional)
 
@@ -73,7 +73,7 @@ To pin a specific provider and model, create `~/.agent-tool-docs/config.yaml`:
 
 ```yaml
 provider: claude-cli    # claude-cli | codex-cli | gemini-cli | anthropic | openai | gemini | openrouter
-model: claude-haiku-4-5 # optional — overrides the provider's default model
+model: claude-opus-4-6 # optional — overrides the provider's default model
 apiKey: sk-ant-...      # optional — overrides env var for this provider
 ```
 
@@ -188,7 +188,7 @@ Runs each tool's `--help` (and subcommand help) with `LANG=C NO_COLOR=1 PAGER=ca
 
 Passes raw docs to an LLM with a task-focused prompt. Output is a `SKILL.md` optimized for agents: quick reference, key flags, common patterns. Target size ~2KB. Skips re-distillation if help output is unchanged.
 
-Requires Claude Code (`claude`) or Gemini CLI (`gemini`) installed — see [Prerequisites](#prerequisites). Default model: `claude-haiku-4-5`; override with `--model`.
+Requires Claude Code (`claude`) or Gemini CLI (`gemini`) installed — see [Prerequisites](#prerequisites). Default model: `claude-opus-4-6`; override with `--model`.
 
 ### 3. Validate (`validate`)
 
