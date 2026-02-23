@@ -156,7 +156,8 @@ const main = async () => {
     };
     body = {
       model,
-      max_tokens: 4096,
+      max_tokens: 16000,
+      thinking: { type: "enabled", budget_tokens: 10000 },
       messages: [{ role: "user", content: prompt }],
     };
   } else if (provider === "openai") {
@@ -167,6 +168,7 @@ const main = async () => {
     };
     body = {
       model,
+      reasoning: { effort: "high" },
       messages: [{ role: "user", content: prompt }],
     };
   } else if (provider === "gemini") {
@@ -176,6 +178,9 @@ const main = async () => {
     };
     body = {
       contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        thinkingConfig: { thinkingBudget: 10000 },
+      },
     };
   } else if (provider === "openrouter") {
     url = "https://openrouter.ai/api/v1/chat/completions";
@@ -185,6 +190,7 @@ const main = async () => {
     };
     body = {
       model,
+      reasoning: { effort: "high" },
       messages: [{ role: "user", content: prompt }],
     };
   } else {
@@ -415,14 +421,14 @@ function callLLMWithDeps(
   if (resolved.provider === "claude-cli") {
     return runCliCommand(
       "claude",
-      ["-p", "--output-format", "text", "--model", resolved.model, "--no-session-persistence"],
+      ["-p", "--output-format", "text", "--model", resolved.model, "--no-session-persistence", "--effort", "high"],
       prompt,
       exec
     );
   }
 
   if (resolved.provider === "codex-cli") {
-    return runCliCommand("codex", ["exec", "--model", resolved.model], prompt, exec);
+    return runCliCommand("codex", ["exec", "--effort", "high", "--model", resolved.model], prompt, exec);
   }
 
   if (resolved.provider === "gemini-cli") {

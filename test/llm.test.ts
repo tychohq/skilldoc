@@ -265,6 +265,8 @@ describe("llm unified caller", () => {
       "--model",
       "claude-test-model",
       "--no-session-persistence",
+      "--effort",
+      "high",
     ]);
     expect(capturedInput).toBe("hello from prompt");
   });
@@ -291,7 +293,7 @@ describe("llm unified caller", () => {
     const output = caller.callLLM("prompt");
     expect(output).toBe("codex output");
     expect(capturedCommand).toBe("codex");
-    expect(capturedArgs).toEqual(["exec", "--model", "o4-mini"]);
+    expect(capturedArgs).toEqual(["exec", "--effort", "high", "--model", "o4-mini"]);
     expect(capturedInput).toBe("prompt");
   });
 
