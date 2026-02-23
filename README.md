@@ -34,11 +34,14 @@ SKILL.md    →  drop into AGENTS.md, CLAUDE.md, OpenClaw skills
 
 ## Prerequisites
 
-The `generate` step only needs the target CLI installed — no LLM required. The `distill` and `validate` steps need an LLM to compress and evaluate docs.
+You need an LLM to run the full pipeline. Install **one** of these:
 
-**If you already have [Claude Code](https://claude.ai/claude-code) (`claude`) or [Gemini CLI](https://github.com/google-gemini/gemini-cli) (`gemini`) installed**, it just works — no extra config needed. The tool detects installed CLIs automatically.
+- [**Claude Code**](https://claude.ai/claude-code) — `npm install -g @anthropic-ai/claude-code` (recommended)
+- [**Gemini CLI**](https://github.com/google-gemini/gemini-cli) — `npm install -g @anthropic-ai/gemini-cli`
 
-Use `--model <model>` to pick which model to use for distillation (default: `claude-haiku-4-5`). For validation, `--models <m1,m2>` accepts a comma-separated list.
+If either `claude` or `gemini` is on your PATH, the tool detects it automatically. The `generate` step (extracting `--help` output) works without an LLM, but `distill` and `validate` require one.
+
+Use `--model <model>` to choose the distillation model (default: `claude-haiku-4-5`). For validation, `--models <m1,m2>` accepts a comma-separated list.
 
 ---
 
