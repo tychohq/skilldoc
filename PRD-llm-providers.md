@@ -31,7 +31,7 @@ Use Node built-in `fetch()` for HTTP. Use existing `yaml` devDependency for conf
 
 ## Tasks
 
-- [ ] **Task 1: Create `src/llm.ts` — provider resolution and unified caller**
+- [x] **Task 1: Create `src/llm.ts` — provider resolution and unified caller**
 
   Create a new module that exports:
 
@@ -88,7 +88,7 @@ Use Node built-in `fetch()` for HTTP. Use existing `yaml` devDependency for conf
 
   Keep the existing `ExecFn` type and dependency injection pattern so tests can mock. Export a `createLLMCaller(options?: { exec?: ExecFn, checkBinary?: (name: string) => boolean, env?: Record<string, string | undefined>, configPath?: string })` factory for testability.
 
-- [ ] **Task 2: Add config file loading**
+- [x] **Task 2: Add config file loading**
 
   In `src/llm.ts` (or a helper), add config loading from `~/.agent-tool-docs/config.yaml`:
 
@@ -102,7 +102,7 @@ Use Node built-in `fetch()` for HTTP. Use existing `yaml` devDependency for conf
 
   The `provider` field determines the backend. The `model` field overrides the default for that provider. The `apiKey` field overrides env var lookup for API providers.
 
-- [ ] **Task 3: Wire `src/distill.ts` to use the new LLM module**
+- [x] **Task 3: Wire `src/distill.ts` to use the new LLM module**
 
   Replace the existing `callLLM` function in distill.ts:
   - Import from `src/llm.ts` instead of having its own implementation
