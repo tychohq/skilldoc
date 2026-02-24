@@ -84,3 +84,80 @@ jobs:
       - run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  homebrew:
+    needs: release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download release tarballs and compute SHAs
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          BASE="https://github.com/tychohq/skilldoc/releases/download/${GITHUB_REF_NAME}"
+          for target in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
+            curl -sL "${BASE}/skilldoc-${target}.tar.gz" -o "skilldoc-${target}.tar.gz"
+          done
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "SHA_DARWIN_ARM64=$(sha256sum skilldoc-darwin-arm64.tar.gz | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          echo "SHA_DARWIN_X64=$(sha256sum skilldoc-darwin-x64.tar.gz | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          echo "SHA_LINUX_X64=$(sha256sum skilldoc-linux-x64.tar.gz | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          echo "SHA_LINUX_ARM64=$(sha256sum skilldoc-linux-arm64.tar.gz | cut -d' ' -f1)" >> "$GITHUB_ENV"
+
+      - name: Update Homebrew tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          git clone https://x-access-token:${GH_TOKEN}@github.com/tychohq/homebrew-tap.git tap
+          cat > tap/Formula/skilldoc.rb << 'FORMULA'
+          class Skilldoc < Formula
+            desc "Generate agent-optimized skill docs from CLI --help output"
+            homepage "https://github.com/tychohq/skilldoc"
+            version "VERSION_PLACEHOLDER"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/tychohq/skilldoc/releases/download/vVERSION_PLACEHOLDER/skilldoc-darwin-arm64.tar.gz"
+                sha256 "SHA_DARWIN_ARM64_PLACEHOLDER"
+              else
+                url "https://github.com/tychohq/skilldoc/releases/download/vVERSION_PLACEHOLDER/skilldoc-darwin-x64.tar.gz"
+                sha256 "SHA_DARWIN_X64_PLACEHOLDER"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/tychohq/skilldoc/releases/download/vVERSION_PLACEHOLDER/skilldoc-linux-arm64.tar.gz"
+                sha256 "SHA_LINUX_ARM64_PLACEHOLDER"
+              else
+                url "https://github.com/tychohq/skilldoc/releases/download/vVERSION_PLACEHOLDER/skilldoc-linux-x64.tar.gz"
+                sha256 "SHA_LINUX_X64_PLACEHOLDER"
+              end
+            end
+
+            def install
+              bin.install "skilldoc"
+            end
+
+            test do
+              assert_match "skilldoc", shell_output("#{bin}/skilldoc --help")
+            end
+          end
+          FORMULA
+
+          # Replace placeholders with actual values
+          sed -i "s/VERSION_PLACEHOLDER/${VERSION}/g" tap/Formula/skilldoc.rb
+          sed -i "s/SHA_DARWIN_ARM64_PLACEHOLDER/${SHA_DARWIN_ARM64}/g" tap/Formula/skilldoc.rb
+          sed -i "s/SHA_DARWIN_X64_PLACEHOLDER/${SHA_DARWIN_X64}/g" tap/Formula/skilldoc.rb
+          sed -i "s/SHA_LINUX_X64_PLACEHOLDER/${SHA_LINUX_X64}/g" tap/Formula/skilldoc.rb
+          sed -i "s/SHA_LINUX_ARM64_PLACEHOLDER/${SHA_LINUX_ARM64}/g" tap/Formula/skilldoc.rb
+
+          # Fix indentation (heredoc adds leading spaces)
+          sed -i 's/^          //' tap/Formula/skilldoc.rb
+
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/skilldoc.rb
+          git commit -m "Update skilldoc to ${VERSION}"
+          git push
