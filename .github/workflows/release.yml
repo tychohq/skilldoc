@@ -87,6 +87,43 @@ jobs:
 
       - run: npm publish --provenance --access public
 
+  discord-notify:
+    name: Notify Discord
+    needs: npm
+    runs-on: ubuntu-latest
+    env:
+      BOT_TOKEN: ${{ secrets.DISCORD_CI_BOT_TOKEN }}
+      GUILD_ID: ${{ secrets.DISCORD_GUILD_ID }}
+      FORUM_CHANNEL_ID: ${{ secrets.DISCORD_FORUM_CHANNEL_ID }}
+    steps:
+      - name: Post publish notification to Discord
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          REPO="${{ github.repository }}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          NPM_URL="https://www.npmjs.com/package/skilldoc/v/${VERSION}"
+
+          MESSAGE=$(printf '📦 **skilldoc@%s published to npm**\n<%s>\nRelease: <%s>' "$VERSION" "$NPM_URL" "$RUN_URL")
+
+          # Find the latest active thread in the forum channel
+          THREADS=$(curl -sf -H "Authorization: Bot ${BOT_TOKEN}" \
+            "https://discord.com/api/v10/guilds/${GUILD_ID}/threads/active")
+
+          THREAD_ID=$(echo "$THREADS" | jq -r --arg parent "$FORUM_CHANNEL_ID" \
+            '[.threads[] | select(.parent_id == $parent)] | sort_by(.last_message_id) | last | .id')
+
+          if [ "$THREAD_ID" = "null" ] || [ -z "$THREAD_ID" ]; then
+            echo "No active thread found in forum channel ${FORUM_CHANNEL_ID}, skipping"
+            exit 0
+          fi
+
+          echo "Posting to thread: $THREAD_ID"
+          PAYLOAD=$(jq -n --arg content "$MESSAGE" '{content: $content}')
+          curl -sf -X POST "https://discord.com/api/v10/channels/${THREAD_ID}/messages" \
+            -H "Authorization: Bot ${BOT_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" || echo "Failed to post, continuing"
+
   homebrew:
     needs: release
     runs-on: ubuntu-latest
