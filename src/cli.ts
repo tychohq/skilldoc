@@ -13,7 +13,9 @@ import { buildUsageDoc, extractUsageTokens } from "./usage.js";
 import { expandHome, ensureDir, writeFileEnsured, readText } from "./utils.js";
 import { resolveProvider, DEFAULT_LLM_CONFIG_PATH, type ProviderType } from "./llm.js";
 import { CommandDoc, CommandSummary, Registry, RegistryTool, ToolComplexity, ToolDoc } from "./types.js";
-import { distillTool, DEFAULT_SKILLS_DIR, DEFAULT_DOCS_DIR, DEFAULT_MODEL, DEFAULT_DISTILL_CONFIG_PATH, loadDistillConfig, DistillOptions, DistillResult, DistillPromptConfig } from "./distill.js";
+import { distillTool, DEFAULT_SKILLS_DIR, DEFAULT_DOCS_DIR, DEFAULT_MODEL, DEFAULT_DISTILL_CONFIG_PATH, loadDistillConfig, DistillOptions, DistillResult, DistillPromptConfig, detectVersion } from "./distill.js";
+import { loadLock, saveLock, updateLockEntry, removeLockEntry, isStale, DEFAULT_LOCK_PATH } from "./lock.js";
+import { resolveAgentFlag, detectAgents, linkSkillToAgent, linkSkillToDir, unlinkAll, AGENT_TARGETS } from "./agents.js";
 import {
   validateSkillMultiModel,
   formatMultiModelReport,
@@ -26,14 +28,18 @@ import {
   type MultiModelValidationReport,
 } from "./validate.js";
 
-const DEFAULT_REGISTRY = "~/.agents/tool-docs/registry.yaml";
-const DEFAULT_OUT_DIR = "~/.agents/docs/tool-docs";
+const DEFAULT_REGISTRY = "~/.skilldoc/registry.yaml";
+const DEFAULT_OUT_DIR = "~/.skilldoc/docs";
 
 const DEFAULT_SKILLS_OUT_DIR = DEFAULT_SKILLS_DIR;
 
 const HELP_TEXT = `skilldoc
 
 Usage:
+  skilldoc add <tool> [--claude] [--cursor] [--codex] [--openclaw] [--global] [--dir <path>]
+  skilldoc list
+  skilldoc update [tool]
+  skilldoc remove <tool>
   skilldoc run <tool>                         # generate + distill + validate in one shot
   skilldoc run [--registry <path>] ...        # full pipeline for all registry tools
   skilldoc generate <tool>                    # generate docs for a single tool
@@ -50,6 +56,10 @@ Usage:
   skilldoc --help
 
 Commands:
+  add        Run full pipeline for one tool and optionally link skill into agent directories
+  list       List installed skills from ${DEFAULT_LOCK_PATH}
+  update     Rebuild stale skills when version/help output changed
+  remove     Remove one installed skill, lock entry, docs, and tracked links
   run        Run full pipeline: generate → distill → validate (recommended start here)
   generate   Generate docs for a single tool (ad-hoc) or all tools in the registry
   distill    Distill raw docs into agent-optimized skills (SKILL.md + docs/)
@@ -57,7 +67,7 @@ Commands:
   validate   Test skill quality using LLM-based scenario evaluation
   report     Show aggregate quality report across all validated tools
   config     Show or update LLM provider configuration (~/.skilldoc/config.yaml)
-  init       Create a starter registry file at ~/.agents/tool-docs/registry.yaml with example
+  init       Create a starter registry file at ~/.skilldoc/registry.yaml with example
              tool entries (git, ripgrep). Use this to configure batch generation for multiple tools.
 
 Options:
@@ -71,6 +81,12 @@ Options:
   --threshold <n>         Minimum passing score for validate (default: ${DEFAULT_THRESHOLD})
   --distill-config <path> Path to distill prompt config YAML (default: ${DEFAULT_DISTILL_CONFIG_PATH})
   --auto-redist           Re-run distill with feedback if validation fails
+  --claude                Link generated skill into ~/.claude/skills
+  --cursor                Link generated skill into ~/.cursor/rules
+  --codex                 Link generated skill into ~/.codex/skills
+  --openclaw              Link generated skill into ~/.openclaw/workspace/skills
+  --global                Link generated skill to all detected agent targets
+  --dir <path>            Link generated skill into a custom directory
   --force                 Overwrite registry on init
   --diff                  Show diff of skill output after refresh
   -h, --help              Show this help
@@ -101,6 +117,39 @@ async function main(): Promise<void> {
     } else {
       await handleRunBatch(flags);
     }
+    return;
+  }
+
+  if (command === "add") {
+    const positional = extractPositionalArgs(args.slice(1));
+    if (positional.length === 0) {
+      console.error("add requires a <tool> argument");
+      process.exit(1);
+    }
+    const result = await handleAdd(positional[0], flags);
+    if (!result.passed) process.exit(1);
+    return;
+  }
+
+  if (command === "list") {
+    await handleList();
+    return;
+  }
+
+  if (command === "update") {
+    const positional = extractPositionalArgs(args.slice(1));
+    const allPassed = await handleUpdate(positional[0], flags);
+    if (!allPassed) process.exit(1);
+    return;
+  }
+
+  if (command === "remove") {
+    const positional = extractPositionalArgs(args.slice(1));
+    if (positional.length === 0) {
+      console.error("remove requires a <tool> argument");
+      process.exit(1);
+    }
+    await handleRemove(positional[0]);
     return;
   }
 
@@ -154,7 +203,7 @@ async function main(): Promise<void> {
 const VALUE_FLAGS = new Set([
   "--registry", "--out", "--only", "--docs", "--model",
   "--models", "--skills", "--threshold", "--distill-config",
-  "--provider", "--api-key",
+  "--provider", "--api-key", "--dir",
 ]);
 
 export function extractPositionalArgs(args: string[]): string[] {
@@ -175,11 +224,34 @@ export function parseFlags(args: string[]): Record<string, string | boolean> {
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
     if (!arg.startsWith("-")) continue;
-    if (arg === "--force" || arg === "--auto-redist" || arg === "--diff" || arg === "--reset") {
+    if (
+      arg === "--force"
+      || arg === "--auto-redist"
+      || arg === "--diff"
+      || arg === "--reset"
+      || arg === "--claude"
+      || arg === "--cursor"
+      || arg === "--codex"
+      || arg === "--openclaw"
+      || arg === "--global"
+    ) {
       flags[arg.replace(/^--/, "")] = true;
       continue;
     }
-    if (arg === "--registry" || arg === "--out" || arg === "--only" || arg === "--docs" || arg === "--model" || arg === "--models" || arg === "--skills" || arg === "--threshold" || arg === "--distill-config" || arg === "--provider" || arg === "--api-key") {
+    if (
+      arg === "--registry"
+      || arg === "--out"
+      || arg === "--only"
+      || arg === "--docs"
+      || arg === "--model"
+      || arg === "--models"
+      || arg === "--skills"
+      || arg === "--threshold"
+      || arg === "--distill-config"
+      || arg === "--provider"
+      || arg === "--api-key"
+      || arg === "--dir"
+    ) {
       const value = args[i + 1];
       if (!value || value.startsWith("-")) {
         throw new Error(`Missing value for ${arg}`);
@@ -195,6 +267,41 @@ export function parseFlags(args: string[]): Record<string, string | boolean> {
     }
   }
   return flags;
+}
+
+function todayDate(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+async function resolveToolBinary(toolId: string, flags: Record<string, string | boolean>): Promise<string> {
+  const registryPath = expandHome(
+    typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY
+  );
+  const registryTool = await lookupRegistryTool(registryPath, toolId);
+  return registryTool?.binary ?? toolId;
+}
+
+function collectRequestedAgents(flags: Record<string, string | boolean>): Array<(typeof AGENT_TARGETS)[number]> {
+  const requested: Array<(typeof AGENT_TARGETS)[number]> = [];
+
+  for (const target of AGENT_TARGETS) {
+    const key = target.flag.replace(/^--/, "");
+    if (flags[key] !== true) continue;
+    const resolved = resolveAgentFlag(target.flag);
+    if (resolved) requested.push(resolved);
+  }
+
+  if (flags.global === true) {
+    for (const target of detectAgents()) {
+      requested.push(target);
+    }
+  }
+
+  const deduped = new Map<string, (typeof AGENT_TARGETS)[number]>();
+  for (const target of requested) {
+    deduped.set(target.name, target);
+  }
+  return [...deduped.values()];
 }
 
 export async function handleInit(flags: Record<string, string | boolean>): Promise<void> {
@@ -512,6 +619,13 @@ export type RunBatchDeps = RunDeps & {
   loadRegistryFn?: (registryPath: string) => Promise<Registry>;
 };
 
+export type AddResult = RunResult & {
+  cliName: string;
+  version: string;
+  helpHash: string;
+  links: string[];
+};
+
 export async function handleRun(
   toolId: string,
   flags: Record<string, string | boolean>,
@@ -579,6 +693,146 @@ export async function handleRun(
   }
 
   return { toolId, passed: report.passed, score: report.overallAverageScore, skillPath };
+}
+
+export async function handleAdd(
+  toolId: string,
+  flags: Record<string, string | boolean>
+): Promise<AddResult> {
+  const runResult = await handleRun(toolId, flags);
+  const lock = await loadLock();
+  const cliName = await resolveToolBinary(toolId, flags);
+  const version = detectVersion(cliName) ?? "unknown";
+  const helpHash = computeHelpHashForBinary(cliName);
+  const existingLinks = lock.skills[toolId]?.links ?? [];
+  const links = [...existingLinks];
+
+  const requestedAgents = collectRequestedAgents(flags);
+  for (const agent of requestedAgents) {
+    const linkedPath = await linkSkillToAgent(toolId, agent);
+    links.push(linkedPath ?? path.join(expandHome(agent.skillsDir), toolId));
+  }
+
+  if (typeof flags.dir === "string") {
+    const linkedPath = await linkSkillToDir(toolId, flags.dir);
+    links.push(linkedPath ?? path.join(path.resolve(expandHome(flags.dir)), toolId));
+  }
+
+  const dedupedLinks = [...new Set(links)];
+  updateLockEntry(lock, toolId, {
+    cliName,
+    version,
+    helpHash,
+    source: "help",
+    syncedAt: todayDate(),
+    generator: "skilldoc",
+    links: dedupedLinks,
+  });
+  await saveLock(lock);
+
+  console.log(`\nAdded ${toolId}`);
+  console.log(`  Lock: ${DEFAULT_LOCK_PATH}`);
+  console.log(`  Binary: ${cliName}`);
+  console.log(`  Version: ${version}`);
+  console.log(`  Links: ${dedupedLinks.length}`);
+  for (const linkPath of dedupedLinks) {
+    console.log(`    - ${linkPath}`);
+  }
+
+  return { ...runResult, cliName, version, helpHash, links: dedupedLinks };
+}
+
+export async function handleList(): Promise<void> {
+  const lock = await loadLock();
+  const entries = Object.entries(lock.skills).sort(([a], [b]) => a.localeCompare(b));
+
+  if (entries.length === 0) {
+    console.log("No skills installed");
+    return;
+  }
+
+  for (const [toolId, entry] of entries) {
+    console.log(`${toolId}\t${entry.version}\t${entry.syncedAt}\tlinks:${entry.links?.length ?? 0}`);
+  }
+}
+
+export async function handleUpdate(
+  toolId: string | undefined,
+  flags: Record<string, string | boolean>
+): Promise<boolean> {
+  const lock = await loadLock();
+  const allToolIds = Object.keys(lock.skills).sort();
+
+  if (allToolIds.length === 0) {
+    console.log("No skills installed");
+    return true;
+  }
+
+  const targetToolIds = toolId ? [toolId] : allToolIds;
+  if (toolId && lock.skills[toolId] === undefined) {
+    console.log(`No installed skill found for ${toolId}`);
+    return true;
+  }
+
+  let staleCount = 0;
+  let allPassed = true;
+
+  for (const currentToolId of targetToolIds) {
+    const entry = lock.skills[currentToolId];
+    if (!entry) continue;
+
+    const cliName = entry.cliName || currentToolId;
+    const currentVersion = detectVersion(cliName) ?? "unknown";
+    const currentHelpHash = computeHelpHashForBinary(cliName);
+    if (!isStale(entry, currentVersion, currentHelpHash)) continue;
+
+    staleCount += 1;
+    console.log(`Stale: ${currentToolId} (${entry.version} -> ${currentVersion})`);
+
+    const result = await handleRun(currentToolId, flags);
+    if (!result.passed) {
+      allPassed = false;
+    }
+
+    updateLockEntry(lock, currentToolId, {
+      cliName,
+      version: detectVersion(cliName) ?? currentVersion,
+      helpHash: computeHelpHashForBinary(cliName),
+      source: "help",
+      syncedAt: todayDate(),
+      generator: "skilldoc",
+      links: entry.links ?? [],
+    });
+  }
+
+  if (staleCount === 0) {
+    console.log("All skills up to date");
+    return true;
+  }
+
+  await saveLock(lock);
+  console.log(`Updated lock: ${DEFAULT_LOCK_PATH}`);
+  return allPassed;
+}
+
+export async function handleRemove(toolId: string): Promise<void> {
+  const lock = await loadLock();
+  const removedEntry = removeLockEntry(lock, toolId);
+  const removedLinks = removedEntry?.links ? unlinkAll(toolId, removedEntry.links) : [];
+  const skillDir = path.join(expandHome(DEFAULT_SKILLS_DIR), toolId);
+  const docsDir = path.join(expandHome(DEFAULT_DOCS_DIR), toolId);
+
+  await rm(skillDir, { recursive: true, force: true });
+  await rm(docsDir, { recursive: true, force: true });
+  await saveLock(lock);
+
+  console.log(`Removed ${toolId}`);
+  console.log(`  Skill dir: ${skillDir}`);
+  console.log(`  Raw docs: ${docsDir}`);
+  console.log(`  Symlinks removed: ${removedLinks.length}`);
+  for (const linkPath of removedLinks) {
+    console.log(`    - ${linkPath}`);
+  }
 }
 
 export async function handleRunBatch(
@@ -1062,6 +1316,33 @@ export function resolveBinary(name: string): string | null {
   const result = spawnSync("which", [name], { encoding: "utf8" });
   if (result.status !== 0) return null;
   return result.stdout.trim();
+}
+
+export function computeHelpHashForBinary(binary: string): string {
+  const env = {
+    ...process.env,
+    LANG: "C",
+    LC_ALL: "C",
+    TERM: "dumb",
+    NO_COLOR: "1",
+    CLICOLOR: "0",
+    PAGER: "cat",
+    GIT_PAGER: "cat",
+    MANPAGER: "cat",
+    LESS: "FRX",
+  };
+
+  const result = spawnSync(binary, ["--help"], {
+    encoding: "utf8",
+    env,
+  });
+
+  if (result.error) {
+    throw new Error(`Failed to run ${binary} --help: ${result.error.message}`);
+  }
+
+  const output = result.stdout ?? "";
+  return computeHash(output);
 }
 
 function runCommand(binary: string, args: string[]): { output: string; exitCode: number | null; error?: string } {

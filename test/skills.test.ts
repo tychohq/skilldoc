@@ -3,7 +3,7 @@ import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 
-const SKILLS_DIR = path.join(os.homedir(), ".agents/skills");
+const SKILLS_DIR = path.join(os.homedir(), ".skills");
 
 // New Phase 3 tools that should have auto-generated skills.
 // Excludes agent-browser, supabase, vercel which have hand-written skills.

@@ -530,7 +530,7 @@ describe("validateSkill", () => {
 describe("formatReport", () => {
   const baseReport: ValidationReport = {
     toolId: "rg",
-    skillPath: "/home/.agents/skills/rg/SKILL.md",
+    skillPath: "/home/.skills/rg/SKILL.md",
     model: "claude-haiku-4-5-20251001",
     scenarios: [
       {
@@ -569,7 +569,7 @@ describe("formatReport", () => {
   });
 
   it("includes the skillPath in output", () => {
-    expect(formatReport(baseReport)).toContain("/home/.agents/skills/rg/SKILL.md");
+    expect(formatReport(baseReport)).toContain("/home/.skills/rg/SKILL.md");
   });
 
   it("shows each scenario with its score", () => {
@@ -858,12 +858,12 @@ describe("validateSkillMultiModel", () => {
 describe("formatMultiModelReport", () => {
   const baseMultiReport: MultiModelValidationReport = {
     toolId: "rg",
-    skillPath: "/home/.agents/skills/rg/SKILL.md",
+    skillPath: "/home/.skills/rg/SKILL.md",
     models: ["claude-sonnet-4-6", "claude-opus-4-6"],
     reports: [
       {
         toolId: "rg",
-        skillPath: "/home/.agents/skills/rg/SKILL.md",
+        skillPath: "/home/.skills/rg/SKILL.md",
         model: "claude-sonnet-4-6",
         scenarios: [
           {
@@ -884,7 +884,7 @@ describe("formatMultiModelReport", () => {
       },
       {
         toolId: "rg",
-        skillPath: "/home/.agents/skills/rg/SKILL.md",
+        skillPath: "/home/.skills/rg/SKILL.md",
         model: "claude-opus-4-6",
         scenarios: [
           {
@@ -921,7 +921,7 @@ describe("formatMultiModelReport", () => {
   });
 
   it("includes the skillPath", () => {
-    expect(formatMultiModelReport(baseMultiReport)).toContain("/home/.agents/skills/rg/SKILL.md");
+    expect(formatMultiModelReport(baseMultiReport)).toContain("/home/.skills/rg/SKILL.md");
   });
 
   it("includes per-model average scores", () => {

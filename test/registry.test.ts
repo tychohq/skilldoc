@@ -3,7 +3,7 @@ import { loadRegistry } from "../src/config.js";
 import path from "node:path";
 import os from "node:os";
 
-const REGISTRY_PATH = path.join(os.homedir(), ".agents/tool-docs/registry.yaml");
+const REGISTRY_PATH = path.join(os.homedir(), ".skilldoc/registry.yaml");
 
 const EXPECTED_TOOL_IDS = [
   "git",

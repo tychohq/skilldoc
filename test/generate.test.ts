@@ -3,7 +3,7 @@ import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 
-const DOCS_DIR = path.join(os.homedir(), ".agents/docs/tool-docs");
+const DOCS_DIR = path.join(os.homedir(), ".skilldoc/docs");
 
 const NEW_TOOL_IDS = [
   "openclaw",

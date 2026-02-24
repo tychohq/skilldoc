@@ -20,8 +20,8 @@ describe("parseFlags --out", () => {
   });
 
   it("accepts any path string value", () => {
-    const flags = parseFlags(["--out", "~/.agents/skills"]);
-    expect(flags.out).toBe("~/.agents/skills");
+    const flags = parseFlags(["--out", "~/.skills"]);
+    expect(flags.out).toBe("~/.skills");
   });
 
   it("throws when --out flag has no value", () => {
@@ -39,8 +39,8 @@ describe("parseFlags --out", () => {
     expect(flags.model).toBe("claude-sonnet-4-6");
   });
 
-  it("DEFAULT_SKILLS_DIR is ~/.agents/skills", () => {
-    expect(DEFAULT_SKILLS_DIR).toBe("~/.agents/skills");
+  it("DEFAULT_SKILLS_DIR is ~/.skills", () => {
+    expect(DEFAULT_SKILLS_DIR).toBe("~/.skills");
   });
 });
 
@@ -1545,7 +1545,7 @@ describe("bin/skilldoc.js distill <tool-id> (integration)", () => {
   it("help text describes init with registry path and example tools", () => {
     const result = spawnSync("node", [binPath, "--help"], { encoding: "utf8" });
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain("~/.agents/tool-docs/registry.yaml");
+    expect(result.stdout).toContain("~/.skilldoc/registry.yaml");
     expect(result.stdout).toContain("git, ripgrep");
     expect(result.stdout).toContain("batch generation for multiple tools");
   });
