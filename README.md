@@ -1,10 +1,10 @@
 # skilldoc
 
-[![version](https://img.shields.io/badge/version-0.2.0-blue)](package.json)
+[![npm](https://img.shields.io/npm/v/skilldoc)](https://www.npmjs.com/package/skilldoc)
 [![license](https://img.shields.io/badge/license-MIT-green)](#license)
 [![works with](https://img.shields.io/badge/works%20with-Claude%20Code-purple)](https://claude.ai/claude-code)
 [![works with](https://img.shields.io/badge/works%20with-Gemini%20CLI-orange)](https://github.com/google-gemini/gemini-cli)
-[![works with](https://img.shields.io/badge/works%20with-OpenClaw-lightgrey)](https://github.com/brenner/openclaw)
+[![works with](https://img.shields.io/badge/works%20with-OpenClaw-lightgrey)](https://github.com/openclaw/openclaw)
 
 **Auto-generate agent-optimized CLI docs from `--help` output — verified, compressed, ready for AGENTS.md**
 
@@ -32,78 +32,27 @@ SKILL.md    →  drop into AGENTS.md, CLAUDE.md, OpenClaw skills
 
 ---
 
-## Prerequisites
-
-The `generate` step (extracting `--help` output) works without an LLM. The `distill` and `validate` steps require one.
-
-### If you have a coding CLI installed
-
-If any of these are installed and logged in, it just works — no config needed:
-
-1. [**Claude Code**](https://claude.ai/claude-code) — `npm install -g @anthropic-ai/claude-code` → `claude /login`
-2. [**Codex CLI**](https://github.com/openai/codex) — `npm install -g @openai/codex` → `codex login`
-3. [**Gemini CLI**](https://github.com/google-gemini/gemini-cli) — `npm install -g @google/gemini-cli` → `gemini` (auth on first run)
-
-Verify you're logged in:
-
-```bash
-echo 'say ok' | claude -p --output-format text  # should print "ok"
-echo 'say ok' | codex exec                       # should print "ok"
-gemini -p 'say ok'                                # should print "ok"
-```
-
-The tool tries them in this order: **Claude Code → Codex → Gemini**. The first one found on your PATH is used.
-
-### If you prefer API keys
-
-Set any of these environment variables and the tool will call the API directly:
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...     # → uses Anthropic API
-export OPENAI_API_KEY=sk-...            # → uses OpenAI API
-export GEMINI_API_KEY=...               # → uses Google Gemini API
-export OPENROUTER_API_KEY=sk-or-...     # → uses OpenRouter API
-```
-
-API keys are checked only if no CLI is found. Each provider uses a sensible default model (e.g., `claude-opus-4-6` for Anthropic, `gpt-5.2` for OpenAI).
-
-### Persistent config (optional)
-
-To pin a specific provider and model, create `~/.skilldoc/config.yaml`:
-
-```yaml
-provider: claude-cli    # claude-cli | codex-cli | gemini-cli | anthropic | openai | gemini | openrouter
-model: claude-opus-4-6 # optional — overrides the provider's default model
-apiKey: sk-ant-...      # optional — overrides env var for this provider
-```
-
-Config file takes priority over auto-detection. You can also override per-run with `--model <model>`.
-
-For validation, `--models <m1,m2>` accepts a comma-separated list to test across multiple models.
-
----
-
 ## Quick Start
 
 ### Install
 
 ```bash
-# npm
-npx skilldoc run railway
-
-# pnpm
-pnpx skilldoc run railway
+# Homebrew (macOS / Linux)
+brew tap tychohq/tap && brew install skilldoc
 
 # bun
 bunx skilldoc run railway
 
-# Homebrew (macOS / Linux)
-brew tap tychohq/tap
-brew install skilldoc
-skilldoc run railway
+# pnpm
+pnpx skilldoc run railway
+
+# npm
+npx skilldoc run railway
 ```
 
 ### Generate a skill
+
+You need a coding CLI (Claude Code, Codex, or Gemini CLI) logged in, or an LLM API key set. See [LLM Setup](#llm-setup) for details.
 
 ```bash
 # Full pipeline in one shot: generate → distill → validate
@@ -121,6 +70,53 @@ skilldoc generate railway    # extract raw docs from --help
 skilldoc distill railway     # compress into agent-optimized SKILL.md
 skilldoc validate railway    # score quality with multi-model evaluation
 ```
+
+---
+
+## LLM Setup
+
+The `generate` step works without an LLM. The `distill` and `validate` steps require one.
+
+**If you have a coding CLI installed and logged in, it just works — no config needed.** The tool auto-detects Claude Code → Codex → Gemini CLI (first found on PATH wins).
+
+**If you prefer API keys**, set any of these:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...     # → Anthropic API
+export OPENAI_API_KEY=sk-...            # → OpenAI API
+export GEMINI_API_KEY=...               # → Google Gemini API
+export OPENROUTER_API_KEY=sk-or-...     # → OpenRouter API
+```
+
+API keys are checked only if no CLI is found. Each provider uses a sensible default model.
+
+<details>
+<summary><strong>CLI verification commands</strong></summary>
+
+```bash
+echo 'say ok' | claude -p --output-format text  # should print "ok"
+echo 'say ok' | codex exec                       # should print "ok"
+gemini -p 'say ok'                                # should print "ok"
+```
+
+</details>
+
+<details>
+<summary><strong>Persistent config (pin provider/model)</strong></summary>
+
+Create `~/.skilldoc/config.yaml`:
+
+```yaml
+provider: claude-cli    # claude-cli | codex-cli | gemini-cli | anthropic | openai | gemini | openrouter
+model: claude-opus-4-6 # optional — overrides the provider's default model
+apiKey: sk-ant-...      # optional — overrides env var for this provider
+```
+
+Config file takes priority over auto-detection. You can also override per-run with `--model <model>`.
+
+For validation, `--models <m1,m2>` accepts a comma-separated list to test across multiple models.
+
+</details>
 
 ---
 
@@ -187,8 +183,6 @@ Runs each tool's `--help` (and subcommand help) with `LANG=C NO_COLOR=1 PAGER=ca
 ### 2. Distill (`distill`)
 
 Passes raw docs to an LLM with a task-focused prompt. Output is a `SKILL.md` optimized for agents: quick reference, key flags, common patterns. Target size ~2KB. Skips re-distillation if help output is unchanged.
-
-Requires Claude Code (`claude`) or Gemini CLI (`gemini`) installed — see [Prerequisites](#prerequisites). Default model: `claude-opus-4-6`; override with `--model`.
 
 ### 3. Validate (`validate`)
 
@@ -309,7 +303,8 @@ skilldoc generate    # extract docs for all registry tools
 skilldoc distill     # distill all into agent-optimized skills
 ```
 
-Registry format:
+<details>
+<summary><strong>Registry format</strong></summary>
 
 ```yaml
 version: 1
@@ -344,6 +339,8 @@ tools:
 | `enabled` | no | Set `false` to skip a tool without removing it |
 
 Run `skilldoc generate --only jq` to process a single tool.
+
+</details>
 
 ---
 
