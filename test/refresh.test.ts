@@ -3,6 +3,7 @@ import path from "node:path";
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import { computeHash, getChangedTools, handleRefresh, computeSkillDiff } from "../src/cli.js";
+import { type LockFile } from "../src/lock.js";
 
 describe("computeHash", () => {
   it("returns a hex string", () => {
@@ -132,26 +133,25 @@ describe("handleRefresh", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  function writeRegistry(tools: Array<{ id: string; binary: string }>): string {
-    const registryPath = path.join(tmpDir, "registry.yaml");
-    const toolsYaml = tools
-      .map((t) => `  - id: ${t.id}\n    binary: ${t.binary}`)
-      .join("\n");
-    writeFileSync(registryPath, `version: 1\ntools:\n${toolsYaml}\n`);
-    return registryPath;
+  function makeLockFn(tools: Array<{ id: string; binary: string; helpArgs?: string[] }>): (lockPath?: string) => Promise<LockFile> {
+    return async () => ({
+      skills: Object.fromEntries(
+        tools.map((t) => [t.id, { cliName: t.binary, version: "1.0", helpHash: "h", source: "help", syncedAt: "2026-01-01", generator: "skilldoc" as const, helpArgs: t.helpArgs }])
+      ),
+    });
   }
 
   it("calls generate and distill when help output has changed", async () => {
-    const registryPath = writeRegistry([{ id: "mytool", binary: "mytool" }]);
     const generateCalls: Record<string, string | boolean>[] = [];
     const distillCalls: Record<string, string | boolean>[] = [];
 
     await handleRefresh(
-      { registry: registryPath, out: tmpDir },
+      { out: tmpDir },
       {
         generateFn: async (f) => { generateCalls.push(f); },
         distillFn: async (f) => { distillCalls.push(f); },
         runFn: () => ({ output: "new help output", exitCode: 0 }),
+        loadLockFn: makeLockFn([{ id: "mytool", binary: "mytool" }]),
       }
     );
 
@@ -170,16 +170,16 @@ describe("handleRefresh", () => {
       JSON.stringify({ helpHash: computeHash(helpOutput) })
     );
 
-    const registryPath = writeRegistry([{ id: "mytool", binary: "mytool" }]);
     const generateCalls: Record<string, string | boolean>[] = [];
     const distillCalls: Record<string, string | boolean>[] = [];
 
     await handleRefresh(
-      { registry: registryPath, out: tmpDir },
+      { out: tmpDir },
       {
         generateFn: async (f) => { generateCalls.push(f); },
         distillFn: async (f) => { distillCalls.push(f); },
         runFn: () => ({ output: helpOutput, exitCode: 0 }),
+        loadLockFn: makeLockFn([{ id: "mytool", binary: "mytool" }]),
       }
     );
 
@@ -188,15 +188,11 @@ describe("handleRefresh", () => {
   });
 
   it("filters tools by --only flag", async () => {
-    const registryPath = writeRegistry([
-      { id: "tool-a", binary: "tool-a" },
-      { id: "tool-b", binary: "tool-b" },
-    ]);
     const checkedBinaries: string[] = [];
     const generateCalls: Record<string, string | boolean>[] = [];
 
     await handleRefresh(
-      { registry: registryPath, out: tmpDir, only: "tool-a" },
+      { out: tmpDir, only: "tool-a" },
       {
         generateFn: async (f) => { generateCalls.push(f); },
         distillFn: async () => {},
@@ -204,6 +200,7 @@ describe("handleRefresh", () => {
           checkedBinaries.push(binary);
           return { output: "help", exitCode: 0 };
         },
+        loadLockFn: makeLockFn([{ id: "tool-a", binary: "tool-a" }, { id: "tool-b", binary: "tool-b" }]),
       }
     );
 
@@ -224,18 +221,15 @@ describe("handleRefresh", () => {
     );
     // tool-b has no stored hash → changed
 
-    const registryPath = writeRegistry([
-      { id: "tool-a", binary: "tool-a" },
-      { id: "tool-b", binary: "tool-b" },
-    ]);
     const generateCalls: Record<string, string | boolean>[] = [];
 
     await handleRefresh(
-      { registry: registryPath, out: tmpDir },
+      { out: tmpDir },
       {
         generateFn: async (f) => { generateCalls.push(f); },
         distillFn: async () => {},
         runFn: () => ({ output: unchangedOutput, exitCode: 0 }),
+        loadLockFn: makeLockFn([{ id: "tool-a", binary: "tool-a" }, { id: "tool-b", binary: "tool-b" }]),
       }
     );
 
@@ -244,44 +238,21 @@ describe("handleRefresh", () => {
   });
 
   it("passes other flags through to generate and distill", async () => {
-    const registryPath = writeRegistry([{ id: "mytool", binary: "mytool" }]);
     const generateCalls: Record<string, string | boolean>[] = [];
     const distillCalls: Record<string, string | boolean>[] = [];
 
     await handleRefresh(
-      { registry: registryPath, out: tmpDir, model: "claude-opus-4-6" },
+      { out: tmpDir, model: "claude-opus-4-6" },
       {
         generateFn: async (f) => { generateCalls.push(f); },
         distillFn: async (f) => { distillCalls.push(f); },
         runFn: () => ({ output: "help", exitCode: 0 }),
+        loadLockFn: makeLockFn([{ id: "mytool", binary: "mytool" }]),
       }
     );
 
     expect(generateCalls[0].model).toBe("claude-opus-4-6");
     expect(distillCalls[0].model).toBe("claude-opus-4-6");
-  });
-
-  it("skips disabled tools", async () => {
-    const registryPath = path.join(tmpDir, "registry.yaml");
-    writeFileSync(
-      registryPath,
-      `version: 1\ntools:\n  - id: mytool\n    binary: mytool\n    enabled: false\n`
-    );
-    const checkedBinaries: string[] = [];
-
-    await handleRefresh(
-      { registry: registryPath, out: tmpDir },
-      {
-        generateFn: async () => {},
-        distillFn: async () => {},
-        runFn: (binary) => {
-          checkedBinaries.push(binary);
-          return { output: "help", exitCode: 0 };
-        },
-      }
-    );
-
-    expect(checkedBinaries).toHaveLength(0);
   });
 });
 
@@ -317,17 +288,15 @@ describe("handleRefresh --diff", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  function writeRegistry(tools: Array<{ id: string; binary: string }>): string {
-    const registryPath = path.join(tmpDir, "registry.yaml");
-    const toolsYaml = tools
-      .map((t) => `  - id: ${t.id}\n    binary: ${t.binary}`)
-      .join("\n");
-    writeFileSync(registryPath, `version: 1\ntools:\n${toolsYaml}\n`);
-    return registryPath;
+  function makeLockFn(tools: Array<{ id: string; binary: string }>): (lockPath?: string) => Promise<LockFile> {
+    return async () => ({
+      skills: Object.fromEntries(
+        tools.map((t) => [t.id, { cliName: t.binary, version: "1.0", helpHash: "h", source: "help", syncedAt: "2026-01-01", generator: "skilldoc" as const }])
+      ),
+    });
   }
 
   it("calls diffFn with before/after content when --diff is set", async () => {
-    const registryPath = writeRegistry([{ id: "mytool", binary: "mytool" }]);
     const diffCalls: Array<{ old: string; after: string; label: string }> = [];
 
     const skillFiles: Record<string, string> = {
@@ -335,7 +304,7 @@ describe("handleRefresh --diff", () => {
     };
 
     await handleRefresh(
-      { registry: registryPath, out: tmpDir, diff: true },
+      { out: tmpDir, diff: true },
       {
         generateFn: async () => {},
         distillFn: async () => {
@@ -347,6 +316,7 @@ describe("handleRefresh --diff", () => {
           diffCalls.push({ old: oldContent, after: newContent, label });
           return `--- ${label}\n+++ ${label}\n-old\n+new\n`;
         },
+        loadLockFn: makeLockFn([{ id: "mytool", binary: "mytool" }]),
       }
     );
 
@@ -357,7 +327,6 @@ describe("handleRefresh --diff", () => {
   });
 
   it("prints 'unchanged' message when skill content did not change", async () => {
-    const registryPath = writeRegistry([{ id: "mytool", binary: "mytool" }]);
     const diffCalls: unknown[] = [];
     const logs: string[] = [];
     const originalLog = console.log;
@@ -365,7 +334,7 @@ describe("handleRefresh --diff", () => {
 
     try {
       await handleRefresh(
-        { registry: registryPath, out: tmpDir, diff: true },
+        { out: tmpDir, diff: true },
         {
           generateFn: async () => {},
           distillFn: async () => {},
@@ -375,6 +344,7 @@ describe("handleRefresh --diff", () => {
             diffCalls.push({ oldContent, newContent, label });
             return "";
           },
+          loadLockFn: makeLockFn([{ id: "mytool", binary: "mytool" }]),
         }
       );
     } finally {
@@ -386,11 +356,10 @@ describe("handleRefresh --diff", () => {
   });
 
   it("does not call diffFn when --diff flag is not set", async () => {
-    const registryPath = writeRegistry([{ id: "mytool", binary: "mytool" }]);
     const diffCalls: unknown[] = [];
 
     await handleRefresh(
-      { registry: registryPath, out: tmpDir },
+      { out: tmpDir },
       {
         generateFn: async () => {},
         distillFn: async () => {},
@@ -400,6 +369,7 @@ describe("handleRefresh --diff", () => {
           diffCalls.push(args);
           return "";
         },
+        loadLockFn: makeLockFn([{ id: "mytool", binary: "mytool" }]),
       }
     );
 
@@ -407,15 +377,11 @@ describe("handleRefresh --diff", () => {
   });
 
   it("reads before state for all changed tools before distilling", async () => {
-    const registryPath = writeRegistry([
-      { id: "tool-a", binary: "tool-a" },
-      { id: "tool-b", binary: "tool-b" },
-    ]);
     const readCalls: string[] = [];
     const distillCalled: boolean[] = [];
 
     await handleRefresh(
-      { registry: registryPath, out: tmpDir, diff: true },
+      { out: tmpDir, diff: true },
       {
         generateFn: async () => {},
         distillFn: async () => { distillCalled.push(true); },
@@ -425,6 +391,7 @@ describe("handleRefresh --diff", () => {
           return null;
         },
         diffFn: () => "",
+        loadLockFn: makeLockFn([{ id: "tool-a", binary: "tool-a" }, { id: "tool-b", binary: "tool-b" }]),
       }
     );
 

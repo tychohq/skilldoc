@@ -1482,28 +1482,28 @@ export async function handleRefresh(
     runFn = runCommand,
     readFileFn = readOptionalFile,
     diffFn = computeSkillDiff,
+    loadLockFn = loadLock,
   }: {
     generateFn?: (flags: Record<string, string | boolean>) => Promise<void>;
     distillFn?: (flags: Record<string, string | boolean>) => Promise<void>;
     runFn?: (binary: string, args: string[]) => { output: string; exitCode: number | null; error?: string };
     readFileFn?: (filePath: string) => Promise<string | null>;
     diffFn?: (oldContent: string, newContent: string, label: string) => string;
+    loadLockFn?: (lockPath?: string) => Promise<LockFile>;
   } = {}
 ): Promise<void> {
-  const registryPath = expandHome(
-    typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY
-  );
+  const lockPath = typeof flags.lock === "string" ? flags.lock : undefined;
   const docsDir = expandHome(
     typeof flags.out === "string" ? flags.out : DEFAULT_OUT_DIR
   );
   const only = typeof flags.only === "string" ? new Set(flags.only.split(",").map((v) => v.trim())) : null;
   const showDiff = flags.diff === true;
 
-  const registry = await loadRegistry(registryPath);
-  const tools = registry.tools
-    .filter((tool) => tool.enabled !== false)
-    .filter((tool) => (only ? only.has(tool.id) : true))
-    .sort((a, b) => a.id.localeCompare(b.id));
+  const lock = await loadLockFn(lockPath);
+  const tools = Object.entries(lock.skills)
+    .filter(([id]) => (only ? only.has(id) : true))
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([id, entry]) => ({ id, binary: entry.cliName, helpArgs: entry.helpArgs }));
 
   const changedIds = await getChangedTools(tools, docsDir, runFn);
 
