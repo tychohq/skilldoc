@@ -8090,11 +8090,12 @@ async function distillTool(options) {
   await ensureDir(path.join(outDir, "docs"));
   const now = new Date().toISOString();
   const version = detectVersion(binary);
-  const skillMd = addMetadataHeader(distilled.skill, toolId, binary, distilled.description, now, version);
-  await writeFileEnsured(path.join(outDir, "SKILL.md"), skillMd);
   await writeFileEnsured(path.join(outDir, "docs", "advanced.md"), distilled.advanced);
   await writeFileEnsured(path.join(outDir, "docs", "recipes.md"), distilled.recipes);
   await writeFileEnsured(path.join(outDir, "docs", "troubleshooting.md"), distilled.troubleshooting);
+  const docsFooter = buildDocsFooter(outDir);
+  const skillMd = addMetadataHeader(distilled.skill, toolId, binary, distilled.description, now, version) + docsFooter;
+  await writeFileEnsured(path.join(outDir, "SKILL.md"), skillMd);
   const sizeLimits = resolveSizeLimits(promptConfig);
   const sizeWarnings = checkSizeLimits({
     "SKILL.md": skillMd,
@@ -8329,6 +8330,23 @@ function detectVersion(toolId, exec = defaultExec2) {
     }
   }
   return;
+}
+function buildDocsFooter(outDir) {
+  const docsDir = path.join(outDir, "docs");
+  if (!existsSync(docsDir))
+    return "";
+  const files = readdirSync(docsDir).filter((f) => f.endsWith(".md") && statSync(path.join(docsDir, f)).isFile()).sort();
+  if (files.length === 0)
+    return "";
+  const lines = [`
+## See Also`, ""];
+  for (const file of files) {
+    const name = file.replace(/\.md$/, "").replace(/[-_]/g, " ");
+    lines.push(`- [docs/${file}](docs/${file})`);
+  }
+  lines.push("");
+  return lines.join(`
+`);
 }
 function addMetadataHeader(skillContent, toolId, binary, description, generatedAt, version) {
   const lines = [

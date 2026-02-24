@@ -154,12 +154,16 @@ export async function distillTool(options: DistillOptions): Promise<DistillResul
 
   const now = new Date().toISOString();
   const version = detectVersion(binary);
-  const skillMd = addMetadataHeader(distilled.skill, toolId, binary, distilled.description, now, version);
 
-  await writeFileEnsured(path.join(outDir, "SKILL.md"), skillMd);
+  // Write docs files first so we can enumerate them for the footer
   await writeFileEnsured(path.join(outDir, "docs", "advanced.md"), distilled.advanced);
   await writeFileEnsured(path.join(outDir, "docs", "recipes.md"), distilled.recipes);
   await writeFileEnsured(path.join(outDir, "docs", "troubleshooting.md"), distilled.troubleshooting);
+
+  const docsFooter = buildDocsFooter(outDir);
+  const skillMd = addMetadataHeader(distilled.skill, toolId, binary, distilled.description, now, version) + docsFooter;
+
+  await writeFileEnsured(path.join(outDir, "SKILL.md"), skillMd);
 
   const sizeLimits = resolveSizeLimits(promptConfig);
   const sizeWarnings = checkSizeLimits({
@@ -446,6 +450,29 @@ export function detectVersion(toolId: string, exec: ExecFn = defaultExec): strin
     }
   }
   return undefined;
+}
+
+/**
+ * Build a "See also" footer listing files in the docs/ subfolder.
+ * Returns empty string if no docs/ folder or no files.
+ */
+function buildDocsFooter(outDir: string): string {
+  const docsDir = path.join(outDir, "docs");
+  if (!existsSync(docsDir)) return "";
+
+  const files = readdirSync(docsDir)
+    .filter((f) => f.endsWith(".md") && statSync(path.join(docsDir, f)).isFile())
+    .sort();
+
+  if (files.length === 0) return "";
+
+  const lines = ["\n## See Also", ""];
+  for (const file of files) {
+    const name = file.replace(/\.md$/, "").replace(/[-_]/g, " ");
+    lines.push(`- [docs/${file}](docs/${file})`);
+  }
+  lines.push("");
+  return lines.join("\n");
 }
 
 function addMetadataHeader(
