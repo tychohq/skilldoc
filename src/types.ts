@@ -1,27 +1,4 @@
-export type Registry = {
-  version: 1;
-  tools: RegistryTool[];
-};
-
-export type ToolCategory = "cli" | "sdk" | "api";
-
 export type ToolComplexity = "simple" | "complex";
-
-export type RegistryTool = {
-  id: string;
-  binary: string;
-  displayName?: string;
-  description?: string;
-  helpArgs?: string[];
-  commandHelpArgs?: string[];
-  env?: string[];
-  enabled?: boolean;
-  category?: ToolCategory;
-  complexity?: ToolComplexity;
-  homepage?: string;
-  useCases?: string[];
-  maxDepth?: number;
-};
 
 export type UsageDoc = {
   requiredArgs: string[];

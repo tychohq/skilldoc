@@ -245,58 +245,25 @@ If validation fails, `--auto-redist` re-runs distillation with feedback and you 
 
 ## Configuration
 
-For batch operations across many tools, use a registry file at `~/.agents/skilldoc/registry.yaml`:
+For batch operations across all installed tools, register tools with `skilldoc add`. The lock file at `~/.skills/skilldoc-lock.yaml` is the single source of truth:
 
 ```bash
-skilldoc init        # create a starter registry with common tools
-skilldoc run         # full pipeline for all registry tools
+skilldoc add jq       # register jq in the lock file and generate its skill
+skilldoc run          # full pipeline for all installed tools
 ```
 
-You can also run individual steps across the registry:
+You can also run individual steps for all installed tools:
 
 ```bash
-skilldoc generate    # extract docs for all registry tools
-skilldoc distill     # distill all into agent-optimized skills
+skilldoc generate     # extract docs for all installed tools
+skilldoc distill      # distill all into agent-optimized skills
 ```
 
-<details>
-<summary><strong>Registry format</strong></summary>
+Use `--only <tool>` to process a single tool from the lock file:
 
-```yaml
-version: 1
-tools:
-  - id: jq
-    binary: jq
-    displayName: jq (JSON processor)
-    category: cli
-    homepage: https://jqlang.github.io/jq
-    useCases:
-      - filter and transform JSON data
-      - extract fields from API responses
-
-  - id: git
-    binary: git
-    displayName: Git
-    helpArgs: ["-h"]
-    commandHelpArgs: ["help", "{command}"]
-    useCases:
-      - version control and branching
+```bash
+skilldoc generate --only jq
 ```
-
-**Fields:**
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `id` | yes | Unique identifier, used as directory name |
-| `binary` | yes | Executable name on PATH |
-| `helpArgs` | no | Args to invoke help (default: `["--help"]`) |
-| `commandHelpArgs` | no | Args for subcommand help; `{command}` is replaced |
-| `useCases` | no | Hints for distillation prompt |
-| `enabled` | no | Set `false` to skip a tool without removing it |
-
-Run `skilldoc generate --only jq` to process a single tool.
-
-</details>
 
 ---
 
@@ -308,7 +275,7 @@ Run `skilldoc generate --only jq` to process a single tool.
 skilldoc run <binary>   # full pipeline, score must be ≥ 9/10
 ```
 
-Or add an entry to `~/.agents/skilldoc/registry.yaml` for batch operations with custom `helpArgs`.
+Or use `skilldoc add <binary>` to register it in the lock file for batch operations.
 
 ### Run tests
 

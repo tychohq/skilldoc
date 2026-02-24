@@ -337,24 +337,21 @@ describe("handleGenerate with binary name", () => {
   });
 
   it("uses --help as default helpArgs for ad-hoc binary", async () => {
-    const noRegistry = path.join(tmpDir, "no-registry.yaml");
-    await handleGenerate({ out: tmpDir, registry: noRegistry }, "jq");
+    await handleGenerate({ out: tmpDir }, "jq");
     const toolJson = path.join(tmpDir, "jq", "tool.json");
     const doc = JSON.parse(readFileSync(toolJson, "utf8"));
     expect(doc.helpArgs).toEqual(["--help"]);
   });
 
   it("sets displayName to binary name for ad-hoc binary", async () => {
-    const noRegistry = path.join(tmpDir, "no-registry.yaml");
-    await handleGenerate({ out: tmpDir, registry: noRegistry }, "echo");
+    await handleGenerate({ out: tmpDir }, "echo");
     const toolJson = path.join(tmpDir, "echo", "tool.json");
     const doc = JSON.parse(readFileSync(toolJson, "utf8"));
     expect(doc.displayName).toBe("echo");
   });
 
   it("produces a complete ToolDoc with all required fields", async () => {
-    const noRegistry = path.join(tmpDir, "no-registry.yaml");
-    await handleGenerate({ out: tmpDir, registry: noRegistry }, "jq");
+    await handleGenerate({ out: tmpDir }, "jq");
     const toolJson = path.join(tmpDir, "jq", "tool.json");
     const doc = JSON.parse(readFileSync(toolJson, "utf8"));
     expect(doc.kind).toBe("tool");
@@ -1421,21 +1418,21 @@ describe("bin/skilldoc.js distill <tool-id> (integration)", () => {
     const result = spawnSync("node", [binPath, "--help"], { encoding: "utf8" });
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("skilldoc generate <tool>");
-    expect(result.stdout).toContain("skilldoc generate [--lock");
+    expect(result.stdout).toContain("skilldoc generate [--only");
   });
 
   it("help text shows ad-hoc and batch modes for distill", () => {
     const result = spawnSync("node", [binPath, "--help"], { encoding: "utf8" });
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("skilldoc distill <tool>");
-    expect(result.stdout).toContain("skilldoc distill [--lock");
+    expect(result.stdout).toContain("skilldoc distill [--only");
   });
 
   it("help text shows the run command with batch mode", () => {
     const result = spawnSync("node", [binPath, "--help"], { encoding: "utf8" });
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("skilldoc run <tool>");
-    expect(result.stdout).toContain("skilldoc run [--lock");
+    expect(result.stdout).toContain("skilldoc run [--only");
     expect(result.stdout).toContain("run        Run full pipeline");
   });
 
