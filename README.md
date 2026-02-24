@@ -202,50 +202,6 @@ skilldoc refresh --diff
 
 ---
 
-## Supported Tools
-
-### Development
-| Tool | Binary | Category |
-|------|--------|----------|
-| ✅ Git | `git` | Version control |
-| ✅ GitHub CLI | `gh` | Code review / CI |
-| ✅ ripgrep | `rg` | Search |
-
-### Data & APIs
-| Tool | Binary | Category |
-|------|--------|----------|
-| ✅ jq | `jq` | JSON processing |
-| ✅ curl | `curl` | HTTP requests |
-
-### Python Tooling
-| Tool | Binary | Category |
-|------|--------|----------|
-| ✅ uv | `uv` | Package management |
-| ✅ uvx | `uvx` | Ephemeral tool runner |
-
-### Deployment & Infrastructure
-| Tool | Binary | Category |
-|------|--------|----------|
-| ✅ Railway CLI | `railway` | Cloud deployment |
-| ✅ Vercel CLI | `vercel` | Frontend deployment |
-| ✅ Supabase CLI | `supabase` | Database / backend |
-
-### Media
-| Tool | Binary | Category |
-|------|--------|----------|
-| ✅ FFmpeg | `ffmpeg` | Video / audio processing |
-
-### AI & Agents
-| Tool | Binary | Category |
-|------|--------|----------|
-| ✅ Claude Code | `claude` | AI coding agent |
-| ✅ agent-browser | `agent-browser` | Browser automation |
-| ✅ Ralphy | `ralphy` | AI coding loop runner |
-
-Works with any CLI that has `--help` output. Add custom tools via registry entry (see [Configuration](#configuration)).
-
----
-
 ## Validation
 
 Skills are evaluated by asking an LLM to complete realistic tasks using only the generated SKILL.md. Each scenario is graded 1–10 for correctness and absence of hallucinations.
