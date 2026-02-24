@@ -6981,7 +6981,7 @@ import { createHash } from "node:crypto";
 // package.json
 var package_default = {
   name: "skilldoc",
-  version: "0.2.1",
+  version: "0.3.0",
   description: "Auto-generate agent-optimized CLI skill docs from --help output — verified, compressed, ready for AGENTS.md",
   keywords: [
     "ai-agents",
