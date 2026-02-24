@@ -1,32 +1,79 @@
 # AGENTS.md — skilldoc
 
-## What This Is
-CLI that auto-generates agent-optimized skill documentation from CLI `--help` output. Two-step pipeline: extract raw docs → distill into lean (~2KB) skills.
+CLI tool that generates agent-optimized skill documentation from CLI `--help` output.
 
-## Architecture
-- `src/parser.ts` — Parses raw `--help` text into structured sections (commands, flags, env, examples)
-- `src/render.ts` — Renders parsed data to markdown/JSON/YAML
-- `src/cli.ts` — CLI entry point (`generate`, `init`, `distill`, `validate`)
-- `src/config.ts` — Registry loading and config
-- `src/types.ts` — TypeScript types
-- `src/usage.ts` — Usage line parsing
-- `src/utils.ts` — String utilities
-- `bin/skilldoc.js` — CLI binary
+## Pipeline
+
+```
+--help output → generate → raw docs (~10-50KB)
+                         → distill (LLM) → SKILL.md + docs/ (~7KB total)
+                         → validate (LLM-as-agent, 4 scenarios × N models)
+                         → auto-redist if score < threshold
+```
+
+## CLI Commands
+
+| Command | Purpose |
+|---------|---------|
+| `add <tool>` | Full pipeline + lock entry + optional agent symlinks |
+| `list` | Show installed skills from lock file |
+| `update [tool]` | Rebuild stale skills (version/help changed) |
+| `remove <tool>` | Remove skill, lock entry, docs, and symlinks |
+| `run <tool>` | generate → distill → validate in one shot |
+| `run` (no arg) | Batch run from registry |
+| `generate <tool>` | Parse --help into structured docs |
+| `distill <tool>` | LLM-compress raw docs into skill files |
+| `refresh` | Re-run generate+distill for changed tools |
+| `validate <tool>` | LLM-based scenario evaluation |
+| `report` | Aggregate quality report |
+| `config` | Show/set LLM provider config |
+| `init` | Create starter registry |
+
+## Source Layout
+
+| File | Purpose |
+|------|---------|
+| `src/cli.ts` | CLI entry point, all command handlers, flag parsing, subcommand detection |
+| `src/parser.ts` | Parse raw --help output into structured sections |
+| `src/render.ts` | Render parsed docs to markdown |
+| `src/usage.ts` | Extract usage patterns and flags from usage lines |
+| `src/distill.ts` | LLM distillation: prompt building, output parsing, size checks |
+| `src/validate.ts` | LLM-as-agent validation: scenarios, scoring, groundedness |
+| `src/llm.ts` | Multi-provider LLM abstraction (7 providers: CLI + API) |
+| `src/config.ts` | Registry YAML loading and tool normalization |
+| `src/lock.ts` | Lock file (track installed skills, versions, help hashes) |
+| `src/agents.ts` | Agent target detection and symlink management |
+| `src/types.ts` | Shared type definitions |
+| `src/utils.ts` | File I/O helpers (expandHome, ensureDir, writeFileEnsured) |
 
 ## Key Paths
-- **Registry:** `~/.agents/skilldoc/registry.yaml` — defines tools to document
-- **Raw output:** `~/.agents/docs/skilldoc/<tool-id>/` — extracted md/json/yaml
-- **Skill output:** `~/.agents/skills/<tool-id>/` — distilled agent-optimized skills
 
-## PRD
-See `PRD.md` for the full task checklist. Work through tasks in order.
+| Path | Purpose |
+|------|---------|
+| `~/.skilldoc/config.yaml` | LLM provider config (provider, model, apiKey) |
+| `~/.skilldoc/docs/` | Raw generated docs |
+| `~/.skilldoc/registry.yaml` | Tool registry for batch operations |
+| `~/.skilldoc/distill-config.yaml` | Distillation prompt tuning |
+| `~/.skills/` | Canonical skill output directory |
+| `~/.skills/skilldoc-lock.yaml` | Lock file tracking installed skills |
 
-## Conventions
-- TypeScript, built with `bun`
-- Tests in `test/` — run with `bun test`
-- Build with `bun run build`
-- Help output captured with `LANG=C LC_ALL=C NO_COLOR=1` for determinism
-- Don't overwrite skills that have `generated-from: skilldoc` marker absent (hand-written skills)
+## LLM Provider Flow
 
-## Quality Bar
-Generated skills must score 9/10+ across multiple LLMs on practical task completion. See PRD Phase 4 for validation details.
+Both `distill.ts` and `validate.ts` use the shared `llm.ts` abstraction. Provider resolution order:
+1. `~/.skilldoc/config.yaml` explicit provider
+2. CLI binary detection (claude → codex → gemini)
+3. Environment variable API keys (ANTHROPIC_API_KEY → OPENAI_API_KEY → etc.)
+
+## Testing
+
+```bash
+bun test              # 723+ tests
+bun run build         # bundle to bin/skilldoc.js
+bunx tsc --noEmit     # type check
+```
+
+Tests use injected `exec` functions — no real LLM calls. The `LLMCaller` type in distill.ts and `ExecFn` in validate.ts allow full mock injection.
+
+## Build
+
+Single-file bundle via `bun build src/cli.ts --outfile bin/skilldoc.js`. Standalone binaries via GitHub Actions release workflow.

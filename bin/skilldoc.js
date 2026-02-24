@@ -8042,6 +8042,7 @@ import path from "node:path";
 import { spawnSync as spawnSync2 } from "node:child_process";
 import { readFile as readFile2 } from "node:fs/promises";
 import { existsSync, readdirSync, statSync } from "node:fs";
+var defaultExec2 = (command, args, options) => spawnSync2(command, [...args], options);
 var DEFAULT_SKILLS_DIR = "~/.skills";
 var DEFAULT_DOCS_DIR = "~/.skilldoc/docs";
 var DEFAULT_MODEL = "claude-opus-4-6";
@@ -8069,7 +8070,7 @@ var DEFAULT_PROMPT_CONFIG = {
 };
 async function distillTool(options) {
   const { toolId, binary, docsDir, outDir, model, llmCaller, feedback, promptConfig = {} } = options;
-  const caller = llmCaller ?? ((rawDocs, tid, m, fb) => callLLM2(rawDocs, tid, m, defaultExec2, fb, promptConfig));
+  const caller = llmCaller ?? ((rawDocs, tid, m, fb) => callLLM2(rawDocs, tid, m, undefined, fb, promptConfig));
   const skillPath = path.join(outDir, "SKILL.md");
   if (existsSync(skillPath)) {
     const existing = await readFile2(skillPath, "utf8");
@@ -8277,25 +8278,17 @@ ${feedback}
 
 Fix the above gaps in your new distillation.` : ""}`;
 }
-var defaultExec2 = (command, args, options) => spawnSync2(command, [...args], options);
-function callLLM2(rawDocs, toolId, model, exec = defaultExec2, feedback, promptConfig) {
+function callLLM2(rawDocs, toolId, model, exec, feedback, promptConfig) {
   const prompt = buildPrompt(rawDocs, toolId, feedback, promptConfig);
-  const result = exec("claude", ["-p", "--output-format", "text", "--model", model, "--no-session-persistence"], {
-    input: prompt,
-    encoding: "utf8",
-    maxBuffer: 10 * 1024 * 1024
-  });
-  if (result.error) {
-    throw new Error(`Failed to run claude: ${result.error.message}`);
-  }
-  if (result.status !== 0) {
-    const stderr = result.stderr ?? "";
-    throw new Error(`claude exited with code ${result.status}${stderr ? `: ${stderr.slice(0, 200)}` : ""}`);
-  }
-  const output = result.stdout ?? "";
-  if (!output.trim()) {
-    const stderr = result.stderr ?? "";
-    throw new Error(`claude returned empty output${stderr ? `: ${stderr.slice(0, 200)}` : ""}`);
+  let output;
+  if (exec) {
+    const caller = createLLMCaller({
+      exec,
+      checkBinary: (name) => name === "claude"
+    });
+    output = caller.callLLM(prompt, { model });
+  } else {
+    output = callLLM(prompt, { model });
   }
   return parseDistilledOutput(output);
 }

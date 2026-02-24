@@ -16,7 +16,6 @@ export type LockFile = {
   skills: Record<string, LockEntry>;
 };
 
-export const LOCK_FILE_NAME = "skilldoc-lock.yaml";
 export const DEFAULT_LOCK_PATH = "~/.skills/skilldoc-lock.yaml";
 
 function resolveLockPath(lockPath?: string): string {

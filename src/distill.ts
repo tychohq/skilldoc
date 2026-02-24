@@ -4,6 +4,11 @@ import { readFile } from "node:fs/promises";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import YAML from "yaml";
 import { writeFileEnsured, ensureDir, expandHome } from "./utils.js";
+import { callLLM as callSharedLLM, createLLMCaller, type ExecFn, type ExecResult } from "./llm.js";
+
+/** Default exec for detectVersion — runs CLI binaries, not the LLM. */
+const defaultExec: ExecFn = (command, args, options) =>
+  spawnSync(command, [...args], options) as ExecResult;
 
 const DEFAULT_SKILLS_DIR = "~/.skills";
 const DEFAULT_DOCS_DIR = "~/.skilldoc/docs";
@@ -118,7 +123,7 @@ export type DistillOptions = {
 
 export async function distillTool(options: DistillOptions): Promise<DistillResult> {
   const { toolId, binary, docsDir, outDir, model, llmCaller, feedback, promptConfig = {} } = options;
-  const caller: LLMCaller = llmCaller ?? ((rawDocs, tid, m, fb) => callLLM(rawDocs, tid, m, defaultExec, fb, promptConfig));
+  const caller: LLMCaller = llmCaller ?? ((rawDocs, tid, m, fb) => callLLM(rawDocs, tid, m, undefined, fb, promptConfig));
 
   // Check if skill exists and was hand-written (no marker)
   const skillPath = path.join(outDir, "SKILL.md");
@@ -367,51 +372,34 @@ Return ONLY valid JSON, no markdown fences around the JSON itself.${extraInstruc
   }`;
 }
 
-type ExecResult = {
-  error?: Error;
-  stdout: string | null;
-  stderr: string | null;
-  status: number | null;
-};
-
-type ExecFn = (
-  command: string,
-  args: ReadonlyArray<string>,
-  options: { input: string; encoding: "utf8"; maxBuffer: number }
-) => ExecResult;
-
-const defaultExec: ExecFn = (command, args, options) =>
-  spawnSync(command, [...args], options) as ExecResult;
-
+/**
+ * Call the LLM to distill raw docs into structured content.
+ *
+ * Uses the shared llm.ts provider abstraction, so it respects
+ * ~/.skilldoc/config.yaml provider settings (claude-cli, openai, gemini, etc.).
+ *
+ * The `exec` parameter is passed through to createLLMCaller for testability.
+ */
 export function callLLM(
   rawDocs: string,
   toolId: string,
   model: string,
-  exec: ExecFn = defaultExec,
+  exec?: ExecFn,
   feedback?: string,
   promptConfig?: DistillPromptConfig
 ): DistilledContent {
   const prompt = buildPrompt(rawDocs, toolId, feedback, promptConfig);
 
-  const result = exec("claude", ["-p", "--output-format", "text", "--model", model, "--no-session-persistence"], {
-    input: prompt,
-    encoding: "utf8",
-    maxBuffer: 10 * 1024 * 1024,
-  });
-
-  if (result.error) {
-    throw new Error(`Failed to run claude: ${result.error.message}`);
-  }
-
-  if (result.status !== 0) {
-    const stderr = result.stderr ?? "";
-    throw new Error(`claude exited with code ${result.status}${stderr ? `: ${stderr.slice(0, 200)}` : ""}`);
-  }
-
-  const output = result.stdout ?? "";
-  if (!output.trim()) {
-    const stderr = result.stderr ?? "";
-    throw new Error(`claude returned empty output${stderr ? `: ${stderr.slice(0, 200)}` : ""}`);
+  let output: string;
+  if (exec) {
+    // Test-injected exec: create a caller with it (same pattern as validate.ts)
+    const caller = createLLMCaller({
+      exec,
+      checkBinary: (name: string) => name === "claude",
+    });
+    output = caller.callLLM(prompt, { model });
+  } else {
+    output = callSharedLLM(prompt, { model });
   }
 
   return parseDistilledOutput(output);
