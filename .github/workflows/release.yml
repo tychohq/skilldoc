@@ -39,13 +39,13 @@ jobs:
 
       - name: Build standalone binary
         run: |
-          bun build src/cli.ts --compile --outfile agent-tool-docs --target ${{ matrix.bun_target }}
-          tar -czf agent-tool-docs-${{ matrix.target }}.tar.gz agent-tool-docs
+          bun build src/cli.ts --compile --outfile skilldoc --target ${{ matrix.bun_target }}
+          tar -czf skilldoc-${{ matrix.target }}.tar.gz skilldoc
 
       - uses: actions/upload-artifact@v4
         with:
-          name: agent-tool-docs-${{ matrix.target }}
-          path: agent-tool-docs-${{ matrix.target }}.tar.gz
+          name: skilldoc-${{ matrix.target }}
+          path: skilldoc-${{ matrix.target }}.tar.gz
 
   release:
     needs: build
