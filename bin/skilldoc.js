@@ -6971,12 +6971,12 @@ var require_dist = __commonJS((exports) => {
 });
 
 // src/cli.ts
-var import_yaml4 = __toESM(require_dist(), 1);
-import path3 from "node:path";
+var import_yaml5 = __toESM(require_dist(), 1);
+import path4 from "node:path";
 import os2 from "node:os";
 import { spawnSync as spawnSync4 } from "node:child_process";
 import { readdir as readdir2, rm } from "node:fs/promises";
-import { writeFileSync, unlinkSync, existsSync as existsSync3 } from "node:fs";
+import { writeFileSync, unlinkSync as unlinkSync2, existsSync as existsSync4 } from "node:fs";
 import { createHash } from "node:crypto";
 // package.json
 var package_default = {
@@ -8390,10 +8390,171 @@ function extractDistillConfig(raw) {
   return config;
 }
 
-// src/validate.ts
+// src/lock.ts
+var import_yaml4 = __toESM(require_dist(), 1);
+import { readFile as readFile3 } from "node:fs/promises";
+var DEFAULT_LOCK_PATH = "~/.skills/skilldoc-lock.yaml";
+function resolveLockPath(lockPath) {
+  return expandHome(lockPath ?? DEFAULT_LOCK_PATH);
+}
+async function loadLock(lockPath) {
+  const path2 = resolveLockPath(lockPath);
+  let raw;
+  try {
+    raw = await readFile3(path2, "utf8");
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return { skills: {} };
+    }
+    throw error;
+  }
+  const parsed = import_yaml4.default.parse(raw);
+  if (!parsed || typeof parsed !== "object") {
+    return { skills: {} };
+  }
+  const { skills } = parsed;
+  if (!skills || typeof skills !== "object" || Array.isArray(skills)) {
+    return { skills: {} };
+  }
+  return { skills: { ...skills } };
+}
+async function saveLock(lock, lockPath) {
+  const path2 = resolveLockPath(lockPath);
+  await writeFileEnsured(path2, import_yaml4.default.stringify(lock));
+}
+function updateLockEntry(lock, toolId, entry) {
+  const existing = lock.skills[toolId];
+  lock.skills[toolId] = { ...existing ?? {}, ...entry };
+}
+function removeLockEntry(lock, toolId) {
+  const removed = lock.skills[toolId];
+  if (removed === undefined) {
+    return;
+  }
+  delete lock.skills[toolId];
+  return removed;
+}
+function isStale(entry, currentVersion, currentHelpHash) {
+  return entry.version !== currentVersion || entry.helpHash !== currentHelpHash;
+}
+
+// src/agents.ts
+import { existsSync as existsSync2, lstatSync, symlinkSync, unlinkSync, readlinkSync } from "node:fs";
 import path2 from "node:path";
-import { existsSync as existsSync2 } from "node:fs";
-import { readFile as readFile3, readdir } from "node:fs/promises";
+var DEFAULT_CANONICAL_SKILLS_DIR = "~/.skills";
+var AGENT_TARGETS = [
+  {
+    name: "claude",
+    flag: "--claude",
+    skillsDir: "~/.claude/skills",
+    detect: () => existsSync2(expandHome("~/.claude"))
+  },
+  {
+    name: "cursor",
+    flag: "--cursor",
+    skillsDir: "~/.cursor/rules",
+    detect: () => existsSync2(expandHome("~/.cursor"))
+  },
+  {
+    name: "codex",
+    flag: "--codex",
+    skillsDir: "~/.codex/skills",
+    detect: () => existsSync2(expandHome("~/.codex"))
+  },
+  {
+    name: "openclaw",
+    flag: "--openclaw",
+    skillsDir: "~/.openclaw/workspace/skills",
+    detect: () => existsSync2(expandHome("~/.openclaw"))
+  }
+];
+function resolveAbsolute(input) {
+  return path2.resolve(expandHome(input));
+}
+function tryLstat(pathname) {
+  try {
+    return lstatSync(pathname);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+}
+function isSameLinkTarget(linkPath, expectedTarget) {
+  const currentTarget = readlinkSync(linkPath);
+  const resolvedCurrentTarget = path2.resolve(path2.dirname(linkPath), currentTarget);
+  return resolvedCurrentTarget === expectedTarget;
+}
+async function linkSkill(toolId, linkDir, canonicalSkillsDir = DEFAULT_CANONICAL_SKILLS_DIR) {
+  const sourceDir = path2.join(resolveAbsolute(canonicalSkillsDir), toolId);
+  if (!existsSync2(sourceDir)) {
+    throw new Error(`Skill directory does not exist: ${sourceDir}`);
+  }
+  const resolvedLinkDir = resolveAbsolute(linkDir);
+  await ensureDir(resolvedLinkDir);
+  const targetPath = path2.join(resolvedLinkDir, toolId);
+  const stat = tryLstat(targetPath);
+  if (stat) {
+    if (stat.isSymbolicLink()) {
+      if (isSameLinkTarget(targetPath, sourceDir)) {
+        return null;
+      }
+      const currentTarget = path2.resolve(path2.dirname(targetPath), readlinkSync(targetPath));
+      throw new Error(`Refusing to overwrite existing symlink: ${targetPath} -> ${currentTarget}`);
+    }
+    throw new Error(`Refusing to overwrite existing non-symlink path: ${targetPath}`);
+  }
+  symlinkSync(sourceDir, targetPath, "dir");
+  return targetPath;
+}
+function removeLink(linkPath) {
+  const stat = tryLstat(linkPath);
+  if (!stat) {
+    return false;
+  }
+  if (!stat.isSymbolicLink()) {
+    return false;
+  }
+  unlinkSync(linkPath);
+  return true;
+}
+function resolveAgentFlag(flag) {
+  return AGENT_TARGETS.find((target) => target.flag === flag);
+}
+function detectAgents() {
+  return AGENT_TARGETS.filter((target) => target.detect());
+}
+async function linkSkillToAgent(toolId, agent, canonicalSkillsDir) {
+  return linkSkill(toolId, agent.skillsDir, canonicalSkillsDir);
+}
+async function linkSkillToDir(toolId, dirPath, canonicalSkillsDir) {
+  return linkSkill(toolId, dirPath, canonicalSkillsDir);
+}
+function unlinkAll(toolId, linkPaths) {
+  const removed = [];
+  for (const rawPath of linkPaths) {
+    const resolvedPath = resolveAbsolute(rawPath);
+    const candidates = new Set;
+    if (path2.basename(resolvedPath) === toolId) {
+      candidates.add(resolvedPath);
+    } else {
+      candidates.add(path2.join(resolvedPath, toolId));
+      candidates.add(resolvedPath);
+    }
+    for (const candidate of candidates) {
+      if (removeLink(candidate)) {
+        removed.push(candidate);
+      }
+    }
+  }
+  return removed;
+}
+
+// src/validate.ts
+import path3 from "node:path";
+import { existsSync as existsSync3 } from "node:fs";
+import { readFile as readFile4, readdir } from "node:fs/promises";
 import { spawnSync as spawnSync3 } from "node:child_process";
 var DEFAULT_THRESHOLD = 9;
 var DEFAULT_VALIDATION_MODELS = ["claude-sonnet-4-6", "claude-opus-4-6"];
@@ -8616,11 +8777,11 @@ async function validateSkillMultiModel(options) {
   if (models.length === 0) {
     throw new Error("At least one model must be specified");
   }
-  const skillPath = path2.join(skillsDir, toolId, "SKILL.md");
-  if (!existsSync2(skillPath)) {
+  const skillPath = path3.join(skillsDir, toolId, "SKILL.md");
+  if (!existsSync3(skillPath)) {
     throw new Error(`No SKILL.md found for ${toolId} at ${skillPath}`);
   }
-  const skillContent = await readFile3(skillPath, "utf8");
+  const skillContent = await readFile4(skillPath, "utf8");
   const primaryModel = models[0];
   const scenarios = generateScenarios(skillContent, toolId, primaryModel, exec);
   const reports = [];
@@ -8754,7 +8915,7 @@ Please improve the skill to address these gaps.`);
 }
 var VALIDATION_REPORT_FILE = "validation-report.json";
 async function saveValidationReport(report, skillsDir) {
-  const reportPath = path2.join(skillsDir, report.toolId, VALIDATION_REPORT_FILE);
+  const reportPath = path3.join(skillsDir, report.toolId, VALIDATION_REPORT_FILE);
   await writeFileEnsured(reportPath, JSON.stringify(report, null, 2));
   return reportPath;
 }
@@ -8768,11 +8929,11 @@ async function loadQualityReports(skillsDir) {
     return { entries: [], skillsDir, generatedAt: new Date().toISOString() };
   }
   for (const toolId of toolDirs) {
-    const reportPath = path2.join(skillsDir, toolId, VALIDATION_REPORT_FILE);
-    if (!existsSync2(reportPath))
+    const reportPath = path3.join(skillsDir, toolId, VALIDATION_REPORT_FILE);
+    if (!existsSync3(reportPath))
       continue;
     try {
-      const raw = await readFile3(reportPath, "utf8");
+      const raw = await readFile4(reportPath, "utf8");
       const parsed = JSON.parse(raw);
       const entry = {
         toolId: parsed.toolId,
@@ -8844,6 +9005,10 @@ var DEFAULT_SKILLS_OUT_DIR = DEFAULT_SKILLS_DIR;
 var HELP_TEXT = `skilldoc
 
 Usage:
+  skilldoc add <tool> [--claude] [--cursor] [--codex] [--openclaw] [--global] [--dir <path>]
+  skilldoc list
+  skilldoc update [tool]
+  skilldoc remove <tool>
   skilldoc run <tool>                         # generate + distill + validate in one shot
   skilldoc run [--registry <path>] ...        # full pipeline for all registry tools
   skilldoc generate <tool>                    # generate docs for a single tool
@@ -8860,6 +9025,10 @@ Usage:
   skilldoc --help
 
 Commands:
+  add        Run full pipeline for one tool and optionally link skill into agent directories
+  list       List installed skills from ${DEFAULT_LOCK_PATH}
+  update     Rebuild stale skills when version/help output changed
+  remove     Remove one installed skill, lock entry, docs, and tracked links
   run        Run full pipeline: generate → distill → validate (recommended start here)
   generate   Generate docs for a single tool (ad-hoc) or all tools in the registry
   distill    Distill raw docs into agent-optimized skills (SKILL.md + docs/)
@@ -8881,6 +9050,12 @@ Options:
   --threshold <n>         Minimum passing score for validate (default: ${DEFAULT_THRESHOLD})
   --distill-config <path> Path to distill prompt config YAML (default: ${DEFAULT_DISTILL_CONFIG_PATH})
   --auto-redist           Re-run distill with feedback if validation fails
+  --claude                Link generated skill into ~/.claude/skills
+  --cursor                Link generated skill into ~/.cursor/rules
+  --codex                 Link generated skill into ~/.codex/skills
+  --openclaw              Link generated skill into ~/.openclaw/workspace/skills
+  --global                Link generated skill to all detected agent targets
+  --dir <path>            Link generated skill into a custom directory
   --force                 Overwrite registry on init
   --diff                  Show diff of skill output after refresh
   -h, --help              Show this help
@@ -8907,6 +9082,37 @@ async function main() {
     } else {
       await handleRunBatch(flags);
     }
+    return;
+  }
+  if (command === "add") {
+    const positional = extractPositionalArgs(args.slice(1));
+    if (positional.length === 0) {
+      console.error("add requires a <tool> argument");
+      process.exit(1);
+    }
+    const result = await handleAdd(positional[0], flags);
+    if (!result.passed)
+      process.exit(1);
+    return;
+  }
+  if (command === "list") {
+    await handleList();
+    return;
+  }
+  if (command === "update") {
+    const positional = extractPositionalArgs(args.slice(1));
+    const allPassed = await handleUpdate(positional[0], flags);
+    if (!allPassed)
+      process.exit(1);
+    return;
+  }
+  if (command === "remove") {
+    const positional = extractPositionalArgs(args.slice(1));
+    if (positional.length === 0) {
+      console.error("remove requires a <tool> argument");
+      process.exit(1);
+    }
+    await handleRemove(positional[0]);
     return;
   }
   if (command === "generate") {
@@ -8959,7 +9165,8 @@ var VALUE_FLAGS = new Set([
   "--threshold",
   "--distill-config",
   "--provider",
-  "--api-key"
+  "--api-key",
+  "--dir"
 ]);
 function extractPositionalArgs(args) {
   const positional = [];
@@ -8980,11 +9187,11 @@ function parseFlags(args) {
     const arg = args[i];
     if (!arg.startsWith("-"))
       continue;
-    if (arg === "--force" || arg === "--auto-redist" || arg === "--diff" || arg === "--reset") {
+    if (arg === "--force" || arg === "--auto-redist" || arg === "--diff" || arg === "--reset" || arg === "--claude" || arg === "--cursor" || arg === "--codex" || arg === "--openclaw" || arg === "--global") {
       flags[arg.replace(/^--/, "")] = true;
       continue;
     }
-    if (arg === "--registry" || arg === "--out" || arg === "--only" || arg === "--docs" || arg === "--model" || arg === "--models" || arg === "--skills" || arg === "--threshold" || arg === "--distill-config" || arg === "--provider" || arg === "--api-key") {
+    if (arg === "--registry" || arg === "--out" || arg === "--only" || arg === "--docs" || arg === "--model" || arg === "--models" || arg === "--skills" || arg === "--threshold" || arg === "--distill-config" || arg === "--provider" || arg === "--api-key" || arg === "--dir") {
       const value = args[i + 1];
       if (!value || value.startsWith("-")) {
         throw new Error(`Missing value for ${arg}`);
@@ -9000,6 +9207,35 @@ function parseFlags(args) {
     }
   }
   return flags;
+}
+function todayDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+async function resolveToolBinary(toolId, flags) {
+  const registryPath = expandHome(typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY);
+  const registryTool = await lookupRegistryTool(registryPath, toolId);
+  return registryTool?.binary ?? toolId;
+}
+function collectRequestedAgents(flags) {
+  const requested = [];
+  for (const target of AGENT_TARGETS) {
+    const key = target.flag.replace(/^--/, "");
+    if (flags[key] !== true)
+      continue;
+    const resolved = resolveAgentFlag(target.flag);
+    if (resolved)
+      requested.push(resolved);
+  }
+  if (flags.global === true) {
+    for (const target of detectAgents()) {
+      requested.push(target);
+    }
+  }
+  const deduped = new Map;
+  for (const target of requested) {
+    deduped.set(target.name, target);
+  }
+  return [...deduped.values()];
 }
 async function handleInit(flags) {
   const registryPath = expandHome(typeof flags.registry === "string" ? flags.registry : DEFAULT_REGISTRY);
@@ -9068,8 +9304,8 @@ async function handleDistill(flags, toolId, distillFn = distillTool) {
   const promptConfig = await loadDistillConfig(distillConfigPath);
   let tools;
   if (toolId) {
-    const rawDocsPath = path3.join(docsDir, toolId, "tool.md");
-    if (!existsSync3(rawDocsPath)) {
+    const rawDocsPath = path4.join(docsDir, toolId, "tool.md");
+    if (!existsSync4(rawDocsPath)) {
       console.error(`Error: no raw docs found for "${toolId}". Run "skilldoc generate ${toolId}" first.`);
       process.exit(1);
     }
@@ -9083,7 +9319,7 @@ async function handleDistill(flags, toolId, distillFn = distillTool) {
   let generated = 0;
   let skipped = 0;
   for (const tool of tools) {
-    const outDir = path3.join(outBase, tool.id);
+    const outDir = path4.join(outBase, tool.id);
     process.stdout.write(`distill ${tool.id}... `);
     const toolPromptConfig = applyComplexity(promptConfig, tool.complexity);
     const result = await distillFn({ toolId: tool.id, binary: tool.binary, docsDir, outDir, model, promptConfig: toolPromptConfig });
@@ -9174,10 +9410,10 @@ var CONFIG_TEMPLATE = `# skilldoc LLM configuration
 `;
 async function handleConfig(flags) {
   const configPath = expandHome(DEFAULT_LLM_CONFIG_PATH);
-  const configDir = path3.dirname(configPath);
+  const configDir = path4.dirname(configPath);
   if (flags.reset === true) {
     try {
-      unlinkSync(configPath);
+      unlinkSync2(configPath);
       console.log("Deleted " + DEFAULT_LLM_CONFIG_PATH);
     } catch {
       console.log("No config file found at " + DEFAULT_LLM_CONFIG_PATH);
@@ -9196,7 +9432,7 @@ async function handleConfig(flags) {
     let existing = {};
     try {
       const raw = await readText(configPath);
-      const parsed = import_yaml4.default.parse(raw);
+      const parsed = import_yaml5.default.parse(raw);
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
         existing = parsed;
       }
@@ -9208,7 +9444,7 @@ async function handleConfig(flags) {
     if (apiKey)
       existing.apiKey = apiKey;
     await ensureDir(configDir);
-    const yamlContent = import_yaml4.default.stringify(existing);
+    const yamlContent = import_yaml5.default.stringify(existing);
     await writeFileEnsured(configPath, CONFIG_TEMPLATE + yamlContent);
     console.log("Updated " + DEFAULT_LLM_CONFIG_PATH);
     for (const [key, val] of Object.entries(existing)) {
@@ -9222,7 +9458,7 @@ async function handleConfig(flags) {
   let configExists = false;
   try {
     const raw = await readText(configPath);
-    const parsed = import_yaml4.default.parse(raw);
+    const parsed = import_yaml5.default.parse(raw);
     if (parsed && typeof parsed === "object") {
       configExists = true;
       console.log("Config: " + DEFAULT_LLM_CONFIG_PATH);
@@ -9283,7 +9519,7 @@ async function handleRun(toolId, flags, {
     const distillConfigPath = typeof flags["distill-config"] === "string" ? flags["distill-config"] : undefined;
     const promptConfig = await loadDistillConfig(distillConfigPath);
     const feedback = buildValidationFeedback(report);
-    const outDir = path3.join(skillsDir, toolId);
+    const outDir = path4.join(skillsDir, toolId);
     console.log(`
 — auto-redist ${toolId}`);
     await distillToolFn({ toolId, binary: toolId, docsDir, outDir, model, feedback, promptConfig });
@@ -9293,7 +9529,7 @@ async function handleRun(toolId, flags, {
     console.log(formatMultiModelReport(report));
     await saveValidationReport(report, skillsDir);
   }
-  const skillPath = path3.join(skillsDir, toolId, "SKILL.md");
+  const skillPath = path4.join(skillsDir, toolId, "SKILL.md");
   if (report.passed) {
     console.log(`
 Pipeline complete — ${skillPath} (score: ${report.overallAverageScore.toFixed(1)})`);
@@ -9305,6 +9541,120 @@ Validation failed (score: ${report.overallAverageScore.toFixed(1)}, threshold: $
     }
   }
   return { toolId, passed: report.passed, score: report.overallAverageScore, skillPath };
+}
+async function handleAdd(toolId, flags) {
+  const runResult = await handleRun(toolId, flags);
+  const lock = await loadLock();
+  const cliName = await resolveToolBinary(toolId, flags);
+  const version = detectVersion(cliName) ?? "unknown";
+  const helpHash = computeHelpHashForBinary(cliName);
+  const existingLinks = lock.skills[toolId]?.links ?? [];
+  const links = [...existingLinks];
+  const requestedAgents = collectRequestedAgents(flags);
+  for (const agent of requestedAgents) {
+    const linkedPath = await linkSkillToAgent(toolId, agent);
+    links.push(linkedPath ?? path4.join(expandHome(agent.skillsDir), toolId));
+  }
+  if (typeof flags.dir === "string") {
+    const linkedPath = await linkSkillToDir(toolId, flags.dir);
+    links.push(linkedPath ?? path4.join(path4.resolve(expandHome(flags.dir)), toolId));
+  }
+  const dedupedLinks = [...new Set(links)];
+  updateLockEntry(lock, toolId, {
+    cliName,
+    version,
+    helpHash,
+    source: "help",
+    syncedAt: todayDate(),
+    generator: "skilldoc",
+    links: dedupedLinks
+  });
+  await saveLock(lock);
+  console.log(`
+Added ${toolId}`);
+  console.log(`  Lock: ${DEFAULT_LOCK_PATH}`);
+  console.log(`  Binary: ${cliName}`);
+  console.log(`  Version: ${version}`);
+  console.log(`  Links: ${dedupedLinks.length}`);
+  for (const linkPath of dedupedLinks) {
+    console.log(`    - ${linkPath}`);
+  }
+  return { ...runResult, cliName, version, helpHash, links: dedupedLinks };
+}
+async function handleList() {
+  const lock = await loadLock();
+  const entries = Object.entries(lock.skills).sort(([a], [b]) => a.localeCompare(b));
+  if (entries.length === 0) {
+    console.log("No skills installed");
+    return;
+  }
+  for (const [toolId, entry] of entries) {
+    console.log(`${toolId}	${entry.version}	${entry.syncedAt}	links:${entry.links?.length ?? 0}`);
+  }
+}
+async function handleUpdate(toolId, flags) {
+  const lock = await loadLock();
+  const allToolIds = Object.keys(lock.skills).sort();
+  if (allToolIds.length === 0) {
+    console.log("No skills installed");
+    return true;
+  }
+  const targetToolIds = toolId ? [toolId] : allToolIds;
+  if (toolId && lock.skills[toolId] === undefined) {
+    console.log(`No installed skill found for ${toolId}`);
+    return true;
+  }
+  let staleCount = 0;
+  let allPassed = true;
+  for (const currentToolId of targetToolIds) {
+    const entry = lock.skills[currentToolId];
+    if (!entry)
+      continue;
+    const cliName = entry.cliName || currentToolId;
+    const currentVersion = detectVersion(cliName) ?? "unknown";
+    const currentHelpHash = computeHelpHashForBinary(cliName);
+    if (!isStale(entry, currentVersion, currentHelpHash))
+      continue;
+    staleCount += 1;
+    console.log(`Stale: ${currentToolId} (${entry.version} -> ${currentVersion})`);
+    const result = await handleRun(currentToolId, flags);
+    if (!result.passed) {
+      allPassed = false;
+    }
+    updateLockEntry(lock, currentToolId, {
+      cliName,
+      version: detectVersion(cliName) ?? currentVersion,
+      helpHash: computeHelpHashForBinary(cliName),
+      source: "help",
+      syncedAt: todayDate(),
+      generator: "skilldoc",
+      links: entry.links ?? []
+    });
+  }
+  if (staleCount === 0) {
+    console.log("All skills up to date");
+    return true;
+  }
+  await saveLock(lock);
+  console.log(`Updated lock: ${DEFAULT_LOCK_PATH}`);
+  return allPassed;
+}
+async function handleRemove(toolId) {
+  const lock = await loadLock();
+  const removedEntry = removeLockEntry(lock, toolId);
+  const removedLinks = removedEntry?.links ? unlinkAll(toolId, removedEntry.links) : [];
+  const skillDir = path4.join(expandHome(DEFAULT_SKILLS_DIR), toolId);
+  const docsDir = path4.join(expandHome(DEFAULT_DOCS_DIR), toolId);
+  await rm(skillDir, { recursive: true, force: true });
+  await rm(docsDir, { recursive: true, force: true });
+  await saveLock(lock);
+  console.log(`Removed ${toolId}`);
+  console.log(`  Skill dir: ${skillDir}`);
+  console.log(`  Raw docs: ${docsDir}`);
+  console.log(`  Symlinks removed: ${removedLinks.length}`);
+  for (const linkPath of removedLinks) {
+    console.log(`    - ${linkPath}`);
+  }
 }
 async function handleRunBatch(flags, {
   loadRegistryFn = loadRegistry,
@@ -9369,7 +9719,7 @@ auto-redist: re-distilling ${toolId} with validation feedback...
       console.error(`Tool ${toolId} not found in registry; skipping auto-redist`);
       return;
     }
-    const outDir = path3.join(skillsDir, toolId);
+    const outDir = path4.join(skillsDir, toolId);
     const result = await distillFn({ toolId, binary: tool.binary, docsDir, outDir, model, feedback });
     if (result.skipped) {
       console.log(`auto-redist skipped: ${result.skipReason}`);
@@ -9409,7 +9759,7 @@ async function handleGenerate(flags, binaryName) {
     const usageTokens = extractUsageTokens(parsed.usageLines, tool.binary);
     const usage = buildUsageDoc(parsed.usageLines, tool.binary);
     const candidateCommands = identifySubcommandCandidates(parsed.commands, tool.binary, runCommand);
-    const toolJsonPath = path3.join(outDir, tool.id, "tool.json");
+    const toolJsonPath = path4.join(outDir, tool.id, "tool.json");
     const storedCommandHelpArgs = tool.commandHelpArgs ? undefined : await readStoredCommandHelpArgs(toolJsonPath);
     const commandHelpArgs = tool.commandHelpArgs ?? resolveCommandHelpArgs(tool.binary, candidateCommands, parsed.commands, storedCommandHelpArgs, runCommand);
     const subcommandCandidates = candidateCommands.map((candidate) => ({
@@ -9447,13 +9797,13 @@ async function handleGenerate(flags, binaryName) {
       env: parsed.env,
       warnings
     };
-    const toolDir = path3.join(outDir, tool.id);
+    const toolDir = path4.join(outDir, tool.id);
     await ensureDir(toolDir);
-    await writeFileEnsured(path3.join(toolDir, "tool.json"), JSON.stringify(doc, null, 2));
-    await writeFileEnsured(path3.join(toolDir, "tool.yaml"), import_yaml4.default.stringify(doc));
-    await writeFileEnsured(path3.join(toolDir, "tool.md"), renderToolMarkdown(doc));
-    await rm(path3.join(toolDir, "raw.txt"), { force: true });
-    const commandsDir = path3.join(toolDir, "commands");
+    await writeFileEnsured(path4.join(toolDir, "tool.json"), JSON.stringify(doc, null, 2));
+    await writeFileEnsured(path4.join(toolDir, "tool.yaml"), import_yaml5.default.stringify(doc));
+    await writeFileEnsured(path4.join(toolDir, "tool.md"), renderToolMarkdown(doc));
+    await rm(path4.join(toolDir, "raw.txt"), { force: true });
+    const commandsDir = path4.join(toolDir, "commands");
     if (commandHelpArgs) {
       await generateCommandDocs(tool.id, tool.binary, commandHelpArgs, commands, toolDir, runCommand, tool.maxDepth ?? DEFAULT_MAX_DEPTH);
     } else {
@@ -9461,7 +9811,7 @@ async function handleGenerate(flags, binaryName) {
     }
   }
   const indexLines = await buildIndexLines(outDir);
-  await writeFileEnsured(path3.join(outDir, "index.md"), indexLines.join(`
+  await writeFileEnsured(path4.join(outDir, "index.md"), indexLines.join(`
 `));
   console.log(`Generated docs for ${tools.length} tool(s) in ${outDir}`);
 }
@@ -9474,8 +9824,8 @@ async function buildIndexLines(outDir) {
   for (const dirent of dirents) {
     if (!dirent.isDirectory())
       continue;
-    const toolJsonPath = path3.join(outDir, dirent.name, "tool.json");
-    if (!existsSync3(toolJsonPath))
+    const toolJsonPath = path4.join(outDir, dirent.name, "tool.json");
+    if (!existsSync4(toolJsonPath))
       continue;
     try {
       const raw = await readText(toolJsonPath);
@@ -9548,7 +9898,7 @@ function resolveCommandHelpArgs(binary, candidates, commands, storedCommandHelpA
   return detectCommandHelpArgs(binary, candidates, runFn);
 }
 async function generateCommandDocs(toolId, binary, commandHelpArgs, commands, toolDir, runFn = runCommand, maxDepth = DEFAULT_MAX_DEPTH) {
-  const commandsDir = path3.join(toolDir, "commands");
+  const commandsDir = path4.join(toolDir, "commands");
   await ensureDir(commandsDir);
   for (const command of commands) {
     const args = commandHelpArgs.map((arg) => arg.replace("{command}", command.name));
@@ -9592,11 +9942,11 @@ async function generateOneCommandDoc(toolId, binary, command, helpArgs, commands
     env: parsed.env,
     warnings
   };
-  const commandDir = path3.join(commandsDir, slugify(command.name));
+  const commandDir = path4.join(commandsDir, slugify(command.name));
   await ensureDir(commandDir);
-  await writeFileEnsured(path3.join(commandDir, "command.json"), JSON.stringify(doc, null, 2));
-  await writeFileEnsured(path3.join(commandDir, "command.yaml"), import_yaml4.default.stringify(doc));
-  await writeFileEnsured(path3.join(commandDir, "command.md"), renderCommandMarkdown(doc));
+  await writeFileEnsured(path4.join(commandDir, "command.json"), JSON.stringify(doc, null, 2));
+  await writeFileEnsured(path4.join(commandDir, "command.yaml"), import_yaml5.default.stringify(doc));
+  await writeFileEnsured(path4.join(commandDir, "command.md"), renderCommandMarkdown(doc));
   if (depth < maxDepth && parsed.commands.length > 0) {
     for (const subCmd of parsed.commands) {
       const subArgs = [...cmdPath, subCmd.name, "--help"];
@@ -9623,6 +9973,29 @@ function resolveBinary(name) {
   if (result.status !== 0)
     return null;
   return result.stdout.trim();
+}
+function computeHelpHashForBinary(binary) {
+  const env = {
+    ...process.env,
+    LANG: "C",
+    LC_ALL: "C",
+    TERM: "dumb",
+    NO_COLOR: "1",
+    CLICOLOR: "0",
+    PAGER: "cat",
+    GIT_PAGER: "cat",
+    MANPAGER: "cat",
+    LESS: "FRX"
+  };
+  const result = spawnSync4(binary, ["--help"], {
+    encoding: "utf8",
+    env
+  });
+  if (result.error) {
+    throw new Error(`Failed to run ${binary} --help: ${result.error.message}`);
+  }
+  const output = result.stdout ?? "";
+  return computeHash(output);
 }
 function runCommand(binary, args) {
   const env = {
@@ -9657,8 +10030,8 @@ function computeHash(text) {
   return createHash("sha256").update(text).digest("hex");
 }
 function computeSkillDiff(oldContent, newContent, label) {
-  const tmpA = path3.join(os2.tmpdir(), `td-diff-a-${Date.now()}`);
-  const tmpB = path3.join(os2.tmpdir(), `td-diff-b-${Date.now()}`);
+  const tmpA = path4.join(os2.tmpdir(), `td-diff-a-${Date.now()}`);
+  const tmpB = path4.join(os2.tmpdir(), `td-diff-b-${Date.now()}`);
   try {
     writeFileSync(tmpA, oldContent, "utf8");
     writeFileSync(tmpB, newContent, "utf8");
@@ -9666,10 +10039,10 @@ function computeSkillDiff(oldContent, newContent, label) {
     return (result.stdout ?? "").replace(tmpA, `a/${label}`).replace(tmpB, `b/${label}`);
   } finally {
     try {
-      unlinkSync(tmpA);
+      unlinkSync2(tmpA);
     } catch {}
     try {
-      unlinkSync(tmpB);
+      unlinkSync2(tmpB);
     } catch {}
   }
 }
@@ -9703,7 +10076,7 @@ async function getChangedTools(tools, docsDir, runFn) {
     const helpArgs = tool.helpArgs ?? ["--help"];
     const result = runFn(tool.binary, helpArgs);
     const currentHash = computeHash(result.output);
-    const toolJsonPath = path3.join(docsDir, tool.id, "tool.json");
+    const toolJsonPath = path4.join(docsDir, tool.id, "tool.json");
     const storedHash = await readStoredHash(toolJsonPath);
     if (currentHash !== storedHash) {
       changed.push(tool.id);
@@ -9742,14 +10115,14 @@ async function handleRefresh(flags, {
   const beforeSkills = {};
   if (showDiff) {
     for (const id of changedIds) {
-      beforeSkills[id] = await readFileFn(path3.join(skillsDir, id, "SKILL.md"));
+      beforeSkills[id] = await readFileFn(path4.join(skillsDir, id, "SKILL.md"));
     }
   }
   await generateFn({ ...flags, only: onlyFlag });
   await distillFn({ ...flags, only: onlyFlag });
   if (showDiff) {
     for (const id of changedIds) {
-      const after = await readFileFn(path3.join(skillsDir, id, "SKILL.md"));
+      const after = await readFileFn(path4.join(skillsDir, id, "SKILL.md"));
       const before = beforeSkills[id] ?? "";
       const afterContent = after ?? "";
       if (before === afterContent) {
@@ -9773,19 +10146,24 @@ export {
   lookupRegistryTool,
   identifySubcommandCandidates,
   hasSubcommandKeyword,
+  handleUpdate,
   handleRunBatch,
   handleRun,
+  handleRemove,
   handleRefresh,
+  handleList,
   handleInit,
   handleGenerate,
   handleDistill,
   handleConfig,
   handleAutoRedist,
+  handleAdd,
   getChangedTools,
   generateCommandDocs,
   extractPositionalArgs,
   detectCommandHelpArgs,
   computeSkillDiff,
+  computeHelpHashForBinary,
   computeHash,
   applyComplexity,
   DEFAULT_MAX_DEPTH,
