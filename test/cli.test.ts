@@ -2515,7 +2515,7 @@ describe("detectCommandHelpArgs", () => {
 
     const result = detectCommandHelpArgs("mycli", [{ name: "push", summary: "Manage pushes" }], runFn);
     expect(result).toBeUndefined();
-    expect(calls).toEqual(["push --help", "push -h", "help push"]);
+    expect(calls).toEqual(["push --help", "push -h", "push help", "help push"]);
   });
 
   it("selects the first pattern with Commands/Subcommands section", () => {

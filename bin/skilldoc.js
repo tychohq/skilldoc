@@ -7109,7 +7109,7 @@ function parseHelp(rawHelp) {
       usageLines.push(...trimEmpty(usageSection.lines));
     }
   }
-  const commandsSections = sections.filter((s) => /command/i.test(s.name));
+  const commandsSections = sections.filter((s) => /command|service/i.test(s.name));
   const examplesSection = findSection(sections, SECTION_NAMES.examples);
   const envSection = findSection(sections, SECTION_NAMES.env);
   const excludeSections = new Set([
@@ -7179,12 +7179,17 @@ function parseCommands(lines, requireIndent) {
     if (trimmed.startsWith("-"))
       continue;
     const match = trimmed.match(/^(\S+(?:\s+\S+)*)(?:\t|\s{2,})(.+)$/);
-    if (!match)
+    if (match) {
+      commands.push({
+        name: match[1].trim().replace(/:$/, ""),
+        summary: match[2].trim()
+      });
       continue;
-    commands.push({
-      name: match[1].trim().replace(/:$/, ""),
-      summary: match[2].trim()
-    });
+    }
+    const bulletMatch = trimmed.match(/^o\s+([a-z][a-z0-9-]*)\s*$/);
+    if (bulletMatch) {
+      commands.push({ name: bulletMatch[1], summary: "" });
+    }
   }
   return commands;
 }
@@ -9027,7 +9032,7 @@ async function main() {
     return;
   }
   if (command === "list") {
-    await handleList();
+    await handleList(flags);
     return;
   }
   if (command === "update") {
@@ -9043,7 +9048,7 @@ async function main() {
       console.error("remove requires a <tool> argument");
       process.exit(1);
     }
-    await handleRemove(positional[0]);
+    await handleRemove(positional[0], flags);
     return;
   }
   if (command === "generate") {
@@ -9431,7 +9436,8 @@ Validation failed (score: ${report.overallAverageScore.toFixed(1)}, threshold: $
 }
 async function handleAdd(toolId, flags) {
   const runResult = await handleRun(toolId, flags);
-  const lock = await loadLock();
+  const lockPath = typeof flags.lock === "string" ? expandHome(flags.lock) : undefined;
+  const lock = await loadLock(lockPath);
   const cliName = await resolveToolBinary(toolId);
   const docsDir = expandHome(typeof flags.docs === "string" ? flags.docs : DEFAULT_DOCS_DIR);
   const toolJsonPath = path4.join(docsDir, toolId, "tool.json");
@@ -9477,10 +9483,10 @@ async function handleAdd(toolId, flags) {
     ...discoveredCommandHelpArgs ? { commandHelpArgs: discoveredCommandHelpArgs } : {},
     ...discoveredComplexity ? { complexity: discoveredComplexity } : {}
   });
-  await saveLock(lock);
+  await saveLock(lock, lockPath);
   console.log(`
 Added ${toolId}`);
-  console.log(`  Lock: ${DEFAULT_LOCK_PATH}`);
+  console.log(`  Lock: ${lockPath ?? DEFAULT_LOCK_PATH}`);
   console.log(`  Binary: ${cliName}`);
   console.log(`  Version: ${version}`);
   console.log(`  Links: ${dedupedLinks.length}`);
@@ -9489,8 +9495,9 @@ Added ${toolId}`);
   }
   return { ...runResult, cliName, version, helpHash, links: dedupedLinks };
 }
-async function handleList() {
-  const lock = await loadLock();
+async function handleList(flags) {
+  const lockPath = typeof flags?.lock === "string" ? expandHome(flags.lock) : undefined;
+  const lock = await loadLock(lockPath);
   const entries = Object.entries(lock.skills).sort(([a], [b]) => a.localeCompare(b));
   if (entries.length === 0) {
     console.log("No skills installed");
@@ -9550,15 +9557,16 @@ async function handleUpdate(toolId, flags) {
   console.log(`Updated lock: ${DEFAULT_LOCK_PATH}`);
   return allPassed;
 }
-async function handleRemove(toolId) {
-  const lock = await loadLock();
+async function handleRemove(toolId, flags) {
+  const lockPath = typeof flags?.lock === "string" ? expandHome(flags.lock) : undefined;
+  const lock = await loadLock(lockPath);
   const removedEntry = removeLockEntry(lock, toolId);
   const removedLinks = removedEntry?.links ? unlinkAll(toolId, removedEntry.links) : [];
   const skillDir = path4.join(expandHome(DEFAULT_SKILLS_DIR), toolId);
   const docsDir = path4.join(expandHome(DEFAULT_DOCS_DIR), toolId);
   await rm(skillDir, { recursive: true, force: true });
   await rm(docsDir, { recursive: true, force: true });
-  await saveLock(lock);
+  await saveLock(lock, lockPath);
   console.log(`Removed ${toolId}`);
   console.log(`  Skill dir: ${skillDir}`);
   console.log(`  Raw docs: ${docsDir}`);
@@ -9796,6 +9804,7 @@ var SUBCOMMAND_SECTION_HEADER_RE = /^\s*(?:[A-Z][A-Z0-9 /_-]*\s+)?(?:Subcommands
 var COMMAND_HELP_PROBE_PATTERNS = [
   ["{command}", "--help"],
   ["{command}", "-h"],
+  ["{command}", "help"],
   ["help", "{command}"]
 ];
 function hasSubcommandSection(output) {
@@ -9936,8 +9945,11 @@ function computeHelpHashForBinary(binary, helpArgs) {
   if (result.error) {
     throw new Error(`Failed to run ${binary} ${args.join(" ")}: ${result.error.message}`);
   }
-  const output = result.stdout ?? "";
+  const output = stripOverstrike(result.stdout ?? "");
   return computeHash(output);
+}
+function stripOverstrike(text) {
+  return text.replace(/.\x08(.)/g, "$1");
 }
 function runCommand(binary, args) {
   const env = {
@@ -9964,7 +9976,7 @@ function runCommand(binary, args) {
     };
   }
   return {
-    output: `${result.stdout ?? ""}${result.stderr ?? ""}`,
+    output: stripOverstrike(`${result.stdout ?? ""}${result.stderr ?? ""}`),
     exitCode: result.status ?? null
   };
 }

@@ -121,7 +121,7 @@ async function main(): Promise<void> {
   }
 
   if (command === "list") {
-    await handleList();
+    await handleList(flags);
     return;
   }
 
@@ -138,7 +138,7 @@ async function main(): Promise<void> {
       console.error("remove requires a <tool> argument");
       process.exit(1);
     }
-    await handleRemove(positional[0]);
+    await handleRemove(positional[0], flags);
     return;
   }
 
@@ -654,7 +654,8 @@ export async function handleAdd(
   flags: Record<string, string | boolean>
 ): Promise<AddResult> {
   const runResult = await handleRun(toolId, flags);
-  const lock = await loadLock();
+  const lockPath = typeof flags.lock === "string" ? expandHome(flags.lock) : undefined;
+  const lock = await loadLock(lockPath);
   const cliName = await resolveToolBinary(toolId);
   // Read discovered helpArgs/commandHelpArgs/complexity from generated tool.json
   const docsDir = expandHome(typeof flags.docs === "string" ? flags.docs : DEFAULT_DOCS_DIR);
@@ -706,10 +707,10 @@ export async function handleAdd(
     ...(discoveredCommandHelpArgs ? { commandHelpArgs: discoveredCommandHelpArgs } : {}),
     ...(discoveredComplexity ? { complexity: discoveredComplexity } : {}),
   });
-  await saveLock(lock);
+  await saveLock(lock, lockPath);
 
   console.log(`\nAdded ${toolId}`);
-  console.log(`  Lock: ${DEFAULT_LOCK_PATH}`);
+  console.log(`  Lock: ${lockPath ?? DEFAULT_LOCK_PATH}`);
   console.log(`  Binary: ${cliName}`);
   console.log(`  Version: ${version}`);
   console.log(`  Links: ${dedupedLinks.length}`);
@@ -720,8 +721,9 @@ export async function handleAdd(
   return { ...runResult, cliName, version, helpHash, links: dedupedLinks };
 }
 
-export async function handleList(): Promise<void> {
-  const lock = await loadLock();
+export async function handleList(flags?: Record<string, string | boolean>): Promise<void> {
+  const lockPath = typeof flags?.lock === "string" ? expandHome(flags.lock) : undefined;
+  const lock = await loadLock(lockPath);
   const entries = Object.entries(lock.skills).sort(([a], [b]) => a.localeCompare(b));
 
   if (entries.length === 0) {
@@ -796,8 +798,9 @@ export async function handleUpdate(
   return allPassed;
 }
 
-export async function handleRemove(toolId: string): Promise<void> {
-  const lock = await loadLock();
+export async function handleRemove(toolId: string, flags?: Record<string, string | boolean>): Promise<void> {
+  const lockPath = typeof flags?.lock === "string" ? expandHome(flags.lock) : undefined;
+  const lock = await loadLock(lockPath);
   const removedEntry = removeLockEntry(lock, toolId);
   const removedLinks = removedEntry?.links ? unlinkAll(toolId, removedEntry.links) : [];
   const skillDir = path.join(expandHome(DEFAULT_SKILLS_DIR), toolId);
@@ -805,7 +808,7 @@ export async function handleRemove(toolId: string): Promise<void> {
 
   await rm(skillDir, { recursive: true, force: true });
   await rm(docsDir, { recursive: true, force: true });
-  await saveLock(lock);
+  await saveLock(lock, lockPath);
 
   console.log(`Removed ${toolId}`);
   console.log(`  Skill dir: ${skillDir}`);
@@ -1130,6 +1133,7 @@ const SUBCOMMAND_SECTION_HEADER_RE = /^\s*(?:[A-Z][A-Z0-9 /_-]*\s+)?(?:Subcomman
 const COMMAND_HELP_PROBE_PATTERNS: string[][] = [
   ["{command}", "--help"],
   ["{command}", "-h"],
+  ["{command}", "help"],
   ["help", "{command}"],
 ];
 
@@ -1364,8 +1368,13 @@ export function computeHelpHashForBinary(binary: string, helpArgs?: string[]): s
     throw new Error(`Failed to run ${binary} ${args.join(" ")}: ${result.error.message}`);
   }
 
-  const output = result.stdout ?? "";
+  const output = stripOverstrike(result.stdout ?? "");
   return computeHash(output);
+}
+
+/** Strip backspace-overstrike bold/underline formatting from man-page output (X\bX → X). */
+function stripOverstrike(text: string): string {
+  return text.replace(/.\x08(.)/g, "$1");
 }
 
 function runCommand(binary: string, args: string[]): { output: string; exitCode: number | null; error?: string } {
@@ -1396,7 +1405,7 @@ function runCommand(binary: string, args: string[]): { output: string; exitCode:
   }
 
   return {
-    output: `${result.stdout ?? ""}${result.stderr ?? ""}`,
+    output: stripOverstrike(`${result.stdout ?? ""}${result.stderr ?? ""}`),
     exitCode: result.status ?? null,
   };
 }
