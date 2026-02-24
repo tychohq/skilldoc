@@ -46,16 +46,15 @@ describe("Quick Start uses ad-hoc flow", () => {
   });
 });
 
-describe("Configuration section has batch/registry flow", () => {
+describe("Configuration section has batch operations flow", () => {
   const config = getSection(content, "## Configuration");
 
   it("shows batch commands", () => {
-    expect(config).toContain("skilldoc init");
     expect(config).toContain("skilldoc generate");
     expect(config).toContain("skilldoc distill");
   });
 
-  it("explains registry purpose", () => {
-    expect(config).toContain("registry");
+  it("mentions the lock file", () => {
+    expect(config).toContain("lock file");
   });
 });

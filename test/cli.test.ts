@@ -4,7 +4,8 @@ import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
-import { parseFlags, extractPositionalArgs, handleAutoRedist, handleGenerate, handleDistill, handleInit, handleRun, handleRunBatch, resolveBinary, lookupRegistryTool, generateCommandDocs, DEFAULT_MAX_DEPTH, applyComplexity, COMPLEXITY_SKILL_LIMITS, hasSubcommandKeyword, identifySubcommandCandidates, detectCommandHelpArgs, type RunFn, type RunDeps, type RunBatchDeps, type RunResult } from "../src/cli.js";
+import { parseFlags, extractPositionalArgs, handleAutoRedist, handleGenerate, handleDistill, handleRun, handleRunBatch, resolveBinary, generateCommandDocs, detectBestHelpArgs, DEFAULT_MAX_DEPTH, applyComplexity, COMPLEXITY_SKILL_LIMITS, hasSubcommandKeyword, identifySubcommandCandidates, detectCommandHelpArgs, type RunFn, type RunDeps, type RunBatchDeps, type RunResult } from "../src/cli.js";
+import { type LockFile } from "../src/lock.js";
 import { DEFAULT_MODEL, DEFAULT_SKILLS_DIR, DistillOptions, DistillResult } from "../src/distill.js";
 import { DEFAULT_VALIDATION_MODELS, type MultiModelValidationReport } from "../src/validate.js";
 
@@ -15,7 +16,7 @@ describe("parseFlags --out", () => {
   });
 
   it("returns undefined for out when --out is not provided", () => {
-    const flags = parseFlags(["--registry", "/some/path"]);
+    const flags = parseFlags(["--lock", "/some/path"]);
     expect(flags.out).toBeUndefined();
   });
 
@@ -29,7 +30,7 @@ describe("parseFlags --out", () => {
   });
 
   it("throws when --out value looks like another flag", () => {
-    expect(() => parseFlags(["--out", "--registry"])).toThrow("Missing value for --out");
+    expect(() => parseFlags(["--out", "--lock"])).toThrow("Missing value for --out");
   });
 
   it("parses --out alongside other flags", () => {
@@ -51,7 +52,7 @@ describe("parseFlags --model", () => {
   });
 
   it("returns undefined for model when --model is not provided", () => {
-    const flags = parseFlags(["--registry", "/some/path"]);
+    const flags = parseFlags(["--lock", "/some/path"]);
     expect(flags.model).toBeUndefined();
   });
 
@@ -88,7 +89,7 @@ describe("parseFlags --models", () => {
   });
 
   it("returns undefined for models when --models is not provided", () => {
-    const flags = parseFlags(["--registry", "/some/path"]);
+    const flags = parseFlags(["--lock", "/some/path"]);
     expect(flags.models).toBeUndefined();
   });
 
@@ -148,10 +149,12 @@ describe("handleAutoRedist", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  function writeRegistry(toolId: string, binary: string): string {
-    const registryPath = path.join(tmpDir, "registry.yaml");
-    writeFileSync(registryPath, `version: 1\ntools:\n  - id: ${toolId}\n    binary: ${binary}\n`);
-    return registryPath;
+  function makeLockFn(toolId: string, binary: string): (lockPath?: string) => Promise<LockFile> {
+    return async () => ({
+      skills: {
+        [toolId]: { cliName: binary, version: "1.0.0", helpHash: "abc", source: "help", syncedAt: "2026-01-01", generator: "skilldoc" as const },
+      },
+    });
   }
 
   function makeDistillFn(captured: DistillOptions[]): (opts: DistillOptions) => Promise<DistillResult> {
@@ -161,61 +164,54 @@ describe("handleAutoRedist", () => {
     };
   }
 
-  it("calls distillFn with the feedback when tool is found in registry", async () => {
-    const registryPath = writeRegistry("mytool", "mytool-bin");
+  it("calls distillFn with the feedback when tool is found in lock", async () => {
     const captured: DistillOptions[] = [];
-    await handleAutoRedist("mytool", "agents needed --count flag", { registry: registryPath }, makeDistillFn(captured));
+    await handleAutoRedist("mytool", "agents needed --count flag", {}, makeDistillFn(captured), makeLockFn("mytool", "mytool-bin"));
     expect(captured).toHaveLength(1);
     expect(captured[0].feedback).toBe("agents needed --count flag");
     expect(captured[0].toolId).toBe("mytool");
     expect(captured[0].binary).toBe("mytool-bin");
   });
 
-  it("uses the tool binary from the registry", async () => {
-    const registryPath = writeRegistry("rg", "rg-binary");
+  it("uses the tool binary from the lock file", async () => {
     const captured: DistillOptions[] = [];
-    await handleAutoRedist("rg", "feedback text", { registry: registryPath }, makeDistillFn(captured));
+    await handleAutoRedist("rg", "feedback text", {}, makeDistillFn(captured), makeLockFn("rg", "rg-binary"));
     expect(captured[0].binary).toBe("rg-binary");
   });
 
   it("uses model from flags when provided", async () => {
-    const registryPath = writeRegistry("mytool", "mytool");
     const captured: DistillOptions[] = [];
-    await handleAutoRedist("mytool", "feedback", { registry: registryPath, model: "claude-opus-4-6" }, makeDistillFn(captured));
+    await handleAutoRedist("mytool", "feedback", { model: "claude-opus-4-6" }, makeDistillFn(captured), makeLockFn("mytool", "mytool"));
     expect(captured[0].model).toBe("claude-opus-4-6");
   });
 
   it("uses DEFAULT_MODEL when model flag is not provided", async () => {
-    const registryPath = writeRegistry("mytool", "mytool");
     const captured: DistillOptions[] = [];
-    await handleAutoRedist("mytool", "feedback", { registry: registryPath }, makeDistillFn(captured));
+    await handleAutoRedist("mytool", "feedback", {}, makeDistillFn(captured), makeLockFn("mytool", "mytool"));
     expect(captured[0].model).toBe(DEFAULT_MODEL);
   });
 
-  it("does not call distillFn when tool is not found in registry", async () => {
-    const registryPath = writeRegistry("othertool", "othertool");
+  it("falls back to toolId as binary when tool is not in lock", async () => {
     const captured: DistillOptions[] = [];
-    await handleAutoRedist("notexist", "feedback", { registry: registryPath }, makeDistillFn(captured));
-    expect(captured).toHaveLength(0);
+    await handleAutoRedist("notexist", "feedback", {}, makeDistillFn(captured), makeLockFn("othertool", "othertool"));
+    expect(captured).toHaveLength(1);
+    expect(captured[0].binary).toBe("notexist");
   });
 
-  it("resolves without throwing when tool is not found in registry", async () => {
-    const registryPath = writeRegistry("othertool", "othertool");
+  it("resolves without throwing when tool is not in lock", async () => {
     await expect(
-      handleAutoRedist("notexist", "feedback", { registry: registryPath }, makeDistillFn([]))
+      handleAutoRedist("notexist", "feedback", {}, makeDistillFn([]), makeLockFn("othertool", "othertool"))
     ).resolves.toBeUndefined();
   });
 
   it("resolves without throwing when distillFn throws", async () => {
-    const registryPath = writeRegistry("mytool", "mytool");
     const failDistill = async () => { throw new Error("LLM failed"); };
     await expect(
-      handleAutoRedist("mytool", "feedback", { registry: registryPath }, failDistill)
+      handleAutoRedist("mytool", "feedback", {}, failDistill, makeLockFn("mytool", "mytool"))
     ).resolves.toBeUndefined();
   });
 
   it("logs skipped message when distillFn returns skipped result", async () => {
-    const registryPath = writeRegistry("mytool", "mytool");
     const skipDistill = async (opts: DistillOptions): Promise<DistillResult> => ({
       toolId: opts.toolId,
       outDir: opts.outDir,
@@ -223,7 +219,7 @@ describe("handleAutoRedist", () => {
       skipReason: "hand-written skill",
     });
     await expect(
-      handleAutoRedist("mytool", "feedback", { registry: registryPath }, skipDistill)
+      handleAutoRedist("mytool", "feedback", {}, skipDistill, makeLockFn("mytool", "mytool"))
     ).resolves.toBeUndefined();
   });
 });
@@ -273,7 +269,7 @@ describe("extractPositionalArgs", () => {
   });
 
   it("skips value-flag arguments (does not treat flag value as positional)", () => {
-    expect(extractPositionalArgs(["--registry", "/some/path", "jq"])).toEqual(["jq"]);
+    expect(extractPositionalArgs(["--lock", "/some/path", "jq"])).toEqual(["jq"]);
   });
 
   it("handles boolean flags correctly", () => {
@@ -285,7 +281,7 @@ describe("extractPositionalArgs", () => {
   });
 
   it("returns empty array for flags only", () => {
-    expect(extractPositionalArgs(["--registry", "/path", "--only", "rg,git"])).toEqual([]);
+    expect(extractPositionalArgs(["--lock", "/path", "--only", "rg,git"])).toEqual([]);
   });
 });
 
@@ -341,24 +337,21 @@ describe("handleGenerate with binary name", () => {
   });
 
   it("uses --help as default helpArgs for ad-hoc binary", async () => {
-    const noRegistry = path.join(tmpDir, "no-registry.yaml");
-    await handleGenerate({ out: tmpDir, registry: noRegistry }, "jq");
+    await handleGenerate({ out: tmpDir }, "jq");
     const toolJson = path.join(tmpDir, "jq", "tool.json");
     const doc = JSON.parse(readFileSync(toolJson, "utf8"));
     expect(doc.helpArgs).toEqual(["--help"]);
   });
 
   it("sets displayName to binary name for ad-hoc binary", async () => {
-    const noRegistry = path.join(tmpDir, "no-registry.yaml");
-    await handleGenerate({ out: tmpDir, registry: noRegistry }, "echo");
+    await handleGenerate({ out: tmpDir }, "echo");
     const toolJson = path.join(tmpDir, "echo", "tool.json");
     const doc = JSON.parse(readFileSync(toolJson, "utf8"));
     expect(doc.displayName).toBe("echo");
   });
 
   it("produces a complete ToolDoc with all required fields", async () => {
-    const noRegistry = path.join(tmpDir, "no-registry.yaml");
-    await handleGenerate({ out: tmpDir, registry: noRegistry }, "jq");
+    await handleGenerate({ out: tmpDir }, "jq");
     const toolJson = path.join(tmpDir, "jq", "tool.json");
     const doc = JSON.parse(readFileSync(toolJson, "utf8"));
     expect(doc.kind).toBe("tool");
@@ -424,11 +417,11 @@ describe("resolveBinary", () => {
   });
 });
 
-describe("lookupRegistryTool", () => {
+describe("handleGenerate lock precedence", () => {
   let tmpDir: string;
 
   beforeEach(() => {
-    tmpDir = path.join(os.tmpdir(), `lookup-registry-test-${Date.now()}`);
+    tmpDir = path.join(os.tmpdir(), `generate-lock-prec-${Date.now()}`);
     mkdirSync(tmpDir, { recursive: true });
   });
 
@@ -436,89 +429,43 @@ describe("lookupRegistryTool", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  function writeRegistryFile(yaml: string): string {
-    const registryPath = path.join(tmpDir, "registry.yaml");
-    writeFileSync(registryPath, yaml);
-    return registryPath;
+  function makeLockFn(entries: Record<string, { cliName: string; helpArgs?: string[]; commandHelpArgs?: string[] }>): (lockPath?: string) => Promise<LockFile> {
+    return async () => ({
+      skills: Object.fromEntries(
+        Object.entries(entries).map(([id, e]) => [id, { cliName: e.cliName, version: "1.0", helpHash: "h", source: "help", syncedAt: "2026-01-01", generator: "skilldoc" as const, helpArgs: e.helpArgs, commandHelpArgs: e.commandHelpArgs }])
+      ),
+    });
   }
 
-  it("returns the registry entry when tool id matches", async () => {
-    const registryPath = writeRegistryFile(`version: 1\ntools:\n  - id: curl\n    binary: curl\n    helpArgs: ["--help", "all"]\n    displayName: cURL\n`);
-    const tool = await lookupRegistryTool(registryPath, "curl");
-    expect(tool).not.toBeNull();
-    expect(tool!.helpArgs).toEqual(["--help", "all"]);
-    expect(tool!.displayName).toBe("cURL");
-  });
-
-  it("returns the registry entry when binary matches but id differs", async () => {
-    const registryPath = writeRegistryFile(`version: 1\ntools:\n  - id: ripgrep\n    binary: rg\n    helpArgs: ["--help"]\n`);
-    const tool = await lookupRegistryTool(registryPath, "rg");
-    expect(tool).not.toBeNull();
-    expect(tool!.id).toBe("ripgrep");
-  });
-
-  it("returns null when no tool matches", async () => {
-    const registryPath = writeRegistryFile(`version: 1\ntools:\n  - id: jq\n    binary: jq\n`);
-    const tool = await lookupRegistryTool(registryPath, "curl");
-    expect(tool).toBeNull();
-  });
-
-  it("returns null when registry file does not exist", async () => {
-    const tool = await lookupRegistryTool(path.join(tmpDir, "nonexistent.yaml"), "curl");
-    expect(tool).toBeNull();
-  });
-});
-
-describe("handleGenerate registry precedence", () => {
-  let tmpDir: string;
-
-  beforeEach(() => {
-    tmpDir = path.join(os.tmpdir(), `generate-registry-prec-${Date.now()}`);
-    mkdirSync(tmpDir, { recursive: true });
-  });
-
-  afterEach(() => {
-    rmSync(tmpDir, { recursive: true, force: true });
-  });
-
-  it("uses registry helpArgs when positional arg matches a registry tool", async () => {
-    const registryPath = path.join(tmpDir, "registry.yaml");
-    writeFileSync(registryPath, `version: 1\ntools:\n  - id: git\n    binary: git\n    helpArgs: ["-h"]\n    displayName: Git\n`);
+  it("uses lock helpArgs when positional arg matches a locked tool", async () => {
     const outDir = path.join(tmpDir, "out");
     mkdirSync(outDir, { recursive: true });
-    await handleGenerate({ out: outDir, registry: registryPath }, "git");
+    await handleGenerate({ out: outDir }, "git", { loadLockFn: makeLockFn({ git: { cliName: "git", helpArgs: ["-h"] } }) });
     const doc = JSON.parse(readFileSync(path.join(outDir, "git", "tool.json"), "utf8"));
     expect(doc.helpArgs).toEqual(["-h"]);
-    expect(doc.displayName).toBe("Git");
   });
 
-  it("falls back to createToolEntry defaults when binary is not in registry", async () => {
-    const registryPath = path.join(tmpDir, "registry.yaml");
-    writeFileSync(registryPath, `version: 1\ntools:\n  - id: git\n    binary: git\n    helpArgs: ["-h"]\n`);
+  it("falls back to --help defaults when binary is not in lock", async () => {
     const outDir = path.join(tmpDir, "out");
     mkdirSync(outDir, { recursive: true });
-    await handleGenerate({ out: outDir, registry: registryPath }, "echo");
+    await handleGenerate({ out: outDir }, "echo", { loadLockFn: makeLockFn({ git: { cliName: "git" } }) });
     const doc = JSON.parse(readFileSync(path.join(outDir, "echo", "tool.json"), "utf8"));
     expect(doc.helpArgs).toEqual(["--help"]);
     expect(doc.displayName).toBe("echo");
   });
 
-  it("falls back to defaults when registry does not exist", async () => {
+  it("falls back to defaults when lock is empty", async () => {
     const outDir = path.join(tmpDir, "out");
     mkdirSync(outDir, { recursive: true });
-    await handleGenerate({ out: outDir, registry: path.join(tmpDir, "nonexistent.yaml") }, "echo");
+    await handleGenerate({ out: outDir }, "echo", { loadLockFn: async () => ({ skills: {} }) });
     const doc = JSON.parse(readFileSync(path.join(outDir, "echo", "tool.json"), "utf8"));
     expect(doc.helpArgs).toEqual(["--help"]);
   });
 
-  it("generates command docs when registry entry has commandHelpArgs", async () => {
-    const registryPath = path.join(tmpDir, "registry.yaml");
-    // Use echo with commandHelpArgs — echo has no subcommands but commandHelpArgs
-    // still triggers the commands/ dir to be created
-    writeFileSync(registryPath, `version: 1\ntools:\n  - id: echo\n    binary: echo\n    commandHelpArgs: ["--help"]\n`);
+  it("generates command docs when lock entry has commandHelpArgs", async () => {
     const outDir = path.join(tmpDir, "out");
     mkdirSync(outDir, { recursive: true });
-    await handleGenerate({ out: outDir, registry: registryPath }, "echo");
+    await handleGenerate({ out: outDir }, "echo", { loadLockFn: makeLockFn({ echo: { cliName: "echo", commandHelpArgs: ["--help"] } }) });
     // commandHelpArgs presence should trigger command doc generation infrastructure
     expect(existsSync(path.join(outDir, "echo", "commands"))).toBe(true);
   });
@@ -568,11 +515,8 @@ echo "Usage: fakecli"
       { mode: 0o755 }
     );
 
-    const registryPath = path.join(tmpDir, "registry.yaml");
-    writeFileSync(registryPath, `version: 1\ntools:\n  - id: fakecli\n    binary: "${binaryPath}"\n`);
-
     const outDir = path.join(tmpDir, "out");
-    await handleGenerate({ out: outDir, registry: registryPath });
+    await handleGenerate({ out: outDir }, undefined, { loadLockFn: async () => ({ skills: { fakecli: { cliName: binaryPath, version: "1.0", helpHash: "h", source: "help", syncedAt: "2026-01-01", generator: "skilldoc" as const } } }) });
 
     const doc = JSON.parse(readFileSync(path.join(outDir, "fakecli", "tool.json"), "utf8"));
     const names = doc.subcommandCandidates.map((c: { name: string }) => c.name);
@@ -602,11 +546,8 @@ echo "Usage: flatcli"
       { mode: 0o755 }
     );
 
-    const registryPath = path.join(tmpDir, "registry.yaml");
-    writeFileSync(registryPath, `version: 1\ntools:\n  - id: flatcli\n    binary: "${binaryPath}"\n`);
-
     const outDir = path.join(tmpDir, "out");
-    await handleGenerate({ out: outDir, registry: registryPath });
+    await handleGenerate({ out: outDir }, undefined, { loadLockFn: async () => ({ skills: { flatcli: { cliName: binaryPath, version: "1.0", helpHash: "h", source: "help", syncedAt: "2026-01-01", generator: "skilldoc" as const } } }) });
 
     const doc = JSON.parse(readFileSync(path.join(outDir, "flatcli", "tool.json"), "utf8"));
     expect(doc.subcommandCandidates).toEqual([]);
@@ -670,11 +611,8 @@ echo "Usage: orderedcli"
       { mode: 0o755 }
     );
 
-    const registryPath = path.join(tmpDir, "registry.yaml");
-    writeFileSync(registryPath, `version: 1\ntools:\n  - id: orderedcli\n    binary: "${binaryPath}"\n`);
-
     const outDir = path.join(tmpDir, "out");
-    await handleGenerate({ out: outDir, registry: registryPath });
+    await handleGenerate({ out: outDir }, undefined, { loadLockFn: async () => ({ skills: { orderedcli: { cliName: binaryPath, version: "1.0", helpHash: "h", source: "help", syncedAt: "2026-01-01", generator: "skilldoc" as const } } }) });
 
     const doc = JSON.parse(readFileSync(path.join(outDir, "orderedcli", "tool.json"), "utf8"));
     expect(doc.commandHelpArgs).toEqual(["{command}", "-h"]);
@@ -730,17 +668,16 @@ echo "Usage: cachedpatterncli"
       { mode: 0o755 }
     );
 
-    const registryPath = path.join(tmpDir, "registry.yaml");
-    writeFileSync(registryPath, `version: 1\ntools:\n  - id: cachedpatterncli\n    binary: "${binaryPath}"\n`);
+    const lockFn = async () => ({ skills: { cachedpatterncli: { cliName: binaryPath, version: "1.0", helpHash: "h", source: "help", syncedAt: "2026-01-01", generator: "skilldoc" as const } } });
 
     const outDir = path.join(tmpDir, "out");
-    await handleGenerate({ out: outDir, registry: registryPath });
+    await handleGenerate({ out: outDir }, undefined, { loadLockFn: lockFn });
 
     const firstDoc = JSON.parse(readFileSync(path.join(outDir, "cachedpatterncli", "tool.json"), "utf8"));
     expect(firstDoc.commandHelpArgs).toEqual(["{command}", "-h"]);
 
     writeFileSync(callsPath, "", "utf8");
-    await handleGenerate({ out: outDir, registry: registryPath });
+    await handleGenerate({ out: outDir }, undefined, { loadLockFn: lockFn });
 
     const calls = readFileSync(callsPath, "utf8").trim().split("\n").filter(Boolean);
     expect(calls).not.toContain("remote --help");
@@ -810,11 +747,10 @@ echo "Usage: storedpatternallcmds"
       { mode: 0o755 }
     );
 
-    const registryPath = path.join(tmpDir, "registry.yaml");
-    writeFileSync(registryPath, `version: 1\ntools:\n  - id: storedpatternallcmds\n    binary: "${binaryPath}"\n`);
+    const lockFn = async () => ({ skills: { storedpatternallcmds: { cliName: binaryPath, version: "1.0", helpHash: "h", source: "help", syncedAt: "2026-01-01", generator: "skilldoc" as const } } });
 
     const outDir = path.join(tmpDir, "out");
-    await handleGenerate({ out: outDir, registry: registryPath });
+    await handleGenerate({ out: outDir }, undefined, { loadLockFn: lockFn });
 
     const firstDoc = JSON.parse(readFileSync(path.join(outDir, "storedpatternallcmds", "tool.json"), "utf8"));
     expect(firstDoc.commandHelpArgs).toEqual(["{command}", "-h"]);
@@ -822,7 +758,7 @@ echo "Usage: storedpatternallcmds"
     expect(existsSync(path.join(outDir, "storedpatternallcmds", "commands", "status", "command.json"))).toBe(true);
 
     writeFileSync(modePath, "neutral\n", "utf8");
-    await handleGenerate({ out: outDir, registry: registryPath });
+    await handleGenerate({ out: outDir }, undefined, { loadLockFn: lockFn });
 
     const secondDoc = JSON.parse(readFileSync(path.join(outDir, "storedpatternallcmds", "tool.json"), "utf8"));
     expect(secondDoc.subcommandCandidates).toEqual([]);
@@ -882,18 +818,17 @@ echo "Usage: stalepatterncli"
       { mode: 0o755 }
     );
 
-    const registryPath = path.join(tmpDir, "registry.yaml");
-    writeFileSync(registryPath, `version: 1\ntools:\n  - id: stalepatterncli\n    binary: "${binaryPath}"\n`);
+    const lockFn = async () => ({ skills: { stalepatterncli: { cliName: binaryPath, version: "1.0", helpHash: "h", source: "help", syncedAt: "2026-01-01", generator: "skilldoc" as const } } });
 
     const outDir = path.join(tmpDir, "out");
-    await handleGenerate({ out: outDir, registry: registryPath });
+    await handleGenerate({ out: outDir }, undefined, { loadLockFn: lockFn });
 
     const firstDoc = JSON.parse(readFileSync(path.join(outDir, "stalepatterncli", "tool.json"), "utf8"));
     expect(firstDoc.commandHelpArgs).toEqual(["{command}", "-h"]);
     expect(existsSync(path.join(outDir, "stalepatterncli", "commands", "remote", "command.json"))).toBe(true);
 
     writeFileSync(modePath, "flat\n", "utf8");
-    await handleGenerate({ out: outDir, registry: registryPath });
+    await handleGenerate({ out: outDir }, undefined, { loadLockFn: lockFn });
 
     const secondDoc = JSON.parse(readFileSync(path.join(outDir, "stalepatterncli", "tool.json"), "utf8"));
     expect(secondDoc.commandHelpArgs).toBeUndefined();
@@ -936,11 +871,8 @@ echo "Usage: nopatterncli"
       { mode: 0o755 }
     );
 
-    const registryPath = path.join(tmpDir, "registry.yaml");
-    writeFileSync(registryPath, `version: 1\ntools:\n  - id: nopatterncli\n    binary: "${binaryPath}"\n`);
-
     const outDir = path.join(tmpDir, "out");
-    await handleGenerate({ out: outDir, registry: registryPath });
+    await handleGenerate({ out: outDir }, undefined, { loadLockFn: async () => ({ skills: { nopatterncli: { cliName: binaryPath, version: "1.0", helpHash: "h", source: "help", syncedAt: "2026-01-01", generator: "skilldoc" as const } } }) });
 
     const doc = JSON.parse(readFileSync(path.join(outDir, "nopatterncli", "tool.json"), "utf8"));
     expect(doc.commandHelpArgs).toBeUndefined();
@@ -948,7 +880,7 @@ echo "Usage: nopatterncli"
   });
 });
 
-describe("handleGenerate --only (batch registry)", () => {
+describe("handleGenerate --only (batch lock)", () => {
   let tmpDir: string;
 
   beforeEach(() => {
@@ -960,39 +892,29 @@ describe("handleGenerate --only (batch registry)", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  function writeRegistryFile(tools: Array<{ id: string; binary: string }>): string {
-    const registryPath = path.join(tmpDir, "registry.yaml");
-    const toolsYaml = tools
-      .map((t) => `  - id: "${t.id}"\n    binary: "${t.binary}"`)
-      .join("\n");
-    writeFileSync(registryPath, `version: 1\ntools:\n${toolsYaml}\n`);
-    return registryPath;
+  function makeLockFn(tools: Array<{ id: string; binary: string }>): (lockPath?: string) => Promise<LockFile> {
+    return async () => ({
+      skills: Object.fromEntries(
+        tools.map((t) => [t.id, { cliName: t.binary, version: "1.0", helpHash: "h", source: "help", syncedAt: "2026-01-01", generator: "skilldoc" as const }])
+      ),
+    });
   }
 
   it("generates only the tool specified by --only", async () => {
-    const registryPath = writeRegistryFile([
-      { id: "echo", binary: "echo" },
-      { id: "ls", binary: "ls" },
-    ]);
     const outDir = path.join(tmpDir, "out");
     mkdirSync(outDir, { recursive: true });
 
-    await handleGenerate({ out: outDir, registry: registryPath, only: "echo" });
+    await handleGenerate({ out: outDir, only: "echo" }, undefined, { loadLockFn: makeLockFn([{ id: "echo", binary: "echo" }, { id: "ls", binary: "ls" }]) });
 
     expect(existsSync(path.join(outDir, "echo", "tool.json"))).toBe(true);
     expect(existsSync(path.join(outDir, "ls", "tool.json"))).toBe(false);
   });
 
   it("generates multiple comma-separated tools from --only", async () => {
-    const registryPath = writeRegistryFile([
-      { id: "echo", binary: "echo" },
-      { id: "ls", binary: "ls" },
-      { id: "pwd", binary: "pwd" },
-    ]);
     const outDir = path.join(tmpDir, "out");
     mkdirSync(outDir, { recursive: true });
 
-    await handleGenerate({ out: outDir, registry: registryPath, only: "echo,ls" });
+    await handleGenerate({ out: outDir, only: "echo,ls" }, undefined, { loadLockFn: makeLockFn([{ id: "echo", binary: "echo" }, { id: "ls", binary: "ls" }, { id: "pwd", binary: "pwd" }]) });
 
     expect(existsSync(path.join(outDir, "echo", "tool.json"))).toBe(true);
     expect(existsSync(path.join(outDir, "ls", "tool.json"))).toBe(true);
@@ -1000,55 +922,40 @@ describe("handleGenerate --only (batch registry)", () => {
   });
 
   it("handles --only with spaces around commas", async () => {
-    const registryPath = writeRegistryFile([
-      { id: "echo", binary: "echo" },
-      { id: "ls", binary: "ls" },
-    ]);
     const outDir = path.join(tmpDir, "out");
     mkdirSync(outDir, { recursive: true });
 
-    await handleGenerate({ out: outDir, registry: registryPath, only: "echo , ls" });
+    await handleGenerate({ out: outDir, only: "echo , ls" }, undefined, { loadLockFn: makeLockFn([{ id: "echo", binary: "echo" }, { id: "ls", binary: "ls" }]) });
 
     expect(existsSync(path.join(outDir, "echo", "tool.json"))).toBe(true);
     expect(existsSync(path.join(outDir, "ls", "tool.json"))).toBe(true);
   });
 
   it("generates all tools when --only is not provided", async () => {
-    const registryPath = writeRegistryFile([
-      { id: "echo", binary: "echo" },
-      { id: "ls", binary: "ls" },
-    ]);
     const outDir = path.join(tmpDir, "out");
     mkdirSync(outDir, { recursive: true });
 
-    await handleGenerate({ out: outDir, registry: registryPath });
+    await handleGenerate({ out: outDir }, undefined, { loadLockFn: makeLockFn([{ id: "echo", binary: "echo" }, { id: "ls", binary: "ls" }]) });
 
     expect(existsSync(path.join(outDir, "echo", "tool.json"))).toBe(true);
     expect(existsSync(path.join(outDir, "ls", "tool.json"))).toBe(true);
   });
 
   it("generates nothing when --only specifies no matching tools", async () => {
-    const registryPath = writeRegistryFile([
-      { id: "echo", binary: "echo" },
-    ]);
     const outDir = path.join(tmpDir, "out");
     mkdirSync(outDir, { recursive: true });
 
-    await handleGenerate({ out: outDir, registry: registryPath, only: "nonexistent" });
+    await handleGenerate({ out: outDir, only: "nonexistent" }, undefined, { loadLockFn: makeLockFn([{ id: "echo", binary: "echo" }]) });
 
     expect(existsSync(path.join(outDir, "echo", "tool.json"))).toBe(false);
     expect(existsSync(path.join(outDir, "nonexistent", "tool.json"))).toBe(false);
   });
 
   it("index.md only lists the filtered tools", async () => {
-    const registryPath = writeRegistryFile([
-      { id: "echo", binary: "echo" },
-      { id: "ls", binary: "ls" },
-    ]);
     const outDir = path.join(tmpDir, "out");
     mkdirSync(outDir, { recursive: true });
 
-    await handleGenerate({ out: outDir, registry: registryPath, only: "echo" });
+    await handleGenerate({ out: outDir, only: "echo" }, undefined, { loadLockFn: makeLockFn([{ id: "echo", binary: "echo" }, { id: "ls", binary: "ls" }]) });
 
     const indexContent = readFileSync(path.join(outDir, "index.md"), "utf8");
     expect(indexContent).toContain("echo");
@@ -1090,13 +997,13 @@ describe("bin/skilldoc.js generate <binary> (integration)", () => {
     expect(result.stderr).toContain('Error: binary "nonexistent-binary-xyz" not found on PATH');
   });
 
-  it("--only filters registry tools in batch mode via CLI", () => {
-    const registryPath = path.join(tmpDir, "registry.yaml");
-    writeFileSync(registryPath, `version: 1\ntools:\n  - id: echo\n    binary: echo\n  - id: ls\n    binary: ls\n`);
+  it("--only filters lock tools in batch mode via CLI", () => {
+    const lockPath = path.join(tmpDir, "lock.yaml");
+    writeFileSync(lockPath, `skills:\n  echo:\n    cliName: echo\n    version: "1.0"\n    helpHash: h\n    source: help\n    syncedAt: "2026-01-01"\n    generator: skilldoc\n  ls:\n    cliName: ls\n    version: "1.0"\n    helpHash: h\n    source: help\n    syncedAt: "2026-01-01"\n    generator: skilldoc\n`);
     const outDir = path.join(tmpDir, "out");
     mkdirSync(outDir, { recursive: true });
 
-    const result = spawnSync("node", [binPath, "generate", "--registry", registryPath, "--out", outDir, "--only", "echo"], { encoding: "utf8" });
+    const result = spawnSync("node", [binPath, "generate", "--lock", lockPath, "--out", outDir, "--only", "echo"], { encoding: "utf8" });
     expect(result.status).toBe(0);
     expect(existsSync(path.join(outDir, "echo", "tool.json"))).toBe(true);
     expect(existsSync(path.join(outDir, "ls", "tool.json"))).toBe(false);
@@ -1112,7 +1019,7 @@ describe("bin/skilldoc.js --help (integration)", () => {
     expect(result.stdout).toContain("skilldoc");
     expect(result.stdout).toContain("generate");
     expect(result.stdout).toContain("distill");
-    expect(result.stdout).toContain("--registry");
+    expect(result.stdout).toContain("--lock");
   });
 
   it("exits with code 0 and prints help text for -h", () => {
@@ -1204,11 +1111,12 @@ describe("handleDistill — complexity integration", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  function setupRegistry(id: string, binary: string, complexity?: string): string {
-    const regPath = path.join(tmpDir, "registry.yaml");
-    const complexityLine = complexity ? `    complexity: ${complexity}\n` : "";
-    writeFileSync(regPath, `version: 1\ntools:\n  - id: ${id}\n    binary: ${binary}\n${complexityLine}`);
-    return regPath;
+  function makeLockFn(id: string, binary: string, complexity?: "simple" | "complex"): (lockPath?: string) => Promise<LockFile> {
+    return async () => ({
+      skills: {
+        [id]: { cliName: binary, version: "1.0", helpHash: "h", source: "help", syncedAt: "2026-01-01", generator: "skilldoc" as const, complexity },
+      },
+    });
   }
 
   function setupRawDocs(toolId: string): string {
@@ -1220,7 +1128,6 @@ describe("handleDistill — complexity integration", () => {
 
   it("passes skill limit 500 to distillFn for simple tools", async () => {
     const docsDir = setupRawDocs("jq");
-    const regPath = setupRegistry("jq", "jq", "simple");
     const captured: DistillOptions[] = [];
 
     const mockDistill = async (opts: DistillOptions): Promise<DistillResult> => {
@@ -1228,7 +1135,7 @@ describe("handleDistill — complexity integration", () => {
       return { toolId: opts.toolId, outDir: opts.outDir };
     };
 
-    await handleDistill({ docs: docsDir, out: path.join(tmpDir, "skills"), registry: regPath }, undefined, mockDistill);
+    await handleDistill({ docs: docsDir, out: path.join(tmpDir, "skills") }, undefined, mockDistill, { loadLockFn: makeLockFn("jq", "jq", "simple") });
 
     expect(captured).toHaveLength(1);
     expect(captured[0].promptConfig?.sizeLimits?.skill).toBe(500);
@@ -1236,7 +1143,6 @@ describe("handleDistill — complexity integration", () => {
 
   it("passes skill limit 1000 to distillFn for complex tools", async () => {
     const docsDir = setupRawDocs("gh");
-    const regPath = setupRegistry("gh", "gh", "complex");
     const captured: DistillOptions[] = [];
 
     const mockDistill = async (opts: DistillOptions): Promise<DistillResult> => {
@@ -1244,7 +1150,7 @@ describe("handleDistill — complexity integration", () => {
       return { toolId: opts.toolId, outDir: opts.outDir };
     };
 
-    await handleDistill({ docs: docsDir, out: path.join(tmpDir, "skills"), registry: regPath }, undefined, mockDistill);
+    await handleDistill({ docs: docsDir, out: path.join(tmpDir, "skills") }, undefined, mockDistill, { loadLockFn: makeLockFn("gh", "gh", "complex") });
 
     expect(captured).toHaveLength(1);
     expect(captured[0].promptConfig?.sizeLimits?.skill).toBe(1000);
@@ -1252,7 +1158,6 @@ describe("handleDistill — complexity integration", () => {
 
   it("passes no explicit skill limit to distillFn when complexity is omitted", async () => {
     const docsDir = setupRawDocs("rg");
-    const regPath = setupRegistry("rg", "rg");
     const captured: DistillOptions[] = [];
 
     const mockDistill = async (opts: DistillOptions): Promise<DistillResult> => {
@@ -1260,7 +1165,7 @@ describe("handleDistill — complexity integration", () => {
       return { toolId: opts.toolId, outDir: opts.outDir };
     };
 
-    await handleDistill({ docs: docsDir, out: path.join(tmpDir, "skills"), registry: regPath }, undefined, mockDistill);
+    await handleDistill({ docs: docsDir, out: path.join(tmpDir, "skills") }, undefined, mockDistill, { loadLockFn: makeLockFn("rg", "rg") });
 
     expect(captured).toHaveLength(1);
     expect(captured[0].promptConfig?.sizeLimits?.skill).toBeUndefined();
@@ -1313,7 +1218,7 @@ describe("handleDistill with tool-id", () => {
     expect(errorOutput).toContain("skilldoc generate nonexistent");
   });
 
-  it("does not require a registry when tool-id is provided", async () => {
+  it("does not require a lock file when tool-id is provided", async () => {
     const docsDir = setupRawDocs("mytool");
     const skillsDir = path.join(tmpDir, "skills");
     const captured: DistillOptions[] = [];
@@ -1323,12 +1228,8 @@ describe("handleDistill with tool-id", () => {
       return { toolId: opts.toolId, outDir: opts.outDir };
     };
 
-    // Point registry to a nonexistent file — should not matter in ad-hoc mode
-    await handleDistill(
-      { docs: docsDir, out: skillsDir, registry: path.join(tmpDir, "nonexistent-registry.yaml") },
-      "mytool",
-      mockDistill
-    );
+    // No lock file needed in ad-hoc (single-tool) mode
+    await handleDistill({ docs: docsDir, out: skillsDir }, "mytool", mockDistill);
 
     expect(captured).toHaveLength(1);
     expect(captured[0].toolId).toBe("mytool");
@@ -1513,25 +1414,25 @@ describe("bin/skilldoc.js distill <tool-id> (integration)", () => {
     expect(result.stderr).toContain('no raw docs found for "nonexistent-tool"');
   });
 
-  it("help text shows ad-hoc and registry modes for generate", () => {
+  it("help text shows ad-hoc and batch modes for generate", () => {
     const result = spawnSync("node", [binPath, "--help"], { encoding: "utf8" });
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("skilldoc generate <tool>");
-    expect(result.stdout).toContain("skilldoc generate [--registry");
+    expect(result.stdout).toContain("skilldoc generate [--only");
   });
 
-  it("help text shows ad-hoc and registry modes for distill", () => {
+  it("help text shows ad-hoc and batch modes for distill", () => {
     const result = spawnSync("node", [binPath, "--help"], { encoding: "utf8" });
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("skilldoc distill <tool>");
-    expect(result.stdout).toContain("skilldoc distill [--registry");
+    expect(result.stdout).toContain("skilldoc distill [--only");
   });
 
   it("help text shows the run command with batch mode", () => {
     const result = spawnSync("node", [binPath, "--help"], { encoding: "utf8" });
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("skilldoc run <tool>");
-    expect(result.stdout).toContain("skilldoc run [--registry");
+    expect(result.stdout).toContain("skilldoc run [--only");
     expect(result.stdout).toContain("run        Run full pipeline");
   });
 
@@ -1540,81 +1441,6 @@ describe("bin/skilldoc.js distill <tool-id> (integration)", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("generate + distill + validate in one shot");
     expect(result.stdout).toContain("recommended start here");
-  });
-
-  it("help text describes init with registry path and example tools", () => {
-    const result = spawnSync("node", [binPath, "--help"], { encoding: "utf8" });
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain("~/.skilldoc/registry.yaml");
-    expect(result.stdout).toContain("git, ripgrep");
-    expect(result.stdout).toContain("batch generation for multiple tools");
-  });
-});
-
-describe("handleInit", () => {
-  const binPath = path.resolve(import.meta.dir, "../bin/skilldoc.js");
-  let tmpDir: string;
-
-  beforeEach(() => {
-    tmpDir = path.join(os.tmpdir(), `init-test-${Date.now()}`);
-    mkdirSync(tmpDir, { recursive: true });
-  });
-
-  afterEach(() => {
-    rmSync(tmpDir, { recursive: true, force: true });
-  });
-
-  it("prints what was created and next steps", () => {
-    const registryPath = path.join(tmpDir, "registry.yaml");
-    const result = spawnSync("node", [binPath, "init", "--registry", registryPath], { encoding: "utf8" });
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain(`Created: ${registryPath}`);
-    expect(result.stdout).toContain("git, rg (2 example entries)");
-    expect(result.stdout).toContain("Next steps:");
-    expect(result.stdout).toContain("Edit the registry to add your tools");
-    expect(result.stdout).toContain(`skilldoc run --registry ${registryPath}`);
-  });
-
-  it("creates the registry file on disk", () => {
-    const registryPath = path.join(tmpDir, "registry.yaml");
-    spawnSync("node", [binPath, "init", "--registry", registryPath], { encoding: "utf8" });
-    expect(existsSync(registryPath)).toBe(true);
-    const content = readFileSync(registryPath, "utf8");
-    expect(content).toContain("id: git");
-    expect(content).toContain("id: rg");
-  });
-
-  it("uses default path in output when --registry is not specified", async () => {
-    const logs: string[] = [];
-    const origLog = console.log;
-    console.log = (...args: unknown[]) => logs.push(args.join(" "));
-    try {
-      await handleInit({ registry: path.join(tmpDir, "default.yaml") });
-      const output = logs.join("\n");
-      expect(output).toContain("Created:");
-      expect(output).toContain("Next steps:");
-      expect(output).toContain("skilldoc run --registry");
-    } finally {
-      console.log = origLog;
-    }
-  });
-
-  it("exits with error if registry already exists", () => {
-    const registryPath = path.join(tmpDir, "registry.yaml");
-    writeFileSync(registryPath, "existing");
-    const result = spawnSync("node", [binPath, "init", "--registry", registryPath], { encoding: "utf8" });
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain("Registry already exists:");
-  });
-
-  it("overwrites existing registry with --force", () => {
-    const registryPath = path.join(tmpDir, "registry.yaml");
-    writeFileSync(registryPath, "old content");
-    const result = spawnSync("node", [binPath, "init", "--registry", registryPath, "--force"], { encoding: "utf8" });
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain(`Created: ${registryPath}`);
-    const content = readFileSync(registryPath, "utf8");
-    expect(content).toContain("id: git");
   });
 });
 
@@ -1831,10 +1657,11 @@ describe("handleRun", () => {
 describe("bin/skilldoc.js run (integration)", () => {
   const binPath = path.resolve(import.meta.dir, "../bin/skilldoc.js");
 
-  it("batch mode exits with code 1 when no registry exists", () => {
-    const result = spawnSync("node", [binPath, "run", "--registry", "/tmp/nonexistent-registry.yaml"], { encoding: "utf8" });
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain("No registry found");
+  it("batch mode exits with code 0 with empty lock file", () => {
+    // Empty lock = no skills = nothing to process (exits 0)
+    const result = spawnSync("node", [binPath, "run"], { encoding: "utf8", env: { ...process.env, HOME: "/tmp/nonexistent-home-xyz" } });
+    // When lock file doesn't exist, loadLock returns empty — prints "No skills installed"
+    expect(result.status).toBe(0);
   });
 
   it("exits with code 1 for a nonexistent binary", () => {
@@ -1869,6 +1696,14 @@ describe("handleRunBatch", () => {
     };
   }
 
+  function makeLockFn(skills: Record<string, { cliName: string }>): (lockPath?: string) => Promise<LockFile> {
+    return async () => ({
+      skills: Object.fromEntries(
+        Object.entries(skills).map(([id, e]) => [id, { cliName: e.cliName, version: "1.0", helpHash: "h", source: "help", syncedAt: "2026-01-01", generator: "skilldoc" as const }])
+      ),
+    });
+  }
+
   function makeBatchDeps(overrides: Partial<RunBatchDeps> = {}): RunBatchDeps & { calls: string[] } {
     const calls: string[] = [];
     return {
@@ -1879,19 +1714,13 @@ describe("handleRunBatch", () => {
         calls.push(`validate:${toolId}`);
         return makePassingReport(toolId);
       }),
-      loadRegistryFn: overrides.loadRegistryFn,
+      loadLockFn: overrides.loadLockFn,
     };
   }
 
-  it("runs the pipeline for each registry tool", async () => {
+  it("runs the pipeline for each lock tool", async () => {
     const deps = makeBatchDeps({
-      loadRegistryFn: async () => ({
-        version: 1,
-        tools: [
-          { id: "jq", binary: "jq", enabled: true },
-          { id: "curl", binary: "curl", enabled: true },
-        ],
-      }),
+      loadLockFn: makeLockFn({ jq: { cliName: "jq" }, curl: { cliName: "curl" } }),
     });
 
     await handleRunBatch({ skills: path.join(tmpDir, "skills") }, deps);
@@ -1899,31 +1728,9 @@ describe("handleRunBatch", () => {
     expect(deps.calls).toContain("validate:jq");
   });
 
-  it("skips disabled tools", async () => {
-    const deps = makeBatchDeps({
-      loadRegistryFn: async () => ({
-        version: 1,
-        tools: [
-          { id: "jq", binary: "jq", enabled: true },
-          { id: "disabled-tool", binary: "disabled-tool", enabled: false },
-        ],
-      }),
-    });
-
-    await handleRunBatch({ skills: path.join(tmpDir, "skills") }, deps);
-    expect(deps.calls).toContain("validate:jq");
-    expect(deps.calls).not.toContain("validate:disabled-tool");
-  });
-
   it("filters by --only flag", async () => {
     const deps = makeBatchDeps({
-      loadRegistryFn: async () => ({
-        version: 1,
-        tools: [
-          { id: "jq", binary: "jq", enabled: true },
-          { id: "curl", binary: "curl", enabled: true },
-        ],
-      }),
+      loadLockFn: makeLockFn({ jq: { cliName: "jq" }, curl: { cliName: "curl" } }),
     });
 
     await handleRunBatch({ skills: path.join(tmpDir, "skills"), only: "jq" }, deps);
@@ -1933,12 +1740,7 @@ describe("handleRunBatch", () => {
 
   it("skips tools with missing binaries", async () => {
     const deps = makeBatchDeps({
-      loadRegistryFn: async () => ({
-        version: 1,
-        tools: [
-          { id: "nonexistent-xyz", binary: "nonexistent-xyz-binary", enabled: true },
-        ],
-      }),
+      loadLockFn: makeLockFn({ "nonexistent-xyz": { cliName: "nonexistent-xyz-binary" } }),
     });
 
     const logs: string[] = [];
@@ -1962,12 +1764,7 @@ describe("handleRunBatch", () => {
 
   it("prints summary after batch", async () => {
     const deps = makeBatchDeps({
-      loadRegistryFn: async () => ({
-        version: 1,
-        tools: [
-          { id: "jq", binary: "jq", enabled: true },
-        ],
-      }),
+      loadLockFn: makeLockFn({ jq: { cliName: "jq" } }),
     });
 
     const logs: string[] = [];
@@ -1984,9 +1781,9 @@ describe("handleRunBatch", () => {
     expect(logs.some((l) => l.includes("1/1 tools passed"))).toBe(true);
   });
 
-  it("exits with code 1 when registry loading fails", async () => {
+  it("exits with code 1 when lock loading fails", async () => {
     const deps = makeBatchDeps({
-      loadRegistryFn: async () => { throw new Error("file not found"); },
+      loadLockFn: async () => { throw new Error("file not found"); },
     });
 
     let exitCode: number | undefined;
@@ -2004,9 +1801,9 @@ describe("handleRunBatch", () => {
     expect(exitCode).toBe(1);
   });
 
-  it("prints nothing-to-do message for empty registry", async () => {
+  it("prints nothing-to-do message for empty lock", async () => {
     const deps = makeBatchDeps({
-      loadRegistryFn: async () => ({ version: 1, tools: [] }),
+      loadLockFn: async () => ({ skills: {} }),
     });
 
     const logs: string[] = [];
@@ -2019,7 +1816,7 @@ describe("handleRunBatch", () => {
       console.log = origLog;
     }
 
-    expect(logs.some((l) => l.includes("No tools to process"))).toBe(true);
+    expect(logs.some((l) => l.includes("No skills installed"))).toBe(true);
   });
 });
 
@@ -2718,7 +2515,7 @@ describe("detectCommandHelpArgs", () => {
 
     const result = detectCommandHelpArgs("mycli", [{ name: "push", summary: "Manage pushes" }], runFn);
     expect(result).toBeUndefined();
-    expect(calls).toEqual(["push --help", "push -h", "help push"]);
+    expect(calls).toEqual(["push --help", "push -h", "push help", "help push"]);
   });
 
   it("selects the first pattern with Commands/Subcommands section", () => {

@@ -76,7 +76,7 @@ export function parseHelp(rawHelp: string): ParsedHelp {
     }
   }
 
-  const commandsSections = sections.filter((s) => /command/i.test(s.name));
+  const commandsSections = sections.filter((s) => /command|service/i.test(s.name));
   const examplesSection = findSection(sections, SECTION_NAMES.examples);
   const envSection = findSection(sections, SECTION_NAMES.env);
 
@@ -174,11 +174,18 @@ function parseCommands(lines: string[], requireIndent: boolean): CommandSummary[
     if (!trimmed) continue;
     if (trimmed.startsWith("-")) continue;
     const match = trimmed.match(/^(\S+(?:\s+\S+)*)(?:\t|\s{2,})(.+)$/);
-    if (!match) continue;
-    commands.push({
-      name: match[1].trim().replace(/:$/, ""),
-      summary: match[2].trim(),
-    });
+    if (match) {
+      commands.push({
+        name: match[1].trim().replace(/:$/, ""),
+        summary: match[2].trim(),
+      });
+      continue;
+    }
+    // Match man-page bullet-list format: "o servicename" (e.g. AWS AVAILABLE SERVICES)
+    const bulletMatch = trimmed.match(/^o\s+([a-z][a-z0-9-]*)\s*$/);
+    if (bulletMatch) {
+      commands.push({ name: bulletMatch[1], summary: "" });
+    }
   }
   return commands;
 }

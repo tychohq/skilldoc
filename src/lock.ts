@@ -10,6 +10,9 @@ export type LockEntry = {
   syncedAt: string;
   generator: "skilldoc";
   links?: string[];
+  helpArgs?: string[];
+  commandHelpArgs?: string[];
+  complexity?: "simple" | "complex";
 };
 
 export type LockFile = {
