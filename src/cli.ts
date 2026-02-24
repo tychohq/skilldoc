@@ -26,8 +26,8 @@ import {
   type MultiModelValidationReport,
 } from "./validate.js";
 
-const DEFAULT_REGISTRY = "~/.agents/tool-docs/registry.yaml";
-const DEFAULT_OUT_DIR = "~/.agents/docs/tool-docs";
+const DEFAULT_REGISTRY = "~/.skilldoc/registry.yaml";
+const DEFAULT_OUT_DIR = "~/.skilldoc/docs";
 
 const DEFAULT_SKILLS_OUT_DIR = DEFAULT_SKILLS_DIR;
 
@@ -57,7 +57,7 @@ Commands:
   validate   Test skill quality using LLM-based scenario evaluation
   report     Show aggregate quality report across all validated tools
   config     Show or update LLM provider configuration (~/.skilldoc/config.yaml)
-  init       Create a starter registry file at ~/.agents/tool-docs/registry.yaml with example
+  init       Create a starter registry file at ~/.skilldoc/registry.yaml with example
              tool entries (git, ripgrep). Use this to configure batch generation for multiple tools.
 
 Options:

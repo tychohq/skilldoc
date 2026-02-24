@@ -5,10 +5,10 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import YAML from "yaml";
 import { writeFileEnsured, ensureDir, expandHome } from "./utils.js";
 
-const DEFAULT_SKILLS_DIR = "~/.agents/skills";
-const DEFAULT_DOCS_DIR = "~/.agents/docs/tool-docs";
+const DEFAULT_SKILLS_DIR = "~/.skills";
+const DEFAULT_DOCS_DIR = "~/.skilldoc/docs";
 const DEFAULT_MODEL = "claude-opus-4-6";
-const DEFAULT_DISTILL_CONFIG_PATH = "~/.agents/tool-docs/distill-config.yaml";
+const DEFAULT_DISTILL_CONFIG_PATH = "~/.skilldoc/distill-config.yaml";
 
 const GENERATED_MARKER = "generated-from: skilldoc";
 
@@ -23,7 +23,7 @@ export const INSUFFICIENT_DOCS_SENTINEL = "Insufficient raw docs — re-run gene
  * Configuration for the distillation prompt template.
  *
  * All fields are optional — defaults match the tuned values from prompt engineering.
- * Create ~/.agents/tool-docs/distill-config.yaml to override without touching source code.
+ * Create ~/.skilldoc/distill-config.yaml to override without touching source code.
  *
  * Example distill-config.yaml:
  *

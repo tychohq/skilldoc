@@ -8042,10 +8042,10 @@ import path from "node:path";
 import { spawnSync as spawnSync2 } from "node:child_process";
 import { readFile as readFile2 } from "node:fs/promises";
 import { existsSync, readdirSync, statSync } from "node:fs";
-var DEFAULT_SKILLS_DIR = "~/.agents/skills";
-var DEFAULT_DOCS_DIR = "~/.agents/docs/tool-docs";
+var DEFAULT_SKILLS_DIR = "~/.skills";
+var DEFAULT_DOCS_DIR = "~/.skilldoc/docs";
 var DEFAULT_MODEL = "claude-opus-4-6";
-var DEFAULT_DISTILL_CONFIG_PATH = "~/.agents/tool-docs/distill-config.yaml";
+var DEFAULT_DISTILL_CONFIG_PATH = "~/.skilldoc/distill-config.yaml";
 var GENERATED_MARKER = "generated-from: skilldoc";
 var INSUFFICIENT_DOCS_SENTINEL = "Insufficient raw docs — re-run generate after fixing parser";
 var DEFAULT_SIZE_LIMITS_TOKENS = {
@@ -8838,8 +8838,8 @@ function formatQualityReport(report) {
 }
 
 // src/cli.ts
-var DEFAULT_REGISTRY = "~/.agents/tool-docs/registry.yaml";
-var DEFAULT_OUT_DIR = "~/.agents/docs/tool-docs";
+var DEFAULT_REGISTRY = "~/.skilldoc/registry.yaml";
+var DEFAULT_OUT_DIR = "~/.skilldoc/docs";
 var DEFAULT_SKILLS_OUT_DIR = DEFAULT_SKILLS_DIR;
 var HELP_TEXT = `skilldoc
 
@@ -8867,7 +8867,7 @@ Commands:
   validate   Test skill quality using LLM-based scenario evaluation
   report     Show aggregate quality report across all validated tools
   config     Show or update LLM provider configuration (~/.skilldoc/config.yaml)
-  init       Create a starter registry file at ~/.agents/tool-docs/registry.yaml with example
+  init       Create a starter registry file at ~/.skilldoc/registry.yaml with example
              tool entries (git, ripgrep). Use this to configure batch generation for multiple tools.
 
 Options:
