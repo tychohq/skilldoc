@@ -76,7 +76,7 @@ export function parseHelp(rawHelp: string): ParsedHelp {
     }
   }
 
-  const commandsSections = sections.filter((s) => /command/i.test(s.name));
+  const commandsSections = sections.filter((s) => /command|service/i.test(s.name));
   const examplesSection = findSection(sections, SECTION_NAMES.examples);
   const envSection = findSection(sections, SECTION_NAMES.env);
 
