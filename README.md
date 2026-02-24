@@ -34,6 +34,8 @@ SKILL.md    →  drop into AGENTS.md, CLAUDE.md, OpenClaw skills
 
 ## Quick Start
 
+> **Note:** The distill and validate steps require an LLM — either a coding CLI (Claude Code, Codex, or Gemini CLI) logged in, or an API key set. See [LLM Setup](#llm-setup) for details.
+
 ### Install
 
 ```bash
@@ -51,8 +53,6 @@ npx skilldoc run railway
 ```
 
 ### Generate a skill
-
-You need a coding CLI (Claude Code, Codex, or Gemini CLI) logged in, or an LLM API key set. See [LLM Setup](#llm-setup) for details.
 
 ```bash
 # Full pipeline in one shot: generate → distill → validate
