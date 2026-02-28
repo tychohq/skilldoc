@@ -168,11 +168,14 @@ function findSection(sections: SectionDoc[], names: string[]): SectionDoc | unde
 
 function parseCommands(lines: string[], requireIndent: boolean): CommandSummary[] {
   const commands: CommandSummary[] = [];
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     if (requireIndent && !/^\s+/.test(line)) continue;
     const trimmed = line.trim();
     if (!trimmed) continue;
     if (trimmed.startsWith("-")) continue;
+
+    // Inline format: "name  description" (tab or 2+ spaces separator)
     const match = trimmed.match(/^(\S+(?:\s+\S+)*)(?:\t|\s{2,})(.+)$/);
     if (match) {
       commands.push({
@@ -181,10 +184,38 @@ function parseCommands(lines: string[], requireIndent: boolean): CommandSummary[
       });
       continue;
     }
-    // Match man-page bullet-list format: "o servicename" (e.g. AWS AVAILABLE SERVICES)
+
+    // Man-page bullet-list format: "o servicename" (e.g. AWS AVAILABLE SERVICES)
     const bulletMatch = trimmed.match(/^o\s+([a-z][a-z0-9-]*)\s*$/);
     if (bulletMatch) {
       commands.push({ name: bulletMatch[1], summary: "" });
+      continue;
+    }
+
+    // 2-line format: signature on this line, description on next more-indented line.
+    // Signature must contain CLI arg markers ([, <, or () to distinguish from category headers.
+    // e.g.:  "  drive (drv) <command> [flags]" / "    Google Drive"
+    if (/[([<]/.test(trimmed)) {
+      const lineIndent = (line.match(/^(\s*)/) ?? ["", ""])[1].length;
+      let nextIdx = i + 1;
+      while (nextIdx < lines.length && !lines[nextIdx].trim()) nextIdx++;
+      if (nextIdx < lines.length) {
+        const nextLine = lines[nextIdx];
+        const nextIndent = (nextLine.match(/^(\s*)/) ?? ["", ""])[1].length;
+        if (nextIndent > lineIndent) {
+          const nameMatch = trimmed.match(/^([a-zA-Z][a-zA-Z0-9_-]*)/);
+          if (nameMatch) {
+            const hasSubcommands = /<command>/i.test(trimmed) || undefined;
+            commands.push({
+              name: nameMatch[1],
+              summary: nextLine.trim(),
+              ...(hasSubcommands && { hasSubcommands }),
+            });
+            i = nextIdx; // consume the description line
+            continue;
+          }
+        }
+      }
     }
   }
   return commands;

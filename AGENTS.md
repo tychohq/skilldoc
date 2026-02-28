@@ -20,14 +20,13 @@ CLI tool that generates agent-optimized skill documentation from CLI `--help` ou
 | `update [tool]` | Rebuild stale skills (version/help changed) |
 | `remove <tool>` | Remove skill, lock entry, docs, and symlinks |
 | `run <tool>` | generate → distill → validate in one shot |
-| `run` (no arg) | Batch run from registry |
+| `run` (no arg) | Batch run from lock file |
 | `generate <tool>` | Parse --help into structured docs |
 | `distill <tool>` | LLM-compress raw docs into skill files |
 | `refresh` | Re-run generate+distill for changed tools |
 | `validate <tool>` | LLM-based scenario evaluation |
 | `report` | Aggregate quality report |
 | `config` | Show/set LLM provider config |
-| `init` | Create starter registry |
 
 ## Source Layout
 
@@ -40,7 +39,6 @@ CLI tool that generates agent-optimized skill documentation from CLI `--help` ou
 | `src/distill.ts` | LLM distillation: prompt building, output parsing, size checks |
 | `src/validate.ts` | LLM-as-agent validation: scenarios, scoring, groundedness |
 | `src/llm.ts` | Multi-provider LLM abstraction (7 providers: CLI + API) |
-| `src/config.ts` | Registry YAML loading and tool normalization |
 | `src/lock.ts` | Lock file (track installed skills, versions, help hashes) |
 | `src/agents.ts` | Agent target detection and symlink management |
 | `src/types.ts` | Shared type definitions |
@@ -52,7 +50,6 @@ CLI tool that generates agent-optimized skill documentation from CLI `--help` ou
 |------|---------|
 | `~/.skilldoc/config.yaml` | LLM provider config (provider, model, apiKey) |
 | `~/.skilldoc/docs/` | Raw generated docs |
-| `~/.skilldoc/registry.yaml` | Tool registry for batch operations |
 | `~/.skilldoc/distill-config.yaml` | Distillation prompt tuning |
 | `~/.skills/` | Canonical skill output directory |
 | `~/.skills/skilldoc-lock.yaml` | Lock file tracking installed skills |

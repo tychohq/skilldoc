@@ -1163,6 +1163,7 @@ export function identifySubcommandCandidates(
 ): CommandSummary[] {
   return commands.filter((cmd) => {
     if (hasSubcommandKeyword(cmd.summary)) return true;
+    if (cmd.hasSubcommands) return true;
     if (binary && runFn) {
       const result = runFn(binary, [cmd.name, "--help"]);
       return hasSubcommandSection(result.output);
@@ -1181,13 +1182,14 @@ export function detectCommandHelpArgs(
   runFn: RunFn
 ): string[] | undefined {
   if (candidates.length === 0) return undefined;
-  const candidate = candidates[0];
 
-  for (const pattern of COMMAND_HELP_PROBE_PATTERNS) {
-    const probeArgs = pattern.map((part) => part.replace("{command}", candidate.name));
-    const result = runFn(binary, probeArgs);
-    if (hasSubcommandSection(result.output)) {
-      return [...pattern];
+  for (const candidate of candidates) {
+    for (const pattern of COMMAND_HELP_PROBE_PATTERNS) {
+      const probeArgs = pattern.map((part) => part.replace("{command}", candidate.name));
+      const result = runFn(binary, probeArgs);
+      if (hasSubcommandSection(result.output)) {
+        return [...pattern];
+      }
     }
   }
 
@@ -1237,9 +1239,12 @@ export async function generateCommandDocs(
   const commandsDir = path.join(toolDir, "commands");
   await ensureDir(commandsDir);
 
+  // Collect top-level command names so we can detect sibling re-listing in subcommand help
+  const topLevelNames = new Set(commands.map((c) => c.name));
+
   for (const command of commands) {
     const args = commandHelpArgs.map((arg) => arg.replace("{command}", command.name));
-    await generateOneCommandDoc(toolId, binary, command, args, commandsDir, [command.name], 0, runFn, maxDepth);
+    await generateOneCommandDoc(toolId, binary, command, args, commandsDir, [command.name], 0, runFn, maxDepth, topLevelNames);
   }
 }
 
@@ -1252,8 +1257,10 @@ async function generateOneCommandDoc(
   cmdPath: string[],
   depth: number,
   runFn: RunFn,
-  maxDepth: number
+  maxDepth: number,
+  topLevelNames: Set<string>,
 ): Promise<void> {
+
   const helpResult = runFn(binary, helpArgs);
   const parsed = parseHelp(helpResult.output);
   const warnings = [...parsed.warnings];
@@ -1309,7 +1316,12 @@ async function generateOneCommandDoc(
   await writeFileEnsured(path.join(commandDir, "command.md"), renderCommandMarkdown(doc));
 
   if (depth < maxDepth && parsed.commands.length > 0) {
-    for (const subCmd of parsed.commands) {
+    // Filter out commands that match known top-level siblings — yargs and similar
+    // frameworks re-list all sibling commands in every subcommand's help output.
+    const realSubcommands = parsed.commands.filter(
+      (sc) => !topLevelNames.has(sc.name)
+    );
+    for (const subCmd of realSubcommands) {
       const subArgs = [...cmdPath, subCmd.name, "--help"];
       await generateOneCommandDoc(
         toolId,
@@ -1320,7 +1332,8 @@ async function generateOneCommandDoc(
         [...cmdPath, subCmd.name],
         depth + 1,
         runFn,
-        maxDepth
+        maxDepth,
+        topLevelNames
       );
     }
   }

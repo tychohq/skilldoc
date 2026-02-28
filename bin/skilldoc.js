@@ -7170,7 +7170,8 @@ function findSection(sections, names) {
 }
 function parseCommands(lines, requireIndent) {
   const commands = [];
-  for (const line of lines) {
+  for (let i = 0;i < lines.length; i++) {
+    const line = lines[i];
     if (requireIndent && !/^\s+/.test(line))
       continue;
     const trimmed = line.trim();
@@ -7189,6 +7190,30 @@ function parseCommands(lines, requireIndent) {
     const bulletMatch = trimmed.match(/^o\s+([a-z][a-z0-9-]*)\s*$/);
     if (bulletMatch) {
       commands.push({ name: bulletMatch[1], summary: "" });
+      continue;
+    }
+    if (/[([<]/.test(trimmed)) {
+      const lineIndent = (line.match(/^(\s*)/) ?? ["", ""])[1].length;
+      let nextIdx = i + 1;
+      while (nextIdx < lines.length && !lines[nextIdx].trim())
+        nextIdx++;
+      if (nextIdx < lines.length) {
+        const nextLine = lines[nextIdx];
+        const nextIndent = (nextLine.match(/^(\s*)/) ?? ["", ""])[1].length;
+        if (nextIndent > lineIndent) {
+          const nameMatch = trimmed.match(/^([a-zA-Z][a-zA-Z0-9_-]*)/);
+          if (nameMatch) {
+            const hasSubcommands = /<command>/i.test(trimmed) || undefined;
+            commands.push({
+              name: nameMatch[1],
+              summary: nextLine.trim(),
+              ...hasSubcommands && { hasSubcommands }
+            });
+            i = nextIdx;
+            continue;
+          }
+        }
+      }
     }
   }
   return commands;
@@ -9817,6 +9842,8 @@ function identifySubcommandCandidates(commands, binary, runFn) {
   return commands.filter((cmd) => {
     if (hasSubcommandKeyword(cmd.summary))
       return true;
+    if (cmd.hasSubcommands)
+      return true;
     if (binary && runFn) {
       const result = runFn(binary, [cmd.name, "--help"]);
       return hasSubcommandSection(result.output);
@@ -9827,12 +9854,13 @@ function identifySubcommandCandidates(commands, binary, runFn) {
 function detectCommandHelpArgs(binary, candidates, runFn) {
   if (candidates.length === 0)
     return;
-  const candidate = candidates[0];
-  for (const pattern of COMMAND_HELP_PROBE_PATTERNS) {
-    const probeArgs = pattern.map((part) => part.replace("{command}", candidate.name));
-    const result = runFn(binary, probeArgs);
-    if (hasSubcommandSection(result.output)) {
-      return [...pattern];
+  for (const candidate of candidates) {
+    for (const pattern of COMMAND_HELP_PROBE_PATTERNS) {
+      const probeArgs = pattern.map((part) => part.replace("{command}", candidate.name));
+      const result = runFn(binary, probeArgs);
+      if (hasSubcommandSection(result.output)) {
+        return [...pattern];
+      }
     }
   }
   return;

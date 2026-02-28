@@ -2388,6 +2388,28 @@ describe("identifySubcommandCandidates — text heuristic only", () => {
   it("returns empty array for empty input", () => {
     expect(identifySubcommandCandidates([])).toHaveLength(0);
   });
+
+  it("returns commands with hasSubcommands=true", () => {
+    const commands = [
+      { name: "drive", summary: "Google Drive", hasSubcommands: true as const },
+      { name: "send", summary: "Send a message" },
+    ];
+    const result = identifySubcommandCandidates(commands);
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("drive");
+  });
+
+  it("combines hasSubcommands and text heuristic", () => {
+    const commands = [
+      { name: "drive", summary: "Google Drive", hasSubcommands: true as const },
+      { name: "auth", summary: "Manage authentication" },
+      { name: "send", summary: "Send a message" },
+    ];
+    const result = identifySubcommandCandidates(commands);
+    expect(result).toHaveLength(2);
+    expect(result.map((c) => c.name)).toContain("drive");
+    expect(result.map((c) => c.name)).toContain("auth");
+  });
 });
 
 describe("identifySubcommandCandidates — runtime heuristic", () => {
@@ -2535,5 +2557,22 @@ describe("detectCommandHelpArgs", () => {
     const result = detectCommandHelpArgs("mycli", [{ name: "remote", summary: "Manage remotes" }], runFn);
     expect(result).toEqual(["{command}", "-h"]);
     expect(calls).toEqual(["remote --help", "remote -h"]);
+  });
+
+  it("falls back to a second candidate when the first produces no subcommands", () => {
+    const runFn: RunFn = (_binary, args) => {
+      // Only "calendar --help" returns a Commands section
+      if (args[0] === "calendar" && args[1] === "--help") {
+        return { output: "Commands:\n  list  List events\n", exitCode: 0 };
+      }
+      return { output: "Usage: gog", exitCode: 0 };
+    };
+
+    const candidates = [
+      { name: "send", summary: "Send a message" },
+      { name: "calendar", summary: "Google Calendar", hasSubcommands: true as const },
+    ];
+    const result = detectCommandHelpArgs("gog", candidates, runFn);
+    expect(result).toEqual(["{command}", "--help"]);
   });
 });

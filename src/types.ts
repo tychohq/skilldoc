@@ -9,6 +9,8 @@ export type CommandSummary = {
   name: string;
   summary: string;
   docPath?: string;
+  /** True when the CLI signature contains `<command>`, indicating the command has subcommands. */
+  hasSubcommands?: boolean;
 };
 
 export type ToolDoc = {

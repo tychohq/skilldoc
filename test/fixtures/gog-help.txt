@@ -1,0 +1,134 @@
+Usage: gog <command> [flags]
+Build: v0.10.0 (a92bd63)
+
+Google CLI for
+Gmail/Calendar/Chat/Classroom/Drive/Contacts/Tasks/Sheets/Docs/Slides/People
+
+Config:
+
+    file: /Users/brenner/Library/Application Support/gogcli/config.json
+    keyring backend: auto (source: config)
+
+Flags:
+  -h, --help                  Show context-sensitive help.
+      --color="auto"          Color output: auto|always|never
+  -a, --account=STRING        Account email for API commands
+                              (gmail/calendar/chat/classroom/drive/docs/slides/contacts/tasks/people/sheets)
+      --client=""             OAuth client name (selects stored credentials +
+                              token bucket)
+      --enable-commands=""    Comma-separated list of enabled top-level commands
+                              (restricts CLI)
+  -j, --json                  Output JSON to stdout (best for scripting)
+  -p, --plain                 Output stable, parseable text to stdout (TSV;
+                              no colors)
+      --results-only          In JSON mode, emit only the primary result (drops
+                              envelope fields like nextPageToken)
+      --select=STRING         In JSON mode, select comma-separated fields
+                              (best-effort; supports dot paths). Desire path:
+                              use --fields for most commands.
+  -n, --dry-run               Do not make changes; print intended actions and
+                              exit successfully
+  -y, --force                 Skip confirmations for destructive commands
+      --no-input              Never prompt; fail instead (useful for CI)
+  -v, --verbose               Enable verbose logging
+      --version               Print version and exit
+
+Commands:
+  send [flags]
+    Send an email (alias for 'gmail send')
+
+  ls (list) [flags]
+    List Drive files (alias for 'drive ls')
+
+  search (find) <query> ... [flags]
+    Search Drive files (alias for 'drive search')
+
+  open (browse) <target> [flags]
+    Print a best-effort web URL for a Google URL/ID (offline)
+
+  download (dl) <fileId> [flags]
+    Download a Drive file (alias for 'drive download')
+
+  upload (up,put) <localPath> [flags]
+    Upload a file to Drive (alias for 'drive upload')
+
+  login <email> [flags]
+    Authorize and store a refresh token (alias for 'auth add')
+
+  logout <email> [flags]
+    Remove a stored refresh token (alias for 'auth remove')
+
+  status (st) [flags]
+    Show auth/config status (alias for 'auth status')
+
+  me [flags]
+    Show your profile (alias for 'people me')
+
+  whoami (who-am-i) [flags]
+    Show your profile (alias for 'people me')
+
+  auth <command> [flags]
+    Auth and credentials
+
+  groups (group) <command> [flags]
+    Google Groups
+
+  drive (drv) <command> [flags]
+    Google Drive
+
+  docs (doc) <command> [flags]
+    Google Docs (export via Drive)
+
+  slides (slide) <command> [flags]
+    Google Slides
+
+  calendar (cal) <command> [flags]
+    Google Calendar
+
+  classroom (class) <command> [flags]
+    Google Classroom
+
+  time <command> [flags]
+    Local time utilities
+
+  gmail (mail,email) <command> [flags]
+    Gmail
+
+  chat <command> [flags]
+    Google Chat
+
+  contacts (contact) <command> [flags]
+    Google Contacts
+
+  tasks (task) <command> [flags]
+    Google Tasks
+
+  people (person) <command> [flags]
+    Google People
+
+  keep <command> [flags]
+    Google Keep (Workspace only)
+
+  sheets (sheet) <command> [flags]
+    Google Sheets
+
+  config <command> [flags]
+    Manage configuration
+
+  exit-codes (exitcodes) [flags]
+    Print stable exit codes (alias for 'agent exit-codes')
+
+  agent <command> [flags]
+    Agent-friendly helpers
+
+  schema (help-json,helpjson) [<command> ...] [flags]
+    Machine-readable command/flag schema
+
+  version [flags]
+    Print version
+
+  completion <shell> [flags]
+    Generate shell completion scripts
+
+
+Run "gog <command> --help" for more information on a command.

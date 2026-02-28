@@ -8,6 +8,7 @@ const ghHelp = readFileSync(new URL("./fixtures/gh-help.txt", import.meta.url), 
 const vercelHelp = readFileSync(new URL("./fixtures/vercel-help.txt", import.meta.url), "utf8");
 const ffmpegHelp = readFileSync(new URL("./fixtures/ffmpeg-help.txt", import.meta.url), "utf8");
 const curlHelp = readFileSync(new URL("./fixtures/curl-help.txt", import.meta.url), "utf8");
+const gogHelp = readFileSync(new URL("./fixtures/gog-help.txt", import.meta.url), "utf8");
 
 describe("parseHelp", () => {
   it("extracts usage from git help", () => {
@@ -379,6 +380,83 @@ Run 'remindctl <command> --help' for details.`;
 
   it("does not produce no-commands warning", () => {
     const parsed = parseHelp(input);
+    expect(parsed.warnings).not.toContain("No commands detected.");
+  });
+});
+
+describe("parseHelp — 2-line command format (gog style)", () => {
+  const input = `Usage: mytool <command> [flags]
+
+Commands:
+  send [flags]
+    Send a message
+
+  drive (drv) <command> [flags]
+    Google Drive
+
+  version [flags]
+    Print version
+
+Flags:
+  --help   Show help
+`;
+
+  it("parses commands from 2-line signature+description format", () => {
+    const parsed = parseHelp(input);
+    const names = parsed.commands.map((c) => c.name);
+    expect(names).toContain("send");
+    expect(names).toContain("drive");
+    expect(names).toContain("version");
+  });
+
+  it("uses the description line as the summary", () => {
+    const parsed = parseHelp(input);
+    const drive = parsed.commands.find((c) => c.name === "drive");
+    expect(drive?.summary).toBe("Google Drive");
+    const send = parsed.commands.find((c) => c.name === "send");
+    expect(send?.summary).toBe("Send a message");
+  });
+
+  it("sets hasSubcommands for commands with <command> in signature", () => {
+    const parsed = parseHelp(input);
+    const drive = parsed.commands.find((c) => c.name === "drive");
+    expect(drive?.hasSubcommands).toBe(true);
+    const send = parsed.commands.find((c) => c.name === "send");
+    expect(send?.hasSubcommands).toBeUndefined();
+  });
+
+  it("extracts command name as first word, ignoring aliases and arg specs", () => {
+    const parsed = parseHelp(input);
+    // "drive (drv) <command> [flags]" → name should be "drive", not "drive (drv) <command> [flags]"
+    const names = parsed.commands.map((c) => c.name);
+    expect(names.every((n) => !n.includes(" "))).toBe(true);
+  });
+
+  it("does not produce no-commands warning", () => {
+    const parsed = parseHelp(input);
+    expect(parsed.warnings).not.toContain("No commands detected.");
+  });
+});
+
+describe("parseHelp — gog fixture", () => {
+  it("parses top-level commands from gog --help", () => {
+    const parsed = parseHelp(gogHelp);
+    const names = parsed.commands.map((c) => c.name);
+    expect(names).toContain("gmail");
+    expect(names).toContain("drive");
+    expect(names).toContain("calendar");
+  });
+
+  it("marks service commands with subcommands via hasSubcommands", () => {
+    const parsed = parseHelp(gogHelp);
+    const gmail = parsed.commands.find((c) => c.name === "gmail");
+    expect(gmail?.hasSubcommands).toBe(true);
+    const drive = parsed.commands.find((c) => c.name === "drive");
+    expect(drive?.hasSubcommands).toBe(true);
+  });
+
+  it("does not produce no-commands warning", () => {
+    const parsed = parseHelp(gogHelp);
     expect(parsed.warnings).not.toContain("No commands detected.");
   });
 });
